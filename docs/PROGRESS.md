@@ -78,7 +78,7 @@ Every screen was reviewed from the simulator screenshots CI publishes to the
 | Demo strip filled the status bar; in dark mode the white clock sat on light amber | Strip starts below the status bar; shorter copy that wraps at accessibility sizes |
 | Segmented controls hyphenated "MOTORCY-CLES" and "COMMU-NITY"; body-style grid did the same | Single line with tightening and scale-down |
 | Settings speedometer previews were squeezed: scale labels collided, the tape numeral escaped its card, the digital numeral truncated to dots | Previews render at dashboard size and scale down |
-| Map tab rendered blank in the simulator and framed the whole Central Coast instead of the meets | Flat map style; camera fits the venues (or your routes), never the device location |
+| Map tab rendered blank in the simulator and framed the whole Central Coast instead of the meets | Flat map style; the camera frames the venues (or your routes) automatically, and the map no longer shows the device location at all |
 | Picker panel stretched to full height with dead space around the cards | Carousel sizes to its content, so the panel hugs it |
 | Picker list at accessibility sizes printed the model year as "1,994" and repeated it | Verbatim text; subtitle shows type and body instead |
 | Drive summary in demo mode said "Verified by server" although no server ran | Demo shows "Demo · not server-checked"; real builds show the server's verdict |
