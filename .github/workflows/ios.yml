@@ -3,9 +3,9 @@ name: iOS
 on:
   push:
     branches: [main, "claude/**"]
-    paths: ["ios/**", ".github/workflows/ios.yml"]
+    paths: ["native/ios/**", ".github/workflows/ios.yml"]
   pull_request:
-    paths: ["ios/**", ".github/workflows/ios.yml"]
+    paths: ["native/ios/**", ".github/workflows/ios.yml"]
   workflow_dispatch:
 
 concurrency:
@@ -31,9 +31,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/Library/Caches/org.swift.swiftpm
-          key: spm-${{ runner.os }}-${{ hashFiles('ios/Packages/PullUpKit/Package.resolved', 'ios/Packages/PullUpKit/Package.swift') }}
+          key: spm-${{ runner.os }}-${{ hashFiles('native/ios/Packages/PullUpKit/Package.resolved', 'native/ios/Packages/PullUpKit/Package.swift') }}
       - name: Test package on simulator
-        working-directory: ios/Packages/PullUpKit
+        working-directory: native/ios/Packages/PullUpKit
         run: |
           set -o pipefail
           SIM=$(../../scripts/simulator-id.sh)
@@ -70,12 +70,12 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/Library/Developer/Xcode/DerivedData/**/SourcePackages
-          key: spm-app-${{ runner.os }}-${{ hashFiles('ios/Packages/PullUpKit/Package.swift', 'ios/project.yml') }}
+          key: spm-app-${{ runner.os }}-${{ hashFiles('native/ios/Packages/PullUpKit/Package.swift', 'native/ios/project.yml') }}
       - name: Generate project
-        working-directory: ios
+        working-directory: native/ios
         run: xcodegen generate
       - name: Build and run UI tests
-        working-directory: ios
+        working-directory: native/ios
         env:
           TEST_RUNNER_SCREENSHOT_DIR: ${{ runner.temp }}/screenshots
         run: |

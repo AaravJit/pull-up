@@ -1,0 +1,106 @@
+import SwiftUI
+import PullUpDomain
+
+public enum AppearancePreference: String, Codable, CaseIterable, Sendable, Identifiable {
+    case system, light, dark
+    public var id: String { rawValue }
+    public var label: String { rawValue.capitalized }
+
+    public var colorScheme: ColorScheme? {
+        switch self {
+        case .system: nil
+        case .light: .light
+        case .dark: .dark
+        }
+    }
+}
+
+public enum SpeedometerStyle: String, Codable, CaseIterable, Sendable, Identifiable {
+    /// 270° sweep with a needle, tick scale and redline band.
+    case analog
+    /// Large compressed numerals with a segmented bar beneath.
+    case digital
+    /// Horizontal moving tape, like an aircraft HUD speed tape.
+    case tape
+
+    public var id: String { rawValue }
+    public var label: String {
+        switch self {
+        case .analog: "Sweep"
+        case .digital: "Digital"
+        case .tape: "Tape"
+        }
+    }
+}
+
+/// Metrics the user can place on the drive dashboard.
+public enum DashboardMetric: String, Codable, CaseIterable, Sendable, Identifiable {
+    case topSpeed, averageSpeed, rollingAverage, distance, elapsed, movingTime, stoppedTime
+    case altitude, elevationGain, elevationLoss, zeroToSixty, gpsAccuracy, heading
+
+    public var id: String { rawValue }
+
+    public var label: String {
+        switch self {
+        case .topSpeed: "Top"
+        case .averageSpeed: "Avg moving"
+        case .rollingAverage: "30 s avg"
+        case .distance: "Distance"
+        case .elapsed: "Elapsed"
+        case .movingTime: "Moving"
+        case .stoppedTime: "Stopped"
+        case .altitude: "Altitude"
+        case .elevationGain: "Climb"
+        case .elevationLoss: "Descent"
+        case .zeroToSixty: "0–60 est."
+        case .gpsAccuracy: "GPS ±"
+        case .heading: "Heading"
+        }
+    }
+
+    public static let defaultLayout: [DashboardMetric] = [.distance, .elapsed, .topSpeed, .averageSpeed, .elevationGain, .gpsAccuracy]
+    public static let maximumCount = 6
+}
+
+/// User-tunable look. Persisted by the app shell; read through the environment.
+public struct ClusterTheme: Equatable, Sendable {
+    public var accent: AccentChoice
+    public var appearance: AppearancePreference
+    public var speedometer: SpeedometerStyle
+    public var unit: SpeedUnit
+    public var dashboard: [DashboardMetric]
+
+    public init(
+        accent: AccentChoice = .sodium, appearance: AppearancePreference = .system,
+        speedometer: SpeedometerStyle = .analog, unit: SpeedUnit = .mph,
+        dashboard: [DashboardMetric] = DashboardMetric.defaultLayout
+    ) {
+        self.accent = accent
+        self.appearance = appearance
+        self.speedometer = speedometer
+        self.unit = unit
+        self.dashboard = dashboard
+    }
+
+    public var accentColor: Color { ClusterColor.accent(accent) }
+}
+
+private struct ClusterThemeKey: EnvironmentKey {
+    static let defaultValue = ClusterTheme()
+}
+
+public extension EnvironmentValues {
+    var clusterTheme: ClusterTheme {
+        get { self[ClusterThemeKey.self] }
+        set { self[ClusterThemeKey.self] = newValue }
+    }
+}
+
+public extension View {
+    /// Applies the theme: accent tint, appearance override, canvas colour.
+    func clusterTheme(_ theme: ClusterTheme) -> some View {
+        environment(\.clusterTheme, theme)
+            .tint(theme.accentColor)
+            .preferredColorScheme(theme.appearance.colorScheme)
+    }
+}
