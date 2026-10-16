@@ -169,6 +169,9 @@ struct StartDrivePicker: View {
             }
             .scrollTargetBehavior(.viewAligned)
             .contentMargins(.horizontal, Space.gutter, for: .scrollContent)
+            // A horizontal scroll view otherwise takes all the height offered,
+            // leaving dead space above and below the cards.
+            .fixedSize(horizontal: false, vertical: true)
             .onAppear {
                 if let selection { proxy.scrollTo(selection, anchor: .center) }
             }

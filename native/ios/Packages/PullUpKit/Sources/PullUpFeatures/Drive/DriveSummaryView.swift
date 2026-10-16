@@ -106,7 +106,14 @@ struct DriveSummaryView: View {
                     .foregroundStyle(ClusterColor.ink)
                     .accessibilityIdentifier("summary-vehicle-name")
                 Spacer()
-                if isStored { ValidationBadge(drive.validationStatus) }
+                if isStored {
+                    // The demo backend has no server checks, so it never claims a verdict.
+                    if app.isDemo {
+                        Legend("Demo · not server-checked", color: ClusterColor.estimate)
+                    } else {
+                        ValidationBadge(drive.validationStatus)
+                    }
+                }
             }
         }
     }

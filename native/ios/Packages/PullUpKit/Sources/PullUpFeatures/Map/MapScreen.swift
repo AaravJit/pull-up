@@ -79,7 +79,7 @@ public struct MapScreen: View {
             }
         }
         .onChange(of: layer) { _, _ in
-            withAnimation(Motion.sheet) { position = .automatic }
+            withAnimation(Motion.sheet) { frameContent() }
         }
         .ignoresSafeArea(edges: .top)
         .accessibilityIdentifier("map")
@@ -130,6 +130,7 @@ public struct MapScreen: View {
         do {
             meets = try await app.backend.meets(from: .now).filter { !$0.isCancelled }
             error = nil
+            frameContent()
         } catch {
             self.error = error.localizedDescription
         }
@@ -141,6 +142,25 @@ public struct MapScreen: View {
             }
         }
         routes = loaded
+        frameContent()
+    }
+
+    /// Fits the camera to the visible layer's own content (venues or your
+    /// routes), never to the device's location.
+    private func frameContent() {
+        let points: [Coordinate] = layer == .meets ? meets.map(\.coordinate) : routes.flatMap(\.coordinates)
+        guard let first = points.first else { return }
+        var minLat = first.latitude, maxLat = first.latitude
+        var minLon = first.longitude, maxLon = first.longitude
+        for p in points {
+            minLat = min(minLat, p.latitude); maxLat = max(maxLat, p.latitude)
+            minLon = min(minLon, p.longitude); maxLon = max(maxLon, p.longitude)
+        }
+        // Extra room at the top for the floating header, at the bottom for the meet strip.
+        let latSpan = max(0.08, (maxLat - minLat) * 1.9)
+        let lonSpan = max(0.08, (maxLon - minLon) * 1.4)
+        let center = CLLocationCoordinate2D(latitude: (minLat + maxLat) / 2 + latSpan * 0.08, longitude: (minLon + maxLon) / 2)
+        position = .region(MKCoordinateRegion(center: center, span: MKCoordinateSpan(latitudeDelta: latSpan, longitudeDelta: lonSpan)))
     }
 }
 

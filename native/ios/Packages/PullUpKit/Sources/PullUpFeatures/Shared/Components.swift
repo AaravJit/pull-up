@@ -8,7 +8,7 @@ struct DemoStrip: View {
     var body: some View {
         HStack(spacing: Space.s) {
             Image(systemName: "flask")
-            Text("Demo data · nothing here is real or saved to a server")
+            Text("Demo data · not real, not saved")
         }
         .font(ClusterFont.legend(.caption2))
         .textCase(.uppercase)
