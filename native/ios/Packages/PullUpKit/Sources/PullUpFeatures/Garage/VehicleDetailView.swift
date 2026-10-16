@@ -82,13 +82,9 @@ struct VehicleDetailView: View {
                             .frame(width: 88, height: 66)
                             .clipShape(ChamferedRectangle(cut: 4))
                     }
+                    let isUploading = uploading
                     PhotosPicker(selection: $photoItem, matching: .images) {
-                        VStack(spacing: Space.xs) {
-                            if uploading { ProgressView() } else { Image(systemName: "camera") }
-                            Legend("Add photo")
-                        }
-                        .frame(width: 88, height: 66)
-                        .plate(cut: 4)
+                        MediaPickerLabel(isLoading: isUploading, symbol: "camera", title: "Add photo", width: 88, height: 66, cut: 4)
                     }
                     .disabled(uploading)
                     .accessibilityLabel("Add photo")

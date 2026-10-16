@@ -93,13 +93,10 @@ struct PostComposerView: View {
                             .frame(width: 110, height: 138)
                             .clipShape(ChamferedRectangle(cut: 5))
                     }
+                    let loading = isLoadingMedia
+                    let pickerTitle = previews.isEmpty ? "Add" : "Change"
                     PhotosPicker(selection: $items, maxSelectionCount: 4, matching: .any(of: [.images, .videos])) {
-                        VStack(spacing: Space.xs) {
-                            if isLoadingMedia { ProgressView() } else { Image(systemName: "photo.badge.plus").font(.title2) }
-                            Legend(previews.isEmpty ? "Add" : "Change")
-                        }
-                        .frame(width: 110, height: 138)
-                        .plate(cut: 5)
+                        MediaPickerLabel(isLoading: loading, symbol: "photo.badge.plus", title: pickerTitle, width: 110, height: 138, cut: 5)
                     }
                 }
             }

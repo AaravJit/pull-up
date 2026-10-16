@@ -69,8 +69,8 @@ struct AnalogSpeedometer: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ScaledMetric(relativeTo: .largeTitle) private var numeralSize: CGFloat = 76
 
-    static let startAngle = 135.0
-    static let sweep = 270.0
+    nonisolated static let startAngle = 135.0
+    nonisolated static let sweep = 270.0
 
     var body: some View {
         GeometryReader { proxy in

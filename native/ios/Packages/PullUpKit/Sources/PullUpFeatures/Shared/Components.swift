@@ -196,3 +196,33 @@ struct AccentSwatches: View {
         .sensoryFeedback(.selection, trigger: selection)
     }
 }
+
+/// Label for a `PhotosPicker`. The picker builds its label in a nonisolated
+/// context, so this view takes plain values through a nonisolated init and
+/// applies the main-actor styling inside `body`.
+struct MediaPickerLabel: View {
+    let isLoading: Bool
+    let symbol: String
+    let title: String
+    let width: CGFloat
+    let height: CGFloat
+    let cut: CGFloat
+
+    nonisolated init(isLoading: Bool, symbol: String, title: String, width: CGFloat, height: CGFloat, cut: CGFloat) {
+        self.isLoading = isLoading
+        self.symbol = symbol
+        self.title = title
+        self.width = width
+        self.height = height
+        self.cut = cut
+    }
+
+    var body: some View {
+        VStack(spacing: Space.xs) {
+            if isLoading { ProgressView() } else { Image(systemName: symbol).font(.title2) }
+            Legend(title)
+        }
+        .frame(width: width, height: height)
+        .plate(cut: cut)
+    }
+}
