@@ -10,10 +10,10 @@ import PullUpDomain
 public struct MapScreen: View {
     @Environment(AppModel.self) private var app
     @Environment(\.clusterTheme) private var theme
-    @State private var position: MapCameraPosition = .region(MKCoordinateRegion(
-        center: CLLocationCoordinate2D(latitude: 38.62, longitude: -121.40),
-        span: MKCoordinateSpan(latitudeDelta: 0.9, longitudeDelta: 0.9)
-    ))
+    /// `.automatic` frames whatever the map contains: venues or your routes.
+    /// An explicit region set before the tab has a size is applied to a
+    /// zero-sized map and comes out wrong.
+    @State private var position: MapCameraPosition = .automatic
     @State private var meets: [Meet] = []
     @State private var routes: [RouteLine] = []
     @State private var layer: Layer = .meets
@@ -51,7 +51,6 @@ public struct MapScreen: View {
 
     private var map: some View {
         Map(position: $position, selection: $selectedMeet) {
-            UserAnnotation()
             if layer == .meets {
                 ForEach(meets) { meet in
                     Annotation(meet.title, coordinate: meet.coordinate.clLocation, anchor: .bottom) {
@@ -68,7 +67,6 @@ public struct MapScreen: View {
         }
         .mapStyle(.standard(elevation: .flat, pointsOfInterest: .excludingAll))
         .mapControls {
-            MapUserLocationButton()
             MapCompass()
             MapScaleView()
         }
@@ -81,6 +79,8 @@ public struct MapScreen: View {
         .onChange(of: layer) { _, _ in
             withAnimation(Motion.sheet) { frameContent() }
         }
+        // Keeps automatic framing clear of the floating header.
+        .safeAreaPadding(.top, 190)
         .ignoresSafeArea(edges: .top)
         .accessibilityIdentifier("map")
     }
@@ -145,22 +145,10 @@ public struct MapScreen: View {
         frameContent()
     }
 
-    /// Fits the camera to the visible layer's own content (venues or your
-    /// routes), never to the device's location.
+    /// Re-frames the camera to the visible layer's content, never to the
+    /// device's location (the map has no user annotation).
     private func frameContent() {
-        let points: [Coordinate] = layer == .meets ? meets.map(\.coordinate) : routes.flatMap(\.coordinates)
-        guard let first = points.first else { return }
-        var minLat = first.latitude, maxLat = first.latitude
-        var minLon = first.longitude, maxLon = first.longitude
-        for p in points {
-            minLat = min(minLat, p.latitude); maxLat = max(maxLat, p.latitude)
-            minLon = min(minLon, p.longitude); maxLon = max(maxLon, p.longitude)
-        }
-        // Extra room at the top for the floating header, at the bottom for the meet strip.
-        let latSpan = max(0.08, (maxLat - minLat) * 1.9)
-        let lonSpan = max(0.08, (maxLon - minLon) * 1.4)
-        let center = CLLocationCoordinate2D(latitude: (minLat + maxLat) / 2 + latSpan * 0.08, longitude: (minLon + maxLon) / 2)
-        position = .region(MKCoordinateRegion(center: center, span: MKCoordinateSpan(latitudeDelta: latSpan, longitudeDelta: lonSpan)))
+        position = .automatic
     }
 }
 

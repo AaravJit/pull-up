@@ -68,7 +68,31 @@ data" button on builds without server keys.
 
 ## Design review
 
-<!-- DESIGN-REVIEW -->
+Every screen was reviewed from the simulator screenshots CI publishes to the
+`ci/screenshots` branch (folder `claude-native-ios-85igsc`). Found and fixed:
+
+| Found | Fix |
+| --- | --- |
+| Live dashboard and empty-garage picker: inner accessibility identifiers were overridden by the container's, so two UI journeys failed | Containers use `.accessibilityElement(children: .contain)` |
+| Tab bar floated over the bottom of the picker | Hidden while the picker is open, as it already was while recording |
+| Demo strip filled the status bar; in dark mode the white clock sat on light amber | Strip starts below the status bar; shorter copy that wraps at accessibility sizes |
+| Segmented controls hyphenated "MOTORCY-CLES" and "COMMU-NITY"; body-style grid did the same | Single line with tightening and scale-down |
+| Settings speedometer previews were squeezed: scale labels collided, the tape numeral escaped its card, the digital numeral truncated to dots | Previews render at dashboard size and scale down |
+| Map tab rendered blank in the simulator and framed the whole Central Coast instead of the meets | Flat map style; camera fits the venues (or your routes), never the device location |
+| Picker panel stretched to full height with dead space around the cards | Carousel sizes to its content, so the panel hugs it |
+| Picker list at accessibility sizes printed the model year as "1,994" and repeated it | Verbatim text; subtitle shows type and body instead |
+| Drive summary in demo mode said "Verified by server" although no server ran | Demo shows "Demo · not server-checked"; real builds show the server's verdict |
+| Screen titles crowded the strip above them | Extra top spacing on screen titles |
+| Start button at accessibility sizes truncated to "START RECOR…" | Cluster buttons may wrap and scale |
+
+Still open:
+
+* MapKit tiles depend on network in CI; a run with no tile access shows a
+  grid (the app is not at fault).
+* The analog needle springs, so a mid-motion screenshot can show it a few
+  mph off the arc.
+* Tertiary ink is below 4.5:1 in light mode (see `DESIGN.md`) and is kept to
+  non-essential metadata.
 
 ## Known gaps
 
