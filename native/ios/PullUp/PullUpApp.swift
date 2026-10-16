@@ -11,6 +11,7 @@ struct PullUpApp: App {
     var body: some Scene {
         WindowGroup {
             RootView(app: model)
+                .onOpenURL { url in Task { await model.open(url) } }
         }
     }
 }

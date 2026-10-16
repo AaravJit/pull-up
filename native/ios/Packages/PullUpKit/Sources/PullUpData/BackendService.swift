@@ -20,6 +20,8 @@ public protocol BackendService: AnyObject, Sendable {
     func signUp(email: String, password: String, username: String) async throws -> SignUpOutcome
     func signInWithApple(idToken: String, nonce: String) async throws
     func signOut() async throws
+    /// Completes sign-in from an email confirmation link (pullup://auth-callback).
+    func handleAuthCallback(_ url: URL) async throws
     func deleteAccount() async throws
 
     // Profiles and graph
@@ -283,4 +285,8 @@ public enum TrackEncoding {
             )
         }
     }
+}
+
+public extension BackendService {
+    func handleAuthCallback(_ url: URL) async throws {}
 }

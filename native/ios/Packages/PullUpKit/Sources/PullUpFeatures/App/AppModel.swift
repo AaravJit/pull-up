@@ -125,6 +125,12 @@ public final class AppModel {
         }
     }
 
+    /// Handles pullup:// links. Only the email-confirmation callback exists today.
+    public func open(_ url: URL) async {
+        guard url.scheme == "pullup", url.host() == "auth-callback" else { return }
+        try? await backend.handleAuthCallback(url)
+    }
+
     public func refreshNotifications() async {
         unreadNotifications = ((try? await backend.notifications()) ?? []).filter { $0.readAt == nil }.count
     }

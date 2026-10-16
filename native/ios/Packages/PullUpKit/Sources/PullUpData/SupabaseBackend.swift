@@ -75,6 +75,10 @@ public final class SupabaseBackend: BackendService, @unchecked Sendable {
         try await client.auth.signInWithIdToken(credentials: OpenIDConnectCredentials(provider: .apple, idToken: idToken, nonce: nonce))
     }
 
+    public func handleAuthCallback(_ url: URL) async throws {
+        _ = try await client.auth.session(from: url)
+    }
+
     public func signOut() async throws {
         try await client.auth.signOut()
     }
