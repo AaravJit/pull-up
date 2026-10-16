@@ -1,11 +1,17 @@
 // Sends APNs pushes for new notifications rows.
 //
 // Wire-up (production): a Database Webhook on INSERT into public.notifications
-// calls this function with the new row. Requires these secrets, which only the
-// Apple Developer account holder can create (docs/RELEASE_CHECKLIST.md):
+// calls this function with the new row and an `x-pullup-webhook-secret`
+// header. Requires these secrets (docs/RELEASE_CHECKLIST.md):
+//   PUSH_WEBHOOK_SECRET (random, also set as the webhook's header)
 //   APNS_KEY_ID, APNS_TEAM_ID, APNS_PRIVATE_KEY (contents of the .p8), APNS_TOPIC
 // Without them the function returns 503 and nothing is sent; in-app
 // notifications still work because they are read straight from the table.
+//
+// The anon key is public, so anyone can reach this URL. The shared secret
+// stops strangers from triggering pushes, and only the notification id is
+// taken from the request: recipient, actor and kind are re-read from the
+// database, so a forged body can't push arbitrary text to arbitrary people.
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
@@ -28,6 +34,15 @@ const COPY: Record<string, string> = {
   drive_validated: "Your drive has been checked",
 };
 
+function sameSecret(a: string, b: string): boolean {
+  const x = new TextEncoder().encode(a);
+  const y = new TextEncoder().encode(b);
+  if (x.length !== y.length) return false;
+  let diff = 0;
+  for (let i = 0; i < x.length; i++) diff |= x[i] ^ y[i];
+  return diff === 0;
+}
+
 function base64UrlEncode(bytes: Uint8Array): string {
   let binary = "";
   for (const b of bytes) binary += String.fromCharCode(b);
@@ -45,6 +60,13 @@ async function providerToken(keyId: string, teamId: string, pem: string): Promis
 }
 
 Deno.serve(async (req: Request): Promise<Response> => {
+  const webhookSecret = Deno.env.get("PUSH_WEBHOOK_SECRET");
+  if (!webhookSecret) {
+    return Response.json({ error: "push webhook secret is not configured" }, { status: 503 });
+  }
+  if (!sameSecret(req.headers.get("x-pullup-webhook-secret") ?? "", webhookSecret)) {
+    return Response.json({ error: "forbidden" }, { status: 403 });
+  }
   const keyId = Deno.env.get("APNS_KEY_ID");
   const teamId = Deno.env.get("APNS_TEAM_ID");
   const privateKey = Deno.env.get("APNS_PRIVATE_KEY");
@@ -53,13 +75,18 @@ Deno.serve(async (req: Request): Promise<Response> => {
     return Response.json({ error: "APNs is not configured" }, { status: 503 });
   }
 
-  const payload = await req.json() as { record?: NotificationRow };
-  const row = payload.record;
-  if (!row) return Response.json({ error: "no record" }, { status: 400 });
+  const payload = await req.json().catch(() => ({})) as { record?: { id?: unknown } };
+  const id = payload.record?.id;
+  if (typeof id !== "string") return Response.json({ error: "no record" }, { status: 400 });
 
   const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, {
     auth: { persistSession: false },
   });
+  const { data: row } = await admin.from("notifications")
+    .select("id, recipient_id, actor_id, kind, pushed_at").eq("id", id).maybeSingle<NotificationRow & { pushed_at: string | null }>();
+  if (!row) return Response.json({ error: "unknown notification" }, { status: 404 });
+  // Each notification is pushed at most once, so replaying a request does nothing.
+  if (row.pushed_at) return Response.json({ sent: 0, duplicate: true });
   const [{ data: tokens }, { data: actor }] = await Promise.all([
     admin.from("device_tokens").select("token, environment").eq("user_id", row.recipient_id).eq("platform", "ios"),
     row.actor_id
