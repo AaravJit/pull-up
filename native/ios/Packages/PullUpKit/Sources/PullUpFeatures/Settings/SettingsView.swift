@@ -223,8 +223,13 @@ struct SpeedometerChoice: View {
     var body: some View {
         Button(action: action) {
             VStack(spacing: Space.s) {
+                // Rendered at dashboard size and scaled down, so the preview is
+                // the real layout rather than a squeezed one.
                 Speedometer(SpeedometerReading(speed: unit == .mph ? 48 : 77, topSpeed: unit == .mph ? 71 : 114, unit: unit), style: style)
-                    .frame(height: 86)
+                    .environment(\.dynamicTypeSize, .large)
+                    .frame(width: 320, height: 320)
+                    .scaleEffect(0.27)
+                    .frame(width: 86, height: 86)
                     .allowsHitTesting(false)
                     .accessibilityHidden(true)
                 Legend(style.label, color: isSelected ? ClusterColor.ink : ClusterColor.inkTertiary)

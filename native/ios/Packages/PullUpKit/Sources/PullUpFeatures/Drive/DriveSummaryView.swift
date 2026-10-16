@@ -139,7 +139,7 @@ struct DriveSummaryView: View {
                     }
                 }
             }
-            .mapStyle(.standard(elevation: .realistic, pointsOfInterest: .excludingAll))
+            .mapStyle(.standard(elevation: .flat, pointsOfInterest: .excludingAll))
             .frame(height: 240)
             .clipShape(ChamferedRectangle(cut: Radius.chamfer))
             .accessibilityLabel("Map of this drive's route")

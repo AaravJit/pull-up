@@ -301,6 +301,7 @@ struct StartDrivePicker: View {
             if let failure { NoticeStrip(failure.message, tone: .caution) }
         }
         .padding(.horizontal, Space.gutter)
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("picker-empty")
     }
 
@@ -429,7 +430,7 @@ struct VehicleChoiceRow: View {
                     Text(vehicle?.displayName ?? "Guest vehicle")
                         .font(ClusterFont.headline())
                         .foregroundStyle(ClusterColor.ink)
-                    Text(vehicle.map { "\($0.year) · \($0.kind.label)" } ?? "Not linked to a vehicle")
+                    Text(verbatim: vehicle.map { "\(String($0.year)) · \($0.kind.label)" } ?? "Not linked to a vehicle")
                         .font(ClusterFont.body(.footnote))
                         .foregroundStyle(ClusterColor.inkSecondary)
                 }

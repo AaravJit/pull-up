@@ -33,6 +33,7 @@ public struct DriveTabView: View {
                 DriveHomeView(stage: stage, showsButtonShape: !pickerOpen && !isLive) {
                     pickerOpen = true
                 }
+                .toolbar(pickerOpen || isLive ? .hidden : .visible, for: .tabBar)
             }
             .accessibilityHidden(pickerOpen || isLive)
 
@@ -54,7 +55,7 @@ public struct DriveTabView: View {
             }
         }
         .animation(stageAnimation, value: stateKey)
-        .toolbar(isLive ? .hidden : .visible, for: .tabBar)
+        .toolbar(pickerOpen || isLive ? .hidden : .visible, for: .tabBar)
         .onChange(of: recorder.phase) { _, phase in
             if phase == .recording { pickerOpen = false }
         }

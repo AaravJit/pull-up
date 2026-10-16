@@ -71,7 +71,8 @@ final class PullUpUITests: XCTestCase {
 
         confirm.tap()
         let vehicleName = element(app, "live-vehicle-name")
-        XCTAssertTrue(vehicleName.waitForExistence(timeout: 10))
+        if !vehicleName.waitForExistence(timeout: 10) { snap("debug-after-confirm") }
+        XCTAssertTrue(vehicleName.exists, "Live dashboard should name the picked vehicle")
         XCTAssertTrue(vehicleName.label.contains("Daily"), "Dashboard shows \(vehicleName.label)")
         settle(16)
         snap("04-live-dashboard")
@@ -184,7 +185,8 @@ final class PullUpUITests: XCTestCase {
         let start = app.buttons["start-drive"]
         XCTAssertTrue(start.waitForExistence(timeout: 10))
         start.tap()
-        XCTAssertTrue(app.buttons["picker-add-vehicle"].waitForExistence(timeout: 5))
+        if !app.buttons["picker-add-vehicle"].waitForExistence(timeout: 5) { snap("debug-empty-picker") }
+        XCTAssertTrue(app.buttons["picker-add-vehicle"].exists)
         XCTAssertTrue(app.buttons["picker-start-guest"].exists)
         settle()
         snap("21-picker-empty-garage")

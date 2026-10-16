@@ -61,6 +61,7 @@ struct LiveDashboardView: View {
         } message: {
             Text("Nothing from this drive will be saved.")
         }
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("live-dashboard")
     }
 

@@ -322,9 +322,11 @@ public struct ClusterButtonStyle: ButtonStyle {
             .font(ClusterFont.headline())
             .textCase(.uppercase)
             .tracking(1.2)
+            .multilineTextAlignment(.center)
+            .minimumScaleFactor(0.8)
             .foregroundStyle(text)
             .padding(.vertical, Space.m + 2)
-            .padding(.horizontal, Space.xl)
+            .padding(.horizontal, Space.l)
             .frame(minHeight: 50)
             .background(ChamferedRectangle(cut: Radius.chamferSmall).fill(fill))
             .opacity(isEnabled ? (configuration.isPressed ? 0.85 : 1) : 0.4)
@@ -364,7 +366,11 @@ public struct SwitchBank<Value: Hashable & Identifiable>: View {
                         .font(ClusterFont.legend(.caption))
                         .textCase(.uppercase)
                         .tracking(1)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.6)
+                        .allowsTightening(true)
                         .foregroundStyle(selected ? ClusterColor.ink : ClusterColor.inkTertiary)
+                        .padding(.horizontal, 2)
                         .frame(maxWidth: .infinity, minHeight: 36)
                         .overlay(alignment: .bottom) {
                             if selected {
@@ -424,6 +430,7 @@ public struct ScreenTitle: View {
                 .foregroundStyle(ClusterColor.ink)
                 .accessibilityAddTraits(.isHeader)
         }
+        .padding(.top, Space.m)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
