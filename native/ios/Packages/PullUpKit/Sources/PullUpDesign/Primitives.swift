@@ -272,10 +272,10 @@ public struct LiveDot: View {
     }
 }
 
-/// Visibility icon + label, with the consequence available to VoiceOver.
+/// Audience icon + label, with the consequence available to VoiceOver.
 public struct VisibilityTag: View {
-    let visibility: Visibility
-    public init(_ visibility: Visibility) { self.visibility = visibility }
+    let visibility: Audience
+    public init(_ visibility: Audience) { self.visibility = visibility }
 
     public var body: some View {
         Label(visibility.label, systemImage: visibility.symbol)
@@ -287,7 +287,7 @@ public struct VisibilityTag: View {
     }
 }
 
-public extension Visibility {
+public extension Audience {
     var symbol: String {
         switch self {
         case .public: "globe"

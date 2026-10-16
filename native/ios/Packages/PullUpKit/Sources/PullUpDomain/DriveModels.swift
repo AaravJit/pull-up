@@ -199,11 +199,11 @@ public struct Drive: Codable, Hashable, Sendable, Identifiable {
     public var elevationLoss: Double
     public var zeroToSixtySeconds: Double?
     public var zeroToSixtyQuality: MeasurementQuality?
-    public var visibility: Visibility
+    public var visibility: Audience
     public var validationStatus: DriveValidationStatus
     public var hasSharedRoute: Bool
 
-    public init(id: UUID, ownerID: UserID, vehicleID: UUID?, title: String, summary: DriveSummary, visibility: Visibility = .private) {
+    public init(id: UUID, ownerID: UserID, vehicleID: UUID?, title: String, summary: DriveSummary, visibility: Audience = .private) {
         self.id = id
         self.ownerID = ownerID
         self.vehicleID = vehicleID

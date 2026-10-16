@@ -35,16 +35,13 @@ jobs:
       - name: Test package on simulator
         working-directory: native/ios/Packages/PullUpKit
         run: |
-          set -o pipefail
           SIM=$(../../scripts/simulator-id.sh)
-          xcodebuild test \
+          ../../scripts/xcodebuild-ci.sh test \
             -scheme PullUpKit-Package \
             -destination "id=$SIM" \
             -resultBundlePath "$RUNNER_TEMP/PullUpKit.xcresult" \
             -skipPackagePluginValidation \
-            CODE_SIGNING_ALLOWED=NO \
-            | tee "$RUNNER_TEMP/package.log" | xcbeautify --renderer github-actions || {
-              echo "::group::Last 200 lines of raw log"; tail -200 "$RUNNER_TEMP/package.log"; echo "::endgroup::"; exit 1; }
+            CODE_SIGNING_ALLOWED=NO
       - name: Upload results
         if: always()
         uses: actions/upload-artifact@v4
@@ -79,21 +76,18 @@ jobs:
         env:
           TEST_RUNNER_SCREENSHOT_DIR: ${{ runner.temp }}/screenshots
         run: |
-          set -o pipefail
           mkdir -p "$TEST_RUNNER_SCREENSHOT_DIR"
           SIM=$(./scripts/simulator-id.sh)
           xcrun simctl boot "$SIM" || true
           # Fixed status bar so screenshots are comparable run to run.
           xcrun simctl status_bar "$SIM" override --time 9:41 --batteryState charged --batteryLevel 100 --cellularBars 4 || true
-          xcodebuild test \
+          ./scripts/xcodebuild-ci.sh test \
             -project PullUp.xcodeproj \
             -scheme PullUp \
             -destination "id=$SIM" \
             -resultBundlePath "$RUNNER_TEMP/PullUp.xcresult" \
             -skipPackagePluginValidation \
-            CODE_SIGNING_ALLOWED=NO \
-            | tee "$RUNNER_TEMP/app.log" | xcbeautify --renderer github-actions || {
-              echo "::group::Last 300 lines of raw log"; tail -300 "$RUNNER_TEMP/app.log"; echo "::endgroup::"; exit 1; }
+            CODE_SIGNING_ALLOWED=NO
       - name: Upload screenshots
         if: always()
         uses: actions/upload-artifact@v4

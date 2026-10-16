@@ -15,7 +15,7 @@ public struct Post: Codable, Hashable, Sendable, Identifiable {
     public var vehicleID: UUID?
     public var meetID: UUID?
     public var driveID: UUID?
-    public var visibility: Visibility
+    public var visibility: Audience
     public var createdAt: Date
     public var likeCount: Int
     public var commentCount: Int
@@ -25,7 +25,7 @@ public struct Post: Codable, Hashable, Sendable, Identifiable {
 
     public init(
         id: UUID = UUID(), authorID: UserID, kind: Kind, caption: String, vehicleID: UUID? = nil,
-        meetID: UUID? = nil, driveID: UUID? = nil, visibility: Visibility, createdAt: Date = .now,
+        meetID: UUID? = nil, driveID: UUID? = nil, visibility: Audience, createdAt: Date = .now,
         likeCount: Int = 0, commentCount: Int = 0, likedByMe: Bool = false, media: [PostMedia] = [], author: ProfileStub? = nil
     ) {
         self.id = id
@@ -209,7 +209,7 @@ public struct Meet: Codable, Hashable, Sendable, Identifiable {
     public var address: String
     public var latitude: Double
     public var longitude: Double
-    public var visibility: Visibility
+    public var visibility: Audience
     public var capacity: Int?
     public var cancelledAt: Date?
     public var goingCount: Int
@@ -220,7 +220,7 @@ public struct Meet: Codable, Hashable, Sendable, Identifiable {
     public init(
         id: UUID = UUID(), hostID: UserID, title: String, details: String = "", kind: Kind, focus: Focus = .all,
         startsAt: Date, endsAt: Date, venueName: String, address: String = "", latitude: Double, longitude: Double,
-        visibility: Visibility = .public, capacity: Int? = nil, cancelledAt: Date? = nil,
+        visibility: Audience = .public, capacity: Int? = nil, cancelledAt: Date? = nil,
         goingCount: Int = 0, interestedCount: Int = 0, host: ProfileStub? = nil, myRSVP: RSVP? = nil
     ) {
         self.id = id
@@ -292,9 +292,9 @@ public struct RSVP: Codable, Hashable, Sendable {
 /// Every privacy switch the user controls. Defaults are the most private
 /// reasonable choice; the backend applies the same defaults.
 public struct PrivacySettings: Codable, Hashable, Sendable {
-    public var profileVisibility: Visibility
-    public var defaultVehicleVisibility: Visibility
-    public var driveHistoryVisibility: Visibility
+    public var profileVisibility: Audience
+    public var defaultVehicleVisibility: Audience
+    public var driveHistoryVisibility: Audience
     public var allowRouteSharing: Bool
     /// Extra distance cut from the start and end of every shared route.
     public var routeEndpointTrimMeters: Double
@@ -304,8 +304,8 @@ public struct PrivacySettings: Codable, Hashable, Sendable {
     public var requireFollowApproval: Bool
 
     public init(
-        profileVisibility: Visibility = .public, defaultVehicleVisibility: Visibility = .friends,
-        driveHistoryVisibility: Visibility = .private, allowRouteSharing: Bool = false,
+        profileVisibility: Audience = .public, defaultVehicleVisibility: Audience = .friends,
+        driveHistoryVisibility: Audience = .private, allowRouteSharing: Bool = false,
         routeEndpointTrimMeters: Double = 400, showEventAttendance: Bool = false,
         leaderboardOptIn: Bool = false, performanceLeaderboardOptIn: Bool = false, requireFollowApproval: Bool = false
     ) {

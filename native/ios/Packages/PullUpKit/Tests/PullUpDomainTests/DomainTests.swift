@@ -20,8 +20,8 @@ struct DomainTests {
     }
 
     @Test func visibilityOrdering() {
-        #expect(Visibility.private.openness < Visibility.friends.openness)
-        #expect(Visibility.friends.openness < Visibility.public.openness)
+        #expect(Audience.private.openness < Audience.friends.openness)
+        #expect(Audience.friends.openness < Audience.public.openness)
     }
 
     @Test func privacyDefaultsAreConservative() {

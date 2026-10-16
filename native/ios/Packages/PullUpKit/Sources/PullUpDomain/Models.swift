@@ -8,7 +8,7 @@ public typealias UserID = UUID
 
 /// Who may see a piece of content. Enforced by Postgres row-level security;
 /// the client only uses it to render controls and explain consequences.
-public enum Visibility: String, Codable, CaseIterable, Sendable, Identifiable {
+public enum Audience: String, Codable, CaseIterable, Sendable, Identifiable {
     case `public`
     case friends
     case `private`
@@ -59,14 +59,14 @@ public struct Profile: Codable, Hashable, Sendable, Identifiable {
     public var countryCode: String?
     public var regionCode: String?
     public var avatarPath: String?
-    public var visibility: Visibility
+    public var visibility: Audience
     /// Presentation choices the user makes for their own profile page.
     public var presentation: ProfilePresentation
 
     public init(
         id: UserID, username: String, displayName: String, bio: String = "",
         countryCode: String? = nil, regionCode: String? = nil, avatarPath: String? = nil,
-        visibility: Visibility = .public, presentation: ProfilePresentation = .init()
+        visibility: Audience = .public, presentation: ProfilePresentation = .init()
     ) {
         self.id = id
         self.username = username
@@ -164,7 +164,7 @@ public struct Vehicle: Codable, Hashable, Sendable, Identifiable {
     public var mileage: Int?
     public var mileageUnit: SpeedUnit
     public var summary: String
-    public var visibility: Visibility
+    public var visibility: Audience
     public var coverPhotoPath: String?
     /// Vehicle-specific identity: the colour used for this car's plate,
     /// gauge needle and garage tile. Stored as an accent identifier.
@@ -176,7 +176,7 @@ public struct Vehicle: Codable, Hashable, Sendable, Identifiable {
     public init(
         id: UUID = UUID(), ownerID: UserID, kind: VehicleKind, bodyStyle: BodyStyle? = nil, make: String, model: String, year: Int,
         trim: String = "", nickname: String = "", mileage: Int? = nil, mileageUnit: SpeedUnit = .mph,
-        summary: String = "", visibility: Visibility = .public, coverPhotoPath: String? = nil,
+        summary: String = "", visibility: Audience = .public, coverPhotoPath: String? = nil,
         identityColor: AccentChoice = .sodium, position: Int = 0, isArchived: Bool = false
     ) {
         self.id = id
