@@ -151,6 +151,8 @@ struct VehicleEditorView: View {
                             Text(style.label)
                                 .font(ClusterFont.legend(.caption2))
                                 .textCase(.uppercase)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.7)
                                 .foregroundStyle(selected ? ClusterColor.ink : ClusterColor.inkTertiary)
                         }
                         .padding(Space.s)

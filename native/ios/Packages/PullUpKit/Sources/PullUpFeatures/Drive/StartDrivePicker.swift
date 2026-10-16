@@ -433,7 +433,7 @@ struct VehicleChoiceRow: View {
                     Text(vehicle?.displayName ?? "Guest vehicle")
                         .font(ClusterFont.headline())
                         .foregroundStyle(ClusterColor.ink)
-                    Text(verbatim: vehicle.map { "\(String($0.year)) · \($0.kind.label)" } ?? "Not linked to a vehicle")
+                    Text(verbatim: vehicle.map { $0.nickname.isEmpty ? "\($0.kind.label) · \($0.bodyStyle.label)" : $0.title } ?? "Not linked to a vehicle")
                         .font(ClusterFont.body(.footnote))
                         .foregroundStyle(ClusterColor.inkSecondary)
                 }

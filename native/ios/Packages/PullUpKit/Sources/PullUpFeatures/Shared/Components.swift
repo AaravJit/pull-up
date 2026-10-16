@@ -224,6 +224,7 @@ struct MediaPickerLabel: View {
             if isLoading { ProgressView() } else { Image(systemName: symbol).font(.title2) }
             Legend(title)
         }
+        .padding(.horizontal, Space.xs)
         .frame(width: width, height: height)
         .plate(cut: cut)
     }
