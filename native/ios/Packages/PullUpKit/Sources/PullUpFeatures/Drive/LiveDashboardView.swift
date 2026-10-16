@@ -91,9 +91,9 @@ struct LiveDashboardView: View {
                     .font(ClusterFont.headline(.subheadline))
                     .foregroundStyle(ClusterColor.ink)
                     .lineLimit(1)
-                    .accessibilityIdentifier("live-vehicle-name")
             }
             .accessibilityElement(children: .combine)
+            .accessibilityIdentifier("live-vehicle-name")
 
             Spacer(minLength: Space.s)
 

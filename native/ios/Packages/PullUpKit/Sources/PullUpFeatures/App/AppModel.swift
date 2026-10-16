@@ -144,55 +144,54 @@ public final class AppModel {
 /// clear message; the UI shows the setup screen instead of fake content.
 final class UnconfiguredBackend: BackendService, Sendable {
     var mode: BackendMode { .unconfigured }
-    private func fail<T>() throws -> T { throw BackendError.notConfigured }
 
     func currentUserID() async -> UserID? { nil }
     func authChanges() -> AsyncStream<UserID?> { AsyncStream { $0.finish() } }
-    func signIn(email: String, password: String) async throws { try fail() }
-    func signUp(email: String, password: String, username: String) async throws -> SignUpOutcome { try fail() }
-    func signInWithApple(idToken: String, nonce: String) async throws { try fail() }
+    func signIn(email: String, password: String) async throws { throw BackendError.notConfigured }
+    func signUp(email: String, password: String, username: String) async throws -> SignUpOutcome { throw BackendError.notConfigured }
+    func signInWithApple(idToken: String, nonce: String) async throws { throw BackendError.notConfigured }
     func signOut() async throws {}
-    func deleteAccount() async throws { try fail() }
-    func profilePage(_ id: UserID) async throws -> ProfilePage { try fail() }
-    func updateProfile(_ update: ProfileUpdate) async throws { try fail() }
-    func follow(_ id: UserID) async throws { try fail() }
-    func unfollow(_ id: UserID) async throws { try fail() }
-    func searchProfiles(_ query: String) async throws -> [ProfileStub] { try fail() }
-    func privacySettings() async throws -> PrivacySettings { try fail() }
-    func updatePrivacySettings(_ settings: PrivacySettings) async throws { try fail() }
-    func privacyZones() async throws -> [PrivacyZone] { try fail() }
-    func addPrivacyZone(_ zone: PrivacyZone) async throws { try fail() }
-    func deletePrivacyZone(_ id: UUID) async throws { try fail() }
-    func vehicles(owner: UserID) async throws -> [Vehicle] { try fail() }
-    func saveVehicle(_ vehicle: Vehicle) async throws -> Vehicle { try fail() }
-    func deleteVehicle(_ id: UUID) async throws { try fail() }
-    func modifications(vehicle: UUID) async throws -> [VehicleModification] { try fail() }
-    func saveModification(_ mod: VehicleModification) async throws { try fail() }
-    func deleteModification(_ id: UUID) async throws { try fail() }
-    func photos(vehicle: UUID) async throws -> [VehiclePhoto] { try fail() }
-    func addPhoto(vehicle: Vehicle, jpegData: Data) async throws -> VehiclePhoto { try fail() }
-    func drives(owner: UserID, limit: Int) async throws -> [Drive] { try fail() }
-    func upload(drive: Drive, track: [LocationSample]) async throws -> Drive { try fail() }
-    func updateDrive(_ id: UUID, title: String, audience: Audience) async throws { try fail() }
-    func deleteDrive(_ id: UUID) async throws { try fail() }
-    func ownTrack(drive: UUID) async throws -> [LocationSample] { try fail() }
-    func sharedRoute(drive: UUID) async throws -> [[Coordinate]]? { try fail() }
-    func shareRoute(drive: UUID) async throws -> [[Coordinate]] { try fail() }
-    func unshareRoute(drive: UUID) async throws { try fail() }
-    func feed(_ scope: FeedScope, before: Date?) async throws -> [Post] { try fail() }
-    func createPost(_ post: NewPost) async throws -> Post { try fail() }
-    func setLiked(_ liked: Bool, post: UUID) async throws { try fail() }
-    func comments(post: UUID) async throws -> [Comment] { try fail() }
-    func addComment(_ body: String, post: UUID) async throws -> Comment { try fail() }
-    func deletePost(_ id: UUID) async throws { try fail() }
-    func meets(from: Date) async throws -> [Meet] { try fail() }
-    func createMeet(_ meet: Meet) async throws -> Meet { try fail() }
-    func cancelMeet(_ id: UUID) async throws { try fail() }
-    func setRSVP(_ rsvp: RSVP?, meet: UUID) async throws { try fail() }
-    func attendees(meet: UUID) async throws -> [ProfileStub] { try fail() }
-    func leaderboard(_ query: LeaderboardQuery) async throws -> [LeaderboardEntry] { try fail() }
-    func notifications() async throws -> [AppNotification] { try fail() }
-    func markNotificationsRead() async throws { try fail() }
+    func deleteAccount() async throws { throw BackendError.notConfigured }
+    func profilePage(_ id: UserID) async throws -> ProfilePage { throw BackendError.notConfigured }
+    func updateProfile(_ update: ProfileUpdate) async throws { throw BackendError.notConfigured }
+    func follow(_ id: UserID) async throws { throw BackendError.notConfigured }
+    func unfollow(_ id: UserID) async throws { throw BackendError.notConfigured }
+    func searchProfiles(_ query: String) async throws -> [ProfileStub] { throw BackendError.notConfigured }
+    func privacySettings() async throws -> PrivacySettings { throw BackendError.notConfigured }
+    func updatePrivacySettings(_ settings: PrivacySettings) async throws { throw BackendError.notConfigured }
+    func privacyZones() async throws -> [PrivacyZone] { throw BackendError.notConfigured }
+    func addPrivacyZone(_ zone: PrivacyZone) async throws { throw BackendError.notConfigured }
+    func deletePrivacyZone(_ id: UUID) async throws { throw BackendError.notConfigured }
+    func vehicles(owner: UserID) async throws -> [Vehicle] { throw BackendError.notConfigured }
+    func saveVehicle(_ vehicle: Vehicle) async throws -> Vehicle { throw BackendError.notConfigured }
+    func deleteVehicle(_ id: UUID) async throws { throw BackendError.notConfigured }
+    func modifications(vehicle: UUID) async throws -> [VehicleModification] { throw BackendError.notConfigured }
+    func saveModification(_ mod: VehicleModification) async throws { throw BackendError.notConfigured }
+    func deleteModification(_ id: UUID) async throws { throw BackendError.notConfigured }
+    func photos(vehicle: UUID) async throws -> [VehiclePhoto] { throw BackendError.notConfigured }
+    func addPhoto(vehicle: Vehicle, jpegData: Data) async throws -> VehiclePhoto { throw BackendError.notConfigured }
+    func drives(owner: UserID, limit: Int) async throws -> [Drive] { throw BackendError.notConfigured }
+    func upload(drive: Drive, track: [LocationSample]) async throws -> Drive { throw BackendError.notConfigured }
+    func updateDrive(_ id: UUID, title: String, audience: Audience) async throws { throw BackendError.notConfigured }
+    func deleteDrive(_ id: UUID) async throws { throw BackendError.notConfigured }
+    func ownTrack(drive: UUID) async throws -> [LocationSample] { throw BackendError.notConfigured }
+    func sharedRoute(drive: UUID) async throws -> [[Coordinate]]? { throw BackendError.notConfigured }
+    func shareRoute(drive: UUID) async throws -> [[Coordinate]] { throw BackendError.notConfigured }
+    func unshareRoute(drive: UUID) async throws { throw BackendError.notConfigured }
+    func feed(_ scope: FeedScope, before: Date?) async throws -> [Post] { throw BackendError.notConfigured }
+    func createPost(_ post: NewPost) async throws -> Post { throw BackendError.notConfigured }
+    func setLiked(_ liked: Bool, post: UUID) async throws { throw BackendError.notConfigured }
+    func comments(post: UUID) async throws -> [Comment] { throw BackendError.notConfigured }
+    func addComment(_ body: String, post: UUID) async throws -> Comment { throw BackendError.notConfigured }
+    func deletePost(_ id: UUID) async throws { throw BackendError.notConfigured }
+    func meets(from: Date) async throws -> [Meet] { throw BackendError.notConfigured }
+    func createMeet(_ meet: Meet) async throws -> Meet { throw BackendError.notConfigured }
+    func cancelMeet(_ id: UUID) async throws { throw BackendError.notConfigured }
+    func setRSVP(_ rsvp: RSVP?, meet: UUID) async throws { throw BackendError.notConfigured }
+    func attendees(meet: UUID) async throws -> [ProfileStub] { throw BackendError.notConfigured }
+    func leaderboard(_ query: LeaderboardQuery) async throws -> [LeaderboardEntry] { throw BackendError.notConfigured }
+    func notifications() async throws -> [AppNotification] { throw BackendError.notConfigured }
+    func markNotificationsRead() async throws { throw BackendError.notConfigured }
     func registerPushToken(_ token: String, sandbox: Bool) async throws {}
     func mediaURL(_ bucket: MediaBucket, path: String) async -> URL? { nil }
 }

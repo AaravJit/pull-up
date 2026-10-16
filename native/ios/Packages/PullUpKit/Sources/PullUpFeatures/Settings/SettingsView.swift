@@ -175,6 +175,7 @@ struct SettingsView: View {
     private var account: some View {
         VStack(alignment: .leading, spacing: Space.m) {
             SectionHeader("Account")
+            NotificationSettingsRow()
             if let accountError { ErrorLine(message: accountError) }
             Button("Sign out") { Task { await app.signOut() } }
                 .buttonStyle(.clusterSecondary)

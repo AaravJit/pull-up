@@ -1,0 +1,19 @@
+// Build settings shared by every configuration. Everything here is safe to
+// commit. Credentials and per-developer values go in Secrets.xcconfig, which
+// is gitignored; copy Secrets.example.xcconfig to create it. CI writes the
+// same file from repository secrets.
+
+PULLUP_BUNDLE_ID = app.pullup.ios
+PULLUP_TEAM_ID =
+
+// Supabase project host WITHOUT the scheme (xcconfig treats "//" as a
+// comment), e.g. abcd1234.supabase.co. Empty = the app shows "Server not
+// configured" and offers labelled demo data.
+PULLUP_SUPABASE_HOST =
+PULLUP_SUPABASE_ANON_KEY =
+
+// Swap to PullUp/PullUp-CarPlay.entitlements once Apple grants the CarPlay
+// Driving Task entitlement (see docs/CARPLAY.md).
+PULLUP_ENTITLEMENTS = PullUp/PullUp.entitlements
+
+#include? "Secrets.xcconfig"
