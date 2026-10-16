@@ -17,9 +17,13 @@ alone. Items are in the order they unblock each other.
 - [ ] Run `supabase test db` against a staging project (the same pgTAP
       suite CI runs).
 - [ ] Deploy edge functions: `supabase functions deploy delete-account send-push`.
+- [ ] Generate a random push webhook secret (`openssl rand -hex 32`) and
+      set it: `supabase secrets set PUSH_WEBHOOK_SECRET=<value>`.
 - [ ] Database ▸ Webhooks: on INSERT into `public.notifications`, call the
-      `send-push` function. Without it, notifications still appear in the
-      app's bell; they just aren't pushed.
+      `send-push` function with the HTTP header
+      `x-pullup-webhook-secret: <same value>`. Requests without it are
+      rejected. Without the webhook, notifications still appear in the app's
+      bell; they just aren't pushed.
 - [ ] Auth ▸ Providers: enable Email (decide whether to require
       confirmation; the app handles both) and Apple (see 3).
 - [ ] Auth ▸ URL configuration: add `pullup://auth-callback` as a redirect URL
