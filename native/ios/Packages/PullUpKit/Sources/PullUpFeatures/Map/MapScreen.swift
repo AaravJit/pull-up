@@ -10,10 +10,10 @@ import PullUpDomain
 public struct MapScreen: View {
     @Environment(AppModel.self) private var app
     @Environment(\.clusterTheme) private var theme
-    /// `.automatic` frames whatever the map contains when it is created, so
-    /// the map is only inserted once content has loaded, and recreated when
-    /// the layer changes. (An explicit region set before the tab had a size
-    /// came out as the whole coast.)
+    /// Both `.automatic` and an explicit region depend on the map's size and
+    /// insets, and in a tab they came out at world or coast zoom. A camera
+    /// (centre plus distance) doesn't, so the map is framed with one, after
+    /// its content has loaded.
     @State private var position: MapCameraPosition = .automatic
     @State private var didLoad = false
     @State private var meets: [Meet] = []
@@ -53,9 +53,10 @@ public struct MapScreen: View {
             .navigationDestination(item: $openMeet) { meet in MeetDetailView(meetID: meet.id, initial: meet) }
             .task {
                 await load()
+                frameContent()
                 didLoad = true
             }
-            .onChange(of: layer) { _, _ in position = .automatic }
+            .onChange(of: layer) { _, _ in withAnimation(Motion.sheet) { frameContent() } }
         }
     }
 
@@ -86,8 +87,6 @@ public struct MapScreen: View {
                 position = .region(MKCoordinateRegion(center: meet.coordinate.clLocation, span: MKCoordinateSpan(latitudeDelta: 0.15, longitudeDelta: 0.15)))
             }
         }
-        // Keeps automatic framing clear of the floating header.
-        .safeAreaPadding(.top, 190)
         .ignoresSafeArea(edges: .top)
         .accessibilityIdentifier("map")
     }
@@ -148,6 +147,23 @@ public struct MapScreen: View {
             }
         }
         routes = loaded
+    }
+
+    /// Frames the visible layer's content (venues or your routes), never the
+    /// device's location.
+    private func frameContent() {
+        let points: [Coordinate] = layer == .meets ? meets.map(\.coordinate) : routes.flatMap(\.coordinates)
+        guard !points.isEmpty else { return }
+        let lats = points.map(\.latitude), lons = points.map(\.longitude)
+        let latSpan = (lats.max()! - lats.min()!), lonSpan = (lons.max()! - lons.min()!)
+        // Metres to fit the larger span on a phone-shaped map, with room for the
+        // header above and the meet strip below.
+        let meters = max(6_000, max(latSpan * 111_000, lonSpan * 87_000) * 3.2)
+        let center = CLLocationCoordinate2D(
+            latitude: (lats.max()! + lats.min()!) / 2 + latSpan * 0.25,
+            longitude: (lons.max()! + lons.min()!) / 2
+        )
+        position = .camera(MapCamera(centerCoordinate: center, distance: meters))
     }
 }
 
