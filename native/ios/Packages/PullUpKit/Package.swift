@@ -46,6 +46,10 @@ let package = Package(
         .testTarget(name: "PullUpDomainTests", dependencies: ["PullUpDomain"]),
         .testTarget(name: "PullUpTelemetryTests", dependencies: ["PullUpTelemetry"]),
         .testTarget(name: "PullUpDataTests", dependencies: ["PullUpData"]),
+        .testTarget(
+            name: "PullUpFeaturesTests",
+            dependencies: ["PullUpFeatures", "PullUpData", "PullUpLocation", "PullUpDomain", "PullUpTelemetry"]
+        ),
     ],
     swiftLanguageModes: [.v6]
 )
