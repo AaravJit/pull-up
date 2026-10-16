@@ -10,10 +10,12 @@ import PullUpDomain
 public struct MapScreen: View {
     @Environment(AppModel.self) private var app
     @Environment(\.clusterTheme) private var theme
-    /// `.automatic` frames whatever the map contains: venues or your routes.
-    /// An explicit region set before the tab has a size is applied to a
-    /// zero-sized map and comes out wrong.
+    /// `.automatic` frames whatever the map contains when it is created, so
+    /// the map is only inserted once content has loaded, and recreated when
+    /// the layer changes. (An explicit region set before the tab had a size
+    /// came out as the whole coast.)
     @State private var position: MapCameraPosition = .automatic
+    @State private var didLoad = false
     @State private var meets: [Meet] = []
     @State private var routes: [RouteLine] = []
     @State private var layer: Layer = .meets
@@ -32,7 +34,11 @@ public struct MapScreen: View {
     public var body: some View {
         NavigationStack {
             ZStack(alignment: .top) {
-                map
+                if didLoad {
+                    map.id(layer)
+                } else {
+                    ClusterColor.canvas.ignoresSafeArea()
+                }
                 VStack(spacing: Space.s) {
                     header
                     if let error { ErrorLine(message: error) { Task { await load() } } }
@@ -45,7 +51,11 @@ public struct MapScreen: View {
             }
             .toolbar(.hidden, for: .navigationBar)
             .navigationDestination(item: $openMeet) { meet in MeetDetailView(meetID: meet.id, initial: meet) }
-            .task { await load() }
+            .task {
+                await load()
+                didLoad = true
+            }
+            .onChange(of: layer) { _, _ in position = .automatic }
         }
     }
 
@@ -75,9 +85,6 @@ public struct MapScreen: View {
             withAnimation(Motion.sheet) {
                 position = .region(MKCoordinateRegion(center: meet.coordinate.clLocation, span: MKCoordinateSpan(latitudeDelta: 0.15, longitudeDelta: 0.15)))
             }
-        }
-        .onChange(of: layer) { _, _ in
-            withAnimation(Motion.sheet) { frameContent() }
         }
         // Keeps automatic framing clear of the floating header.
         .safeAreaPadding(.top, 190)
@@ -130,7 +137,6 @@ public struct MapScreen: View {
         do {
             meets = try await app.backend.meets(from: .now).filter { !$0.isCancelled }
             error = nil
-            frameContent()
         } catch {
             self.error = error.localizedDescription
         }
@@ -142,13 +148,6 @@ public struct MapScreen: View {
             }
         }
         routes = loaded
-        frameContent()
-    }
-
-    /// Re-frames the camera to the visible layer's content, never to the
-    /// device's location (the map has no user annotation).
-    private func frameContent() {
-        position = .automatic
     }
 }
 
