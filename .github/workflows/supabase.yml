@@ -1,0 +1,47 @@
+name: Backend
+
+on:
+  push:
+    branches: [main, "claude/**"]
+    paths: ["supabase/**", ".github/workflows/supabase.yml"]
+  pull_request:
+    paths: ["supabase/**", ".github/workflows/supabase.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  database:
+    name: Migrations, rollbacks and RLS tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      - name: Start local Supabase (applies every migration)
+        run: supabase db start
+      - name: Row-level security and validation tests (pgTAP)
+        run: supabase test db
+      - name: Lint schema
+        run: supabase db lint --level warning --fail-on error
+      - name: Rollbacks apply cleanly in reverse order
+        env:
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          for f in $(ls supabase/rollback/*.sql | sort -r); do
+            echo "Applying $f"
+            psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" -v ON_ERROR_STOP=1 -q -f "$f"
+          done
+          echo "Re-applying migrations after rollback"
+          for f in $(ls supabase/migrations/*.sql | sort); do
+            psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" -v ON_ERROR_STOP=1 -q -f "$f"
+          done
+      - name: Edge function type-check
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - run: deno check supabase/functions/*/index.ts

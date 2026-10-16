@@ -1,0 +1,133 @@
+name: iOS
+
+on:
+  push:
+    branches: [main, "claude/**"]
+    paths: ["ios/**", ".github/workflows/ios.yml"]
+  pull_request:
+    paths: ["ios/**", ".github/workflows/ios.yml"]
+  workflow_dispatch:
+
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    name: PullUpKit tests
+    runs-on: macos-26
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+      - name: Toolchain
+        run: xcodebuild -version && swift --version
+      - name: Cache SwiftPM
+        uses: actions/cache@v4
+        with:
+          path: ~/Library/Caches/org.swift.swiftpm
+          key: spm-${{ runner.os }}-${{ hashFiles('ios/Packages/PullUpKit/Package.resolved', 'ios/Packages/PullUpKit/Package.swift') }}
+      - name: Test package on simulator
+        working-directory: ios/Packages/PullUpKit
+        run: |
+          set -o pipefail
+          SIM=$(../../scripts/simulator-id.sh)
+          xcodebuild test \
+            -scheme PullUpKit-Package \
+            -destination "id=$SIM" \
+            -resultBundlePath "$RUNNER_TEMP/PullUpKit.xcresult" \
+            -skipPackagePluginValidation \
+            CODE_SIGNING_ALLOWED=NO \
+            | tee "$RUNNER_TEMP/package.log" | xcbeautify --renderer github-actions || {
+              echo "::group::Last 200 lines of raw log"; tail -200 "$RUNNER_TEMP/package.log"; echo "::endgroup::"; exit 1; }
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: PullUpKit-xcresult
+          path: ${{ runner.temp }}/PullUpKit.xcresult
+          if-no-files-found: ignore
+
+  app:
+    name: App build, UI tests, screenshots
+    runs-on: macos-26
+    timeout-minutes: 60
+    permissions:
+      contents: write # pushes screenshots to the ci/screenshots branch
+    steps:
+      - uses: actions/checkout@v4
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Cache SwiftPM
+        uses: actions/cache@v4
+        with:
+          path: ~/Library/Developer/Xcode/DerivedData/**/SourcePackages
+          key: spm-app-${{ runner.os }}-${{ hashFiles('ios/Packages/PullUpKit/Package.swift', 'ios/project.yml') }}
+      - name: Generate project
+        working-directory: ios
+        run: xcodegen generate
+      - name: Build and run UI tests
+        working-directory: ios
+        env:
+          TEST_RUNNER_SCREENSHOT_DIR: ${{ runner.temp }}/screenshots
+        run: |
+          set -o pipefail
+          mkdir -p "$TEST_RUNNER_SCREENSHOT_DIR"
+          SIM=$(./scripts/simulator-id.sh)
+          xcrun simctl boot "$SIM" || true
+          # Fixed status bar so screenshots are comparable run to run.
+          xcrun simctl status_bar "$SIM" override --time 9:41 --batteryState charged --batteryLevel 100 --cellularBars 4 || true
+          xcodebuild test \
+            -project PullUp.xcodeproj \
+            -scheme PullUp \
+            -destination "id=$SIM" \
+            -resultBundlePath "$RUNNER_TEMP/PullUp.xcresult" \
+            -skipPackagePluginValidation \
+            CODE_SIGNING_ALLOWED=NO \
+            | tee "$RUNNER_TEMP/app.log" | xcbeautify --renderer github-actions || {
+              echo "::group::Last 300 lines of raw log"; tail -300 "$RUNNER_TEMP/app.log"; echo "::endgroup::"; exit 1; }
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots
+          path: ${{ runner.temp }}/screenshots
+          if-no-files-found: ignore
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: PullUp-xcresult
+          path: ${{ runner.temp }}/PullUp.xcresult
+          if-no-files-found: ignore
+      - name: Publish screenshots to ci/screenshots branch
+        # Lets reviewers (and the agent building this app without a Mac) look
+        # at real simulator renders without downloading artifacts.
+        if: always() && github.event_name != 'pull_request'
+        env:
+          SHOTS: ${{ runner.temp }}/screenshots
+        run: |
+          [ -n "$(ls -A "$SHOTS" 2>/dev/null)" ] || { echo "No screenshots"; exit 0; }
+          BRANCH="ci/screenshots"
+          DIR="${GITHUB_REF_NAME//\//-}"
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          WORK="$RUNNER_TEMP/shots-repo"
+          git clone --depth 1 --branch "$BRANCH" "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" "$WORK" 2>/dev/null || {
+            git init "$WORK"; cd "$WORK"; git checkout --orphan "$BRANCH"
+            git remote add origin "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git"; cd -; }
+          rm -rf "$WORK/$DIR"; mkdir -p "$WORK/$DIR"
+          cp "$SHOTS"/*.png "$WORK/$DIR/"
+          echo "${GITHUB_SHA}" > "$WORK/$DIR/COMMIT"
+          cd "$WORK"
+          git add -A
+          git commit -m "Screenshots for ${GITHUB_REF_NAME} @ ${GITHUB_SHA::7}" || exit 0
+          git push origin "HEAD:$BRANCH"

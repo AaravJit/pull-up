@@ -39,3 +39,12 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+
+# Native iOS
+ios/PullUp.xcodeproj/
+ios/**/xcuserdata/
+ios/**/.build/
+ios/**/.swiftpm/
+ios/Config/Secrets.xcconfig
+*.xcresult
+DerivedData/
