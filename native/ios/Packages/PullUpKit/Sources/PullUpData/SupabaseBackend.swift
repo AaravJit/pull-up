@@ -447,11 +447,187 @@ public final class SupabaseBackend: BackendService, @unchecked Sendable {
         )).execute().value
     }
 
+    // MARK: Messages
+
+    static let messageColumns = "id, conversation_id, sender_id, body, media_path, media_width, media_height, shared_kind, shared_id, created_at, unsent_at, reactions:message_reactions(user_id, emoji)"
+
+    private static func timestamp(_ date: Date) -> String {
+        date.ISO8601Format(.iso8601WithTimeZone(includingFractionalSeconds: true))
+    }
+
+    public func startConversation(with user: UserID) async throws -> UUID {
+        do {
+            return try await client.rpc("start_conversation", params: ["p_user": user.uuidString]).execute().value
+        } catch let error as PostgrestError {
+            throw BackendError.server(Self.messagingMessage(error))
+        }
+    }
+
+    public func inbox(_ state: ConversationState, before: Date?) async throws -> [InboxEntry] {
+        struct Params: Encodable { let p_state: String; let p_before: String?; let p_limit: Int }
+        return try await client.rpc("inbox", params: Params(p_state: state.rawValue, p_before: before.map(Self.timestamp), p_limit: 30))
+            .execute().value
+    }
+
+    public func messages(conversation: UUID, before: Date?, limit: Int) async throws -> [DirectMessage] {
+        var query = client.from("messages").select(Self.messageColumns).eq("conversation_id", value: conversation)
+        if let before { query = query.lt("created_at", value: Self.timestamp(before)) }
+        let page: [DirectMessage] = try await query.order("created_at", ascending: false).limit(limit).execute().value
+        return page.reversed()
+    }
+
+    public func send(_ message: OutgoingMessage) async throws -> DirectMessage {
+        let me = try await uid()
+        var mediaPath: String?
+        if let photo = message.photo {
+            // dm-media/<conversation>/<sender>/<message>.jpg; the storage policy
+            // and the message trigger both insist on this layout. Re-sending
+            // after a failure overwrites the same file.
+            let path = "\(message.conversationID.uuidString.lowercased())/\(me.uuidString.lowercased())/\(message.id.uuidString.lowercased()).jpg"
+            try await client.storage.from(MediaBucket.dmMedia.rawValue)
+                .upload(path, data: photo.jpegData, options: FileOptions(cacheControl: "31536000", contentType: "image/jpeg", upsert: true))
+            mediaPath = path
+        }
+        struct Row: Encodable {
+            let id: UUID; let conversation_id: UUID; let sender_id: UUID; let body: String
+            let media_path: String?; let media_width: Int?; let media_height: Int?
+            let shared_kind: SharedKind?; let shared_id: UUID?
+        }
+        let row = Row(
+            id: message.id, conversation_id: message.conversationID, sender_id: me, body: MessageRules.trimmed(message.body),
+            media_path: mediaPath, media_width: message.photo?.width, media_height: message.photo?.height,
+            shared_kind: message.shared?.kind, shared_id: message.shared?.id
+        )
+        do {
+            // ON CONFLICT DO NOTHING: a retry after a lost response is a no-op.
+            try await client.from("messages").upsert(row, onConflict: "id", ignoreDuplicates: true).execute()
+        } catch let error as PostgrestError {
+            throw BackendError.server(Self.messagingMessage(error))
+        }
+        return try await client.from("messages").select(Self.messageColumns).eq("id", value: message.id).single().execute().value
+    }
+
+    public func setReaction(_ emoji: String?, message: UUID) async throws {
+        let me = try await uid()
+        if let emoji {
+            try await client.from("message_reactions")
+                .upsert(["message_id": message.uuidString, "user_id": me.uuidString, "emoji": emoji], onConflict: "message_id,user_id")
+                .execute()
+        } else {
+            try await client.from("message_reactions").delete().eq("message_id", value: message).eq("user_id", value: me).execute()
+        }
+    }
+
+    public func unsend(message: UUID) async throws {
+        try await client.rpc("unsend_message", params: ["p_message": message.uuidString]).execute()
+    }
+
+    public func markRead(conversation: UUID) async throws {
+        try await client.rpc("mark_conversation_read", params: ["p_conversation": conversation.uuidString]).execute()
+    }
+
+    public func respondToRequest(conversation: UUID, accept: Bool) async throws {
+        struct Params: Encodable { let p_conversation: UUID; let p_accept: Bool }
+        try await client.rpc("respond_to_request", params: Params(p_conversation: conversation, p_accept: accept)).execute()
+    }
+
+    public func setMuted(_ muted: Bool, conversation: UUID) async throws {
+        struct Params: Encodable { let p_conversation: UUID; let p_muted: Bool }
+        try await client.rpc("set_conversation_muted", params: Params(p_conversation: conversation, p_muted: muted)).execute()
+    }
+
+    public func hideConversation(_ id: UUID, clearHistory: Bool) async throws {
+        struct Params: Encodable { let p_conversation: UUID; let p_clear: Bool }
+        try await client.rpc("hide_conversation", params: Params(p_conversation: id, p_clear: clearHistory)).execute()
+    }
+
+    public func peerReadAt(conversation: UUID) async throws -> Date? {
+        try await client.rpc("peer_read_at", params: ["p_conversation": conversation.uuidString]).execute().value
+    }
+
+    public func unreadMessages() async throws -> UnreadMessages {
+        let rows: [UnreadMessages] = try await client.rpc("unread_message_counts").execute().value
+        return rows.first ?? UnreadMessages()
+    }
+
+    public func sharedPreview(_ ref: SharedRef) async throws -> SharedPreview {
+        struct Params: Encodable { let p_kind: String; let p_id: UUID }
+        return try await client.rpc("shared_preview", params: Params(p_kind: ref.kind.rawValue, p_id: ref.id)).execute().value
+    }
+
+    public func report(user: UserID, reason: ReportReason, details: String, message: UUID?) async throws {
+        struct Params: Encodable { let p_subject: UUID; let p_reason: String; let p_details: String; let p_message: UUID? }
+        do {
+            try await client.rpc("report_user", params: Params(p_subject: user, p_reason: reason.rawValue, p_details: details, p_message: message)).execute()
+        } catch let error as PostgrestError {
+            throw BackendError.server(Self.messagingMessage(error))
+        }
+    }
+
+    public func block(_ user: UserID) async throws {
+        let me = try await uid()
+        try await client.from("blocks")
+            .upsert(["blocker_id": me.uuidString, "blocked_id": user.uuidString], onConflict: "blocker_id,blocked_id", ignoreDuplicates: true)
+            .execute()
+    }
+
+    public func messagingChanges() -> AsyncStream<MessagingChange> {
+        let client = client
+        return AsyncStream { continuation in
+            let task = Task {
+                // Postgres Changes applies the tables' select policies, so this
+                // channel only ever carries rows the person could read anyway.
+                let channel = client.channel("dm-\(UUID().uuidString.lowercased())")
+                let messages = channel.postgresChange(AnyAction.self, schema: "public", table: "messages")
+                let reactions = channel.postgresChange(AnyAction.self, schema: "public", table: "message_reactions")
+                do {
+                    try await channel.subscribeWithError()
+                } catch {
+                    continuation.finish()
+                    return
+                }
+                await withTaskGroup(of: Void.self) { group in
+                    group.addTask {
+                        for await action in messages {
+                            continuation.yield(MessagingChange(conversationID: conversationID(of: action)))
+                        }
+                    }
+                    group.addTask {
+                        for await _ in reactions { continuation.yield(MessagingChange(conversationID: nil)) }
+                    }
+                }
+                await client.removeChannel(channel)
+                continuation.finish()
+            }
+            continuation.onTermination = { _ in task.cancel() }
+        }
+    }
+
+    /// Server refusals for messaging, in the app's words. The server already
+    /// keeps them uniform; this only drops Postgres phrasing.
+    static func messagingMessage(_ error: PostgrestError) -> String {
+        switch error.code {
+        case "54000":
+            return error.message.contains("accept") ? "Wait for them to accept your request before sending more." : "You're sending a lot right now. Try again in a minute."
+        case "42501":
+            if error.message.contains("paused") { return "Messaging is paused on your account." }
+            if error.message.contains("share") { return "You can't share that." }
+            if error.message.contains("report") { return "That can't be reported." }
+            return "You can't message this person."
+        case "23514":
+            return "Messages can be up to \(MessageRules.maxLength) characters."
+        default:
+            return error.message
+        }
+    }
+
     // MARK: Notifications
 
     public func notifications() async throws -> [AppNotification] {
+        // Message notifications are shown in the Messages inbox instead.
         try await client.from("notifications")
             .select("id, kind, post_id, meet_id, drive_id, created_at, read_at, actor:profiles!notifications_actor_id_fkey(id, username, display_name, avatar_path)")
+            .neq("kind", value: "message").neq("kind", value: "message_request")
             .order("created_at", ascending: false).limit(100).execute().value
     }
 
@@ -481,6 +657,14 @@ public final class SupabaseBackend: BackendService, @unchecked Sendable {
 
 // MARK: - Rows
 
+private func conversationID(of action: AnyAction) -> UUID? {
+    switch action {
+    case let .insert(insert): insert.record["conversation_id"]?.stringValue.flatMap(UUID.init(uuidString:))
+    case let .update(update): update.record["conversation_id"]?.stringValue.flatMap(UUID.init(uuidString:))
+    case .delete: nil
+    }
+}
+
 private struct IDRow: Decodable { let drive_id: UUID }
 private struct StartRow: Decodable { let started_at: Date }
 private struct FolloweeRow: Decodable { let followee_id: UUID }
@@ -495,6 +679,8 @@ private struct PrivacySettingsRow: Codable {
     let leaderboard_opt_in: Bool
     let performance_leaderboard_opt_in: Bool
     let require_follow_approval: Bool
+    let messages_from: MessagesFrom
+    let dm_read_receipts: Bool
 
     init(_ s: PrivacySettings) {
         default_vehicle_visibility = s.defaultVehicleVisibility
@@ -505,6 +691,8 @@ private struct PrivacySettingsRow: Codable {
         leaderboard_opt_in = s.leaderboardOptIn
         performance_leaderboard_opt_in = s.performanceLeaderboardOptIn
         require_follow_approval = s.requireFollowApproval
+        messages_from = s.messagesFrom
+        dm_read_receipts = s.dmReadReceipts
     }
 
     var settings: PrivacySettings {
@@ -512,7 +700,8 @@ private struct PrivacySettingsRow: Codable {
             defaultVehicleVisibility: default_vehicle_visibility, driveHistoryVisibility: drive_history_visibility,
             allowRouteSharing: allow_route_sharing, routeEndpointTrimMeters: Double(route_endpoint_trim_m),
             showEventAttendance: show_event_attendance, leaderboardOptIn: leaderboard_opt_in,
-            performanceLeaderboardOptIn: performance_leaderboard_opt_in, requireFollowApproval: require_follow_approval
+            performanceLeaderboardOptIn: performance_leaderboard_opt_in, requireFollowApproval: require_follow_approval,
+            messagesFrom: messages_from, dmReadReceipts: dm_read_receipts
         )
     }
 }

@@ -29,6 +29,11 @@ public final class AppModel {
     public let options: LaunchOptions
     public var selectedTab: MainTab = .drive
     public private(set) var unreadNotifications = 0
+    /// Badge counts for the Messages button.
+    public private(set) var unreadMessages = UnreadMessages()
+    /// Bumped on every realtime change in the person's conversations, so open
+    /// message screens can refresh without each holding a connection.
+    private(set) var messagingPulse = MessagingPulse()
     /// The signed-in person's own account (username, sign-in methods).
     public private(set) var account: AccountState?
     /// Shown once on the sign-in screen after the app signed someone out on
@@ -51,6 +56,7 @@ public final class AppModel {
     public var isDemo: Bool { backend.mode == .demo }
 
     private var authTask: Task<Void, Never>?
+    private var messagingTask: Task<Void, Never>?
 
     public convenience init(options: LaunchOptions = .fromProcess()) {
         self.init(options: options, appleCredentials: SystemAppleCredentials())
@@ -152,6 +158,9 @@ public final class AppModel {
             guard !recorder.isRecording else { return }
             phase = .signedOut
             account = nil
+            messagingTask?.cancel()
+            messagingTask = nil
+            unreadMessages = UnreadMessages()
             recorder.ownerID = nil
             await garage.setOwner(nil)
         }
@@ -164,6 +173,24 @@ public final class AppModel {
         await recorder.recoverInterrupted()
         await recorder.syncPending()
         await refreshNotifications()
+        await refreshMessages()
+        startMessagingUpdates()
+    }
+
+    private func startMessagingUpdates() {
+        messagingTask?.cancel()
+        let changes = backend.messagingChanges()
+        messagingTask = Task { [weak self] in
+            for await change in changes {
+                guard let self else { return }
+                self.messagingPulse = MessagingPulse(count: self.messagingPulse.count + 1, conversationID: change.conversationID)
+                await self.refreshMessages()
+            }
+        }
+    }
+
+    public func refreshMessages() async {
+        if let counts = try? await backend.unreadMessages() { unreadMessages = counts }
     }
 
     /// Called by onboarding once the server has marked it complete.
@@ -232,6 +259,12 @@ public final class AppModel {
     }
 }
 
+/// A realtime nudge as seen by screens: `count` changes on every event.
+struct MessagingPulse: Equatable {
+    var count = 0
+    var conversationID: UUID?
+}
+
 /// Backend used when the build has no Supabase keys. Every call fails with a
 /// clear message; the UI shows the setup screen instead of fake content.
 final class UnconfiguredBackend: BackendService, Sendable {
@@ -286,6 +319,22 @@ final class UnconfiguredBackend: BackendService, Sendable {
     func setRSVP(_ rsvp: RSVP?, meet: UUID) async throws { throw BackendError.notConfigured }
     func attendees(meet: UUID) async throws -> [ProfileStub] { throw BackendError.notConfigured }
     func leaderboard(_ query: LeaderboardQuery) async throws -> [LeaderboardEntry] { throw BackendError.notConfigured }
+    func startConversation(with user: UserID) async throws -> UUID { throw BackendError.notConfigured }
+    func inbox(_ state: ConversationState, before: Date?) async throws -> [InboxEntry] { throw BackendError.notConfigured }
+    func messages(conversation: UUID, before: Date?, limit: Int) async throws -> [DirectMessage] { throw BackendError.notConfigured }
+    func send(_ message: OutgoingMessage) async throws -> DirectMessage { throw BackendError.notConfigured }
+    func setReaction(_ emoji: String?, message: UUID) async throws { throw BackendError.notConfigured }
+    func unsend(message: UUID) async throws { throw BackendError.notConfigured }
+    func markRead(conversation: UUID) async throws { throw BackendError.notConfigured }
+    func respondToRequest(conversation: UUID, accept: Bool) async throws { throw BackendError.notConfigured }
+    func setMuted(_ muted: Bool, conversation: UUID) async throws { throw BackendError.notConfigured }
+    func hideConversation(_ id: UUID, clearHistory: Bool) async throws { throw BackendError.notConfigured }
+    func peerReadAt(conversation: UUID) async throws -> Date? { throw BackendError.notConfigured }
+    func unreadMessages() async throws -> UnreadMessages { throw BackendError.notConfigured }
+    func sharedPreview(_ ref: SharedRef) async throws -> SharedPreview { throw BackendError.notConfigured }
+    func report(user: UserID, reason: ReportReason, details: String, message: UUID?) async throws { throw BackendError.notConfigured }
+    func block(_ user: UserID) async throws { throw BackendError.notConfigured }
+    func messagingChanges() -> AsyncStream<MessagingChange> { AsyncStream { $0.finish() } }
     func notifications() async throws -> [AppNotification] { throw BackendError.notConfigured }
     func markNotificationsRead() async throws { throw BackendError.notConfigured }
     func registerPushToken(_ token: String, sandbox: Bool) async throws {}

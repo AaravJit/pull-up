@@ -88,6 +88,36 @@ public protocol BackendService: AnyObject, Sendable {
     // Leaderboards
     func leaderboard(_ query: LeaderboardQuery) async throws -> [LeaderboardEntry]
 
+    // Direct messages. Every rule (blocks, requests, rate limits, who can
+    // read what) is enforced by the server; see the DM migration.
+    /// Returns the conversation with this person, creating it if needed.
+    /// Refusals all read "you can't message this person", whatever the reason.
+    func startConversation(with user: UserID) async throws -> UUID
+    /// One page of the inbox, newest first; pass the last entry's
+    /// `lastMessageAt` as `before` for the next page.
+    func inbox(_ state: ConversationState, before: Date?) async throws -> [InboxEntry]
+    /// One page of a conversation, oldest first, ending just before `before`.
+    func messages(conversation: UUID, before: Date?, limit: Int) async throws -> [DirectMessage]
+    /// Idempotent: sending the same `OutgoingMessage.id` twice stores one message.
+    func send(_ message: OutgoingMessage) async throws -> DirectMessage
+    /// Sets or (with nil) removes your reaction.
+    func setReaction(_ emoji: String?, message: UUID) async throws
+    func unsend(message: UUID) async throws
+    func markRead(conversation: UUID) async throws
+    func respondToRequest(conversation: UUID, accept: Bool) async throws
+    func setMuted(_ muted: Bool, conversation: UUID) async throws
+    /// Hides the conversation until a new message; `clearHistory` also
+    /// deletes your copy of everything so far.
+    func hideConversation(_ id: UUID, clearHistory: Bool) async throws
+    func peerReadAt(conversation: UUID) async throws -> Date?
+    func unreadMessages() async throws -> UnreadMessages
+    func sharedPreview(_ ref: SharedRef) async throws -> SharedPreview
+    func report(user: UserID, reason: ReportReason, details: String, message: UUID?) async throws
+    func block(_ user: UserID) async throws
+    /// Nudges when something changes in your conversations. Ends when the
+    /// consuming task is cancelled.
+    func messagingChanges() -> AsyncStream<MessagingChange>
+
     // Notifications
     func notifications() async throws -> [AppNotification]
     func markNotificationsRead() async throws
@@ -134,6 +164,7 @@ public enum MediaBucket: String, Sendable {
     case avatars
     case vehicleMedia = "vehicle-media"
     case postMedia = "post-media"
+    case dmMedia = "dm-media"
 }
 
 public struct LeaderboardQuery: Hashable, Sendable {

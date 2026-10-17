@@ -31,14 +31,38 @@ public final class DemoBackend: BackendService, Sendable {
         var zones: [PrivacyZone] = []
         var follows: Set<[UserID]> = []
         var onboarded = true
+        var conversations: [Conversation] = []
+        var messages: [DirectMessage] = []
+        var blocks: Set<UserID> = []
+        var reports = 0
+    }
+
+    /// The demo driver's side of a conversation, plus what the server would
+    /// know about the other person's side.
+    struct Conversation: Sendable {
+        var id: UUID
+        var peer: UserID
+        var myState: ConversationState = .active
+        var peerState: ConversationState = .active
+        var muted = false
+        var hiddenAt: Date?
+        var clearedAt: Date?
+        var myReadAt: Date?
+        var peerReadAt: Date?
+        /// The demo peer answers the first message once, to show live updates.
+        var repliedOnce = false
     }
 
     private let state: Mutex<State>
     private let authContinuations = Mutex<[UUID: AsyncStream<UserID?>.Continuation]>([:])
+    private let messagingContinuations = Mutex<[UUID: AsyncStream<MessagingChange>.Continuation]>([:])
+    /// Delay before a simulated reply; tests set it to zero.
+    let replyDelay: Duration
 
     /// `onboarded: false` starts as a brand-new Sign in with Apple account:
     /// placeholder username, no display name, onboarding not finished.
-    public init(signedIn: Bool = true, emptyGarage: Bool = false, onboarded: Bool = true, now: Date = .now) {
+    public init(signedIn: Bool = true, emptyGarage: Bool = false, onboarded: Bool = true, now: Date = .now, replyDelay: Duration = .seconds(2)) {
+        self.replyDelay = replyDelay
         var seed = DemoSeed.make(signedIn: signedIn, emptyGarage: emptyGarage, now: now)
         if !onboarded {
             seed.onboarded = false
@@ -437,6 +461,259 @@ public final class DemoBackend: BackendService, Sendable {
     public func leaderboard(_ query: LeaderboardQuery) async throws -> [LeaderboardEntry] {
         let optedIn = state.withLock { query.metric.isPerformance ? $0.privacy.performanceLeaderboardOptIn : $0.privacy.leaderboardOptIn }
         return DemoSeed.leaderboard(query, includeMe: optedIn)
+    }
+
+    // MARK: Messages
+
+    private static let cantMessage = "You can't message this person."
+
+    private static func preview(_ m: DirectMessage) -> String {
+        if m.isUnsent { return "Message unsent" }
+        let text = MessageRules.trimmed(m.body)
+        if !text.isEmpty { return String(text.prefix(140)) }
+        if m.mediaPath != nil { return "Photo" }
+        if let shared = m.shared { return "Shared a \(shared.kind.rawValue)" }
+        return ""
+    }
+
+    private func notifyMessaging(_ conversation: UUID?) {
+        for c in messagingContinuations.withLock({ Array($0.values) }) { c.yield(MessagingChange(conversationID: conversation)) }
+    }
+
+    private func visibleMessages(_ c: Conversation, in s: State) -> [DirectMessage] {
+        s.messages.filter { $0.conversationID == c.id && $0.createdAt > (c.clearedAt ?? .distantPast) }
+            .sorted { $0.createdAt < $1.createdAt }
+    }
+
+    public func startConversation(with user: UserID) async throws -> UUID {
+        let me = try me()
+        return try state.withLock { s in
+            guard user != me, s.profiles[user] != nil, !s.blocks.contains(user) else { throw BackendError.server(Self.cantMessage) }
+            if let existing = s.conversations.first(where: { $0.peer == user }) { return existing.id }
+            let created = Conversation(id: UUID(), peer: user, peerState: s.follows.contains([user, me]) ? .active : .request)
+            s.conversations.append(created)
+            return created.id
+        }
+    }
+
+    public func inbox(_ wanted: ConversationState, before: Date?) async throws -> [InboxEntry] {
+        let me = try me()
+        return state.withLock { s in
+            s.conversations.compactMap { c -> InboxEntry? in
+                guard c.myState == wanted, !s.blocks.contains(c.peer), let peer = stub(c.peer, in: s) else { return nil }
+                let visible = visibleMessages(c, in: s)
+                guard let last = visible.last else { return nil }
+                if let hidden = c.hiddenAt, last.createdAt <= hidden { return nil }
+                if let before, last.createdAt >= before { return nil }
+                let unread = visible.filter { $0.senderID != me && !$0.isUnsent && $0.createdAt > (c.myReadAt ?? .distantPast) }.count
+                return InboxEntry(
+                    conversationID: c.id, peer: peer, state: c.myState, muted: c.muted, lastMessageAt: last.createdAt,
+                    preview: Self.preview(last), lastMessageFromMe: last.senderID == me, unreadCount: unread,
+                    peerReadAt: s.privacy.dmReadReceipts && c.peerState == .active ? c.peerReadAt : nil
+                )
+            }
+            .sorted { ($0.lastMessageAt ?? .distantPast) > ($1.lastMessageAt ?? .distantPast) }
+        }
+    }
+
+    public func messages(conversation: UUID, before: Date?, limit: Int) async throws -> [DirectMessage] {
+        _ = try me()
+        return state.withLock { s in
+            guard let c = s.conversations.first(where: { $0.id == conversation }), !s.blocks.contains(c.peer) else { return [] }
+            return Array(visibleMessages(c, in: s).filter { before == nil || $0.createdAt < before! }.suffix(limit))
+        }
+    }
+
+    public func send(_ message: OutgoingMessage) async throws -> DirectMessage {
+        let me = try me()
+        var mediaPath: String?
+        if let photo = message.photo {
+            let path = "\(message.conversationID)/\(me)/\(message.id).jpg"
+            let url = FileManager.default.temporaryDirectory.appendingPathComponent(path.replacingOccurrences(of: "/", with: "_"))
+            try photo.jpegData.write(to: url)
+            mediaPath = path
+        }
+        let (stored, reply) = try state.withLock { s -> (DirectMessage, Bool) in
+            if let existing = s.messages.first(where: { $0.id == message.id }) { return (existing, false) }
+            guard let i = s.conversations.firstIndex(where: { $0.id == message.conversationID }) else { throw BackendError.server(Self.cantMessage) }
+            let c = s.conversations[i]
+            if s.blocks.contains(c.peer) || c.peerState == .declined { throw BackendError.server(Self.cantMessage) }
+            let body = MessageRules.trimmed(message.body)
+            guard body.count <= MessageRules.maxLength else { throw BackendError.server("Messages can be up to \(MessageRules.maxLength) characters.") }
+            guard MessageRules.canSend(body: body, hasAttachment: mediaPath != nil || message.shared != nil) else { throw BackendError.server("Type a message first.") }
+            if c.peerState == .request,
+               s.messages.filter({ $0.conversationID == c.id && $0.senderID == me }).count >= MessageRules.requestMessageLimit {
+                throw BackendError.server("Wait for them to accept your request before sending more.")
+            }
+            let stored = DirectMessage(
+                id: message.id, conversationID: c.id, senderID: me, body: body, mediaPath: mediaPath,
+                mediaWidth: message.photo?.width, mediaHeight: message.photo?.height, shared: message.shared, createdAt: .now
+            )
+            s.messages.append(stored)
+            s.conversations[i].myState = .active
+            s.conversations[i].hiddenAt = nil
+            s.conversations[i].myReadAt = stored.createdAt
+            let reply = !c.repliedOnce && c.peerState == .active
+            if reply { s.conversations[i].repliedOnce = true }
+            return (stored, reply)
+        }
+        notifyMessaging(stored.conversationID)
+        if reply {
+            let delay = replyDelay
+            let conversation = stored.conversationID
+            Task { [weak self] in
+                try? await Task.sleep(for: delay)
+                self?.simulateReply(in: conversation)
+            }
+        }
+        return stored
+    }
+
+    /// Demo only: the other person reads and answers, as a live update would.
+    private func simulateReply(in conversation: UUID) {
+        state.withLock { s in
+            guard let i = s.conversations.firstIndex(where: { $0.id == conversation }) else { return }
+            let peer = s.conversations[i].peer
+            s.conversations[i].peerReadAt = .now
+            s.messages.append(DirectMessage(conversationID: conversation, senderID: peer, body: "Sounds good. See you there 🏁", createdAt: .now.addingTimeInterval(0.5)))
+        }
+        notifyMessaging(conversation)
+    }
+
+    public func setReaction(_ emoji: String?, message: UUID) async throws {
+        let me = try me()
+        state.withLock { s in
+            guard let i = s.messages.firstIndex(where: { $0.id == message }), !s.messages[i].isUnsent else { return }
+            s.messages[i].reactions.removeAll { $0.userID == me }
+            if let emoji, MessageRules.reactions.contains(emoji) { s.messages[i].reactions.append(MessageReaction(userID: me, emoji: emoji)) }
+        }
+        notifyMessaging(nil)
+    }
+
+    public func unsend(message: UUID) async throws {
+        let me = try me()
+        let conversation = try state.withLock { s -> UUID in
+            guard let i = s.messages.firstIndex(where: { $0.id == message && $0.senderID == me && !$0.isUnsent }) else {
+                throw BackendError.server("You can only unsend your own messages.")
+            }
+            s.messages[i].unsentAt = .now
+            s.messages[i].body = ""
+            s.messages[i].mediaPath = nil
+            s.messages[i].shared = nil
+            s.messages[i].reactions = []
+            return s.messages[i].conversationID
+        }
+        notifyMessaging(conversation)
+    }
+
+    public func markRead(conversation: UUID) async throws {
+        state.withLock { s in
+            if let i = s.conversations.firstIndex(where: { $0.id == conversation }) { s.conversations[i].myReadAt = .now }
+        }
+    }
+
+    public func respondToRequest(conversation: UUID, accept: Bool) async throws {
+        try state.withLock { s in
+            guard let i = s.conversations.firstIndex(where: { $0.id == conversation && $0.myState != .active }) else {
+                throw BackendError.server("That request is gone.")
+            }
+            s.conversations[i].myState = accept ? .active : .declined
+            s.conversations[i].hiddenAt = accept ? nil : .now
+        }
+    }
+
+    public func setMuted(_ muted: Bool, conversation: UUID) async throws {
+        state.withLock { s in
+            if let i = s.conversations.firstIndex(where: { $0.id == conversation }) { s.conversations[i].muted = muted }
+        }
+    }
+
+    public func hideConversation(_ id: UUID, clearHistory: Bool) async throws {
+        state.withLock { s in
+            guard let i = s.conversations.firstIndex(where: { $0.id == id }) else { return }
+            s.conversations[i].hiddenAt = .now
+            if clearHistory { s.conversations[i].clearedAt = .now }
+        }
+    }
+
+    public func peerReadAt(conversation: UUID) async throws -> Date? {
+        state.withLock { s in
+            guard s.privacy.dmReadReceipts, let c = s.conversations.first(where: { $0.id == conversation }), c.peerState == .active else { return nil }
+            return c.peerReadAt
+        }
+    }
+
+    public func unreadMessages() async throws -> UnreadMessages {
+        let active = try await inbox(.active, before: nil)
+        let requests = try await inbox(.request, before: nil)
+        return UnreadMessages(conversations: active.filter { $0.unreadCount > 0 }.count, requests: requests.count)
+    }
+
+    public func sharedPreview(_ ref: SharedRef) async throws -> SharedPreview {
+        let me = try me()
+        let s = state.withLock { $0 }
+        let unavailable = SharedPreview(kind: ref.kind, id: ref.id, available: false)
+        func username(_ id: UserID) -> String? { s.profiles[id]?.profile.username }
+        func visible(_ audience: Audience, owner: UserID) -> Bool {
+            owner == me || audience == .public || (audience == .friends && s.follows.contains([me, owner]) && s.follows.contains([owner, me]))
+        }
+        switch ref.kind {
+        case .vehicle:
+            guard let v = s.vehicles.first(where: { $0.id == ref.id }), visible(v.visibility, owner: v.ownerID) else { return unavailable }
+            return SharedPreview(
+                kind: .vehicle, id: v.id, available: true, title: "\(v.year) \(v.make) \(v.model)",
+                subtitle: v.trim.isEmpty ? nil : v.trim, imagePath: v.coverPhotoPath, ownerID: v.ownerID, ownerUsername: username(v.ownerID),
+                vehicleKind: v.kind, bodyStyle: v.bodyStyle, identityColor: v.identityColor
+            )
+        case .post:
+            guard let p = s.posts.first(where: { $0.id == ref.id }), visible(p.visibility, owner: p.authorID) else { return unavailable }
+            return SharedPreview(
+                kind: .post, id: p.id, available: true, title: "@\(username(p.authorID) ?? "")", subtitle: String(p.caption.prefix(140)),
+                imagePath: p.media.first { $0.mediaType == .image }?.storagePath, ownerID: p.authorID, ownerUsername: username(p.authorID)
+            )
+        case .meet:
+            guard let m = s.meets.first(where: { $0.id == ref.id }), visible(m.visibility, owner: m.hostID) else { return unavailable }
+            return SharedPreview(
+                kind: .meet, id: m.id, available: true, title: m.title, subtitle: m.venueName, ownerID: m.hostID,
+                ownerUsername: username(m.hostID), startsAt: m.startsAt, cancelled: m.isCancelled
+            )
+        case .drive:
+            guard let d = s.drives.first(where: { $0.id == ref.id }), visible(d.visibility, owner: d.ownerID) else { return unavailable }
+            let vehicle = s.vehicles.first { $0.id == d.vehicleID }
+            return SharedPreview(
+                kind: .drive, id: d.id, available: true, title: d.title, ownerID: d.ownerID, ownerUsername: username(d.ownerID),
+                distanceMeters: d.distanceMeters, movingSeconds: d.movingSeconds,
+                vehicleTitle: vehicle.map { "\($0.year) \($0.make) \($0.model)" }
+            )
+        }
+    }
+
+    public func report(user: UserID, reason: ReportReason, details: String, message: UUID?) async throws {
+        let me = try me()
+        try state.withLock { s in
+            guard user != me else { throw BackendError.server("That can't be reported.") }
+            s.reports += 1
+        }
+    }
+
+    public func block(_ user: UserID) async throws {
+        let me = try me()
+        state.withLock { s in
+            s.blocks.insert(user)
+            s.follows.remove([me, user])
+            s.follows.remove([user, me])
+        }
+        notifyMessaging(nil)
+    }
+
+    public func messagingChanges() -> AsyncStream<MessagingChange> {
+        let key = UUID()
+        return AsyncStream { continuation in
+            messagingContinuations.withLock { $0[key] = continuation }
+            continuation.onTermination = { [weak self] _ in
+                _ = self?.messagingContinuations.withLock { $0.removeValue(forKey: key) }
+            }
+        }
     }
 
     // MARK: Notifications

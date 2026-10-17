@@ -22,6 +22,7 @@ struct DriveSummaryView: View {
     @State private var isSaving = false
     @State private var saveError: String?
     @State private var confirmingDelete = false
+    @State private var sharingSummary = false
 
     init(result: FinishedDrive, isFresh: Bool) {
         self.isFresh = isFresh
@@ -62,6 +63,7 @@ struct DriveSummaryView: View {
             } else if isStored {
                 ToolbarItem(placement: .primaryAction) {
                     Menu {
+                        Button("Send summary in a message", systemImage: "paperplane") { sharingSummary = true }
                         Button("Delete drive", systemImage: "trash", role: .destructive) { confirmingDelete = true }
                     } label: {
                         Image(systemName: "ellipsis")
@@ -69,6 +71,10 @@ struct DriveSummaryView: View {
                     .accessibilityLabel("More")
                 }
             }
+        }
+        .sheet(isPresented: $sharingSummary) {
+            // Totals only: messages never carry a route or GPS track.
+            ShareToMessageView(shared: SharedRef(kind: .drive, id: drive.id))
         }
         .confirmationDialog("Delete this drive?", isPresented: $confirmingDelete, titleVisibility: .visible) {
             Button("Delete", role: .destructive) {

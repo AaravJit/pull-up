@@ -140,6 +140,8 @@ public struct AppNotification: Codable, Hashable, Sendable, Identifiable {
         case follow, followRequest = "follow_request", like, comment
         case meetRSVP = "meet_rsvp", meetUpdated = "meet_updated", meetCancelled = "meet_cancelled", meetStartingSoon = "meet_starting_soon"
         case driveValidated = "drive_validated"
+        /// Message notifications live in the Messages inbox, not the bell.
+        case message, messageRequest = "message_request"
     }
 
     public var id: UUID
@@ -302,12 +304,18 @@ public struct PrivacySettings: Codable, Hashable, Sendable {
     public var leaderboardOptIn: Bool
     public var performanceLeaderboardOptIn: Bool
     public var requireFollowApproval: Bool
+    /// Who may start a conversation with you.
+    public var messagesFrom: MessagesFrom
+    /// Reciprocal: you see when others read your messages only while they
+    /// can see when you read theirs.
+    public var dmReadReceipts: Bool
 
     public init(
         profileVisibility: Audience = .public, defaultVehicleVisibility: Audience = .friends,
         driveHistoryVisibility: Audience = .private, allowRouteSharing: Bool = false,
         routeEndpointTrimMeters: Double = 400, showEventAttendance: Bool = false,
-        leaderboardOptIn: Bool = false, performanceLeaderboardOptIn: Bool = false, requireFollowApproval: Bool = false
+        leaderboardOptIn: Bool = false, performanceLeaderboardOptIn: Bool = false, requireFollowApproval: Bool = false,
+        messagesFrom: MessagesFrom = .everyone, dmReadReceipts: Bool = true
     ) {
         self.profileVisibility = profileVisibility
         self.defaultVehicleVisibility = defaultVehicleVisibility
@@ -318,6 +326,8 @@ public struct PrivacySettings: Codable, Hashable, Sendable {
         self.leaderboardOptIn = leaderboardOptIn
         self.performanceLeaderboardOptIn = performanceLeaderboardOptIn
         self.requireFollowApproval = requireFollowApproval
+        self.messagesFrom = messagesFrom
+        self.dmReadReceipts = dmReadReceipts
     }
 
     enum CodingKeys: String, CodingKey {
@@ -330,6 +340,8 @@ public struct PrivacySettings: Codable, Hashable, Sendable {
         case leaderboardOptIn = "leaderboard_opt_in"
         case performanceLeaderboardOptIn = "performance_leaderboard_opt_in"
         case requireFollowApproval = "require_follow_approval"
+        case messagesFrom = "messages_from"
+        case dmReadReceipts = "dm_read_receipts"
     }
 }
 

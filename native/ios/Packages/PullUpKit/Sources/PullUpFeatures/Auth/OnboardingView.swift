@@ -254,6 +254,7 @@ struct OnboardingView: View {
                 AudiencePicker(title: "Drive history", selection: $privacy.driveHistoryVisibility)
                 PrivacyToggle(title: "Approve new followers", detail: "People must request to follow you.", isOn: $privacy.requireFollowApproval)
                 PrivacyToggle(title: "Appear on leaderboards", detail: "Shows your username, vehicle and totals on the boards you qualify for.", isOn: $privacy.leaderboardOptIn)
+                MessagesFromPicker(selection: $privacy.messagesFrom)
             }
             Button {
                 Task { await finish() }

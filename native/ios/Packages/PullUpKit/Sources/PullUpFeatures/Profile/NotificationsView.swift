@@ -80,6 +80,8 @@ struct NotificationsView: View {
         case .meetCancelled: return "\(name) cancelled a meet you were going to."
         case .meetStartingSoon: return "A meet you're going to starts soon."
         case .driveValidated: return "Your drive was checked by the server."
+        case .message: return "\(name) sent you a message."
+        case .messageRequest: return "\(name) wants to send you a message."
         }
     }
 }

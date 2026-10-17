@@ -121,6 +121,9 @@ struct SettingsView: View {
                 PrivacyToggle(title: "Appear on leaderboards", detail: "Shows your username, vehicle and totals on the boards you qualify for.", isOn: binding.leaderboardOptIn)
                 PrivacyToggle(title: "Appear on closed-course boards", detail: "Only runs from verified closed-course events are ever ranked.", isOn: binding.performanceLeaderboardOptIn)
                 PrivacyToggle(title: "Approve new followers", detail: "People must request to follow you.", isOn: binding.requireFollowApproval)
+                MessagesFromPicker(selection: binding.messagesFrom)
+                PrivacyToggle(title: "Read receipts", detail: "Shows people when you've read their messages. Off: you won't see theirs either.", isOn: binding.dmReadReceipts)
+                    .accessibilityIdentifier("read-receipts")
             } else {
                 ProgressView()
             }
@@ -190,6 +193,25 @@ struct SettingsView: View {
             SpecRow(label: "Build", value: Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "–")
             SpecRow(label: "Data", value: app.isDemo ? "Demo (on this device only)" : "Pull Up server")
         }
+    }
+}
+
+/// "Who can message you", with what each choice means.
+struct MessagesFromPicker: View {
+    @Binding var selection: MessagesFrom
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Space.s) {
+            Legend("Who can message you")
+            SwitchBank(MessagesFrom.allCases, selection: $selection) { $0.label }
+            Text(selection.explanation)
+                .font(ClusterFont.body(.footnote))
+                .foregroundStyle(ClusterColor.inkSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .contentTransition(.opacity)
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("messages-from")
     }
 }
 

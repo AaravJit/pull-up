@@ -11,6 +11,12 @@ enum DemoSeed {
     static let dreID = UUID(uuidString: "00000000-0000-4000-8000-000000000003")!
     static let kenjiID = UUID(uuidString: "00000000-0000-4000-8000-000000000004")!
     static let gearboxID = UUID(uuidString: "00000000-0000-4000-8000-000000000005")!
+    /// Someone the demo driver doesn't follow, so their message is a request.
+    static let samID = UUID(uuidString: "00000000-0000-4000-8000-000000000006")!
+
+    static let mayaConversationID = UUID(uuidString: "00000000-0000-4000-8000-0000000000c1")!
+    static let kenjiConversationID = UUID(uuidString: "00000000-0000-4000-8000-0000000000c2")!
+    static let samConversationID = UUID(uuidString: "00000000-0000-4000-8000-0000000000c3")!
 
     static let bmwID = UUID(uuidString: "00000000-0000-4000-8000-0000000000a1")!
     static let gsxrID = UUID(uuidString: "00000000-0000-4000-8000-0000000000a2")!
@@ -33,6 +39,7 @@ enum DemoSeed {
             dreID: page(dreID, "dre.mt", "Dre", bio: "Two wheels, no plans."),
             kenjiID: page(kenjiID, "kenji.dc2", "Kenji", bio: "Type R or nothing."),
             gearboxID: page(gearboxID, "gearbox.collective", "Gearbox Collective", bio: "Sacramento meets since 2019.", organizer: true),
+            samID: page(samID, "sam.ek9", "Sam", bio: "EK9, Sunday mornings only."),
         ]
         s.follows = [[meID, mayaID], [mayaID, meID], [meID, kenjiID], [kenjiID, meID], [meID, dreID], [meID, gearboxID]]
 
@@ -121,8 +128,38 @@ enum DemoSeed {
             AppNotification(id: UUID(), kind: .meetUpdated, actor: ProfileStub(id: gearboxID, username: "gearbox.collective", displayName: "Gearbox Collective"), meetID: s.meets[0].id, createdAt: now.addingTimeInterval(-5_000)),
             AppNotification(id: UUID(), kind: .driveValidated, actor: nil, driveID: s.drives.first?.id, createdAt: now.addingTimeInterval(-80_000), readAt: now.addingTimeInterval(-70_000)),
         ]
+        seedMessages(&s, now: now)
         s.zones = [PrivacyZone(label: "Home", center: Coordinate(latitude: 38.5650, longitude: -121.4700), radiusMeters: 300)]
         return s
+    }
+
+    /// Three conversations: an unread one with a shared meet, a read one that
+    /// started from "Message owner" on the GSX-R750, and a message request.
+    static func seedMessages(_ s: inout DemoBackend.State, now: Date) {
+        func at(_ secondsAgo: TimeInterval) -> Date { now.addingTimeInterval(-secondsAgo) }
+        let cruise = s.meets.first { $0.hostID == mayaID }
+        s.conversations = [
+            DemoBackend.Conversation(id: mayaConversationID, peer: mayaID, myReadAt: at(9_000), peerReadAt: at(7_200)),
+            DemoBackend.Conversation(id: kenjiConversationID, peer: kenjiID, myReadAt: at(72_000), peerReadAt: at(68_000), repliedOnce: true),
+            DemoBackend.Conversation(id: samConversationID, peer: samID, myState: .request, repliedOnce: true),
+        ]
+        s.messages = [
+            DirectMessage(conversationID: mayaConversationID, senderID: mayaID, body: "Gold Country cruise on Sunday. Easy pace, regroup at every town.", createdAt: at(10_800)),
+            DirectMessage(conversationID: mayaConversationID, senderID: mayaID, body: "", shared: cruise.map { SharedRef(kind: .meet, id: $0.id) }, createdAt: at(10_790)),
+            DirectMessage(conversationID: mayaConversationID, senderID: meID, body: "I'm in if the RX-7 is back together by then", createdAt: at(9_000),
+                    reactions: [MessageReaction(userID: mayaID, emoji: "🔥")]),
+            DirectMessage(conversationID: mayaConversationID, senderID: mayaID, body: "Bring the BMW if not. Nobody minds a daily 😅", createdAt: at(2_400)),
+
+            DirectMessage(conversationID: kenjiConversationID, senderID: kenjiID, body: "Is the GSX-R750 for sale by any chance?",
+                    shared: SharedRef(kind: .vehicle, id: gsxrID), createdAt: at(86_400)),
+            DirectMessage(conversationID: kenjiConversationID, senderID: meID, body: "Not selling, but come see the slip-on at Sac Nights.", createdAt: at(82_800)),
+            DirectMessage(conversationID: kenjiConversationID, senderID: kenjiID, body: "Deal.", createdAt: at(79_200),
+                    reactions: [MessageReaction(userID: meID, emoji: "👍")]),
+            DirectMessage(conversationID: kenjiConversationID, senderID: meID, body: "Bring the DC2 too", createdAt: at(72_000)),
+
+            DirectMessage(conversationID: samConversationID, senderID: samID, body: "Saw your FD at Cars & Coffee. Who did the turbo kit?", createdAt: at(3_000)),
+            DirectMessage(conversationID: samConversationID, senderID: samID, body: "No rush, just curious", createdAt: at(2_950)),
+        ]
     }
 
     static func nextWeekday(_ weekday: Int, hour: Int, minute: Int, from date: Date) -> Date {
