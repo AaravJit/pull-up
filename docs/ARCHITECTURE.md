@@ -228,7 +228,10 @@ live dashboard says it is replaying a recorded track.
     UI tests, upload the xcresult and screenshots, and publish the PNGs to
     the `ci/screenshots` branch (one folder per branch).
   * The app build also runs `PullUpStoreTests` (StoreKit purchases, Ask to
-    Buy and expiry against `PullUpPro.storekit`, simulator only).
+    Buy and expiry against `PullUpPro.storekit`, simulator only) in a step
+    of its own on the iOS 26.2 simulator: on 26.4 and 26.5, command-line
+    `xcodebuild test` never loads the StoreKit configuration (Apple
+    FB22237318), so the tests would see no products.
 * `.github/workflows/supabase.yml`: starts a real local Supabase stack, runs
   the pgTAP suite, lints, rolls every migration back and re-applies it,
   type-checks the edge functions and runs their Deno unit tests (Apple and

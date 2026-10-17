@@ -2,7 +2,7 @@
 # Prints the UDID of the iPhone simulator CI should use: the preferred model
 # on the newest installed iOS runtime, falling back to any iPhone. Keeps CI
 # working as GitHub rotates Xcode and simulator images.
-# IOS_BELOW=26.5 restricts the choice to runtimes older than that version.
+# IOS_BELOW=26.4 restricts the choice to runtimes older than that version.
 set -euo pipefail
 PREFERRED="${PREFERRED_SIMULATOR:-iPhone 17 Pro}"
 xcrun simctl list devices available -j | PREFERRED="$PREFERRED" IOS_BELOW="${IOS_BELOW:-}" python3 -c '

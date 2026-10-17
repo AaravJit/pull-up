@@ -53,7 +53,7 @@ jobs:
   app:
     name: App build, UI tests, screenshots
     runs-on: macos-26
-    timeout-minutes: 90
+    timeout-minutes: 60
     permissions:
       contents: write # pushes screenshots to the ci/screenshots branch
     steps:
@@ -91,31 +91,23 @@ jobs:
             CODE_SIGNING_ALLOWED=NO
       - name: StoreKit tests
         # `xcodebuild test` from the command line doesn't hand the StoreKit
-        # configuration to the simulator's storekitd on recent runtimes, so
+        # configuration to the simulator's storekitd on iOS 26.4 and 26.5, so
         # SKTestSession silently falls through to the real App Store and finds
-        # no products (Apple FB22237318; reported unaffected on iOS 26.1). Seen
-        # here on 26.5 and 26.4, signed or not. Diagnostic for now: try the
-        # oldest preinstalled runtime (26.2), then download 26.1.
+        # no products (Apple FB22237318, no workaround; signing doesn't help).
+        # iOS 26.2 is unaffected, so these tests run there. Move them back to
+        # the main run once Apple ships a fix.
         if: always()
         working-directory: native/ios
         run: |
-          store_tests() {
-            ./scripts/xcodebuild-ci.sh test \
-              -project PullUp.xcodeproj \
-              -scheme PullUp \
-              -destination "id=$1" \
-              -resultBundlePath "$RUNNER_TEMP/PullUpStore-$2.xcresult" \
-              -only-testing:PullUpStoreTests \
-              -skipPackagePluginValidation \
-              CODE_SIGNING_ALLOWED=NO
-          }
-          if store_tests "$(IOS_BELOW=26.4 ./scripts/simulator-id.sh)" older; then exit 0; fi
-          echo "::warning::StoreKit tests failed on the oldest preinstalled runtime; trying iOS 26.1"
-          xcodebuild -downloadPlatform iOS -buildVersion 26.1
-          RUNTIME=$(xcrun simctl list runtimes -j | python3 -c 'import json,sys; print(next(r["identifier"] for r in json.load(sys.stdin)["runtimes"] if r["version"].startswith("26.1") and r["isAvailable"]))')
-          SIM=$(xcrun simctl create "StoreKit iPhone" "iPhone 17 Pro" "$RUNTIME")
-          echo "Using iPhone 17 Pro ($RUNTIME)"
-          store_tests "$SIM" 26.1
+          SIM=$(IOS_BELOW=26.4 ./scripts/simulator-id.sh)
+          ./scripts/xcodebuild-ci.sh test \
+            -project PullUp.xcodeproj \
+            -scheme PullUp \
+            -destination "id=$SIM" \
+            -resultBundlePath "$RUNNER_TEMP/PullUpStore.xcresult" \
+            -only-testing:PullUpStoreTests \
+            -skipPackagePluginValidation \
+            CODE_SIGNING_ALLOWED=NO
       - name: Upload screenshots
         if: always()
         uses: actions/upload-artifact@v4
@@ -130,7 +122,7 @@ jobs:
           name: PullUp-xcresult
           path: |
             ${{ runner.temp }}/PullUp.xcresult
-            ${{ runner.temp }}/PullUpStore*.xcresult
+            ${{ runner.temp }}/PullUpStore.xcresult
           if-no-files-found: ignore
       - name: Publish screenshots to ci/screenshots branch
         # Lets reviewers (and the agent building this app without a Mac) look
