@@ -10,13 +10,14 @@ alone. Items are in the order they unblock each other.
       project ref and anon key (Project Settings ▸ API).
 - [ ] Link and push the schema from a machine with the Supabase CLI:
       `supabase link --project-ref <ref>` then `supabase db push`.
-      All seven migrations are additive. Each has a matching file in
+      All twelve migrations are additive. Each has a matching file in
       `supabase/rollback/` (CI rolls every one back and re-applies it), and
       rollbacks that would drop data refuse to run unless
       `pullup.allow_destructive_rollback` is set for the session.
 - [ ] Run `supabase test db` against a staging project (the same pgTAP
       suite CI runs).
-- [ ] Deploy edge functions: `supabase functions deploy delete-account send-push`.
+- [ ] Deploy edge functions: `supabase functions deploy delete-account send-push
+      dm-retention verify-subscription app-store-notifications`.
 - [ ] Generate a random push webhook secret (`openssl rand -hex 32`) and
       set it: `supabase secrets set PUSH_WEBHOOK_SECRET=<value>`.
 - [ ] Database ▸ Webhooks: on INSERT into `public.notifications`, call the
@@ -24,8 +25,17 @@ alone. Items are in the order they unblock each other.
       `x-pullup-webhook-secret: <same value>`. Requests without it are
       rejected. Without the webhook, notifications still appear in the app's
       bell; they just aren't pushed.
-- [ ] Auth ▸ Providers: enable Email (decide whether to require
-      confirmation; the app handles both) and Apple (see 3).
+- [ ] Auth ▸ Providers: enable Apple (see 3). Keep Email enabled only for
+      App Review and demo accounts, and turn **off** "Allow new users to sign
+      up" for email: the app offers email sign-in only, behind "Other sign-in
+      options".
+- [ ] Confirm the account-linking guard is installed (it stops Supabase
+      from merging an Apple sign-in into an email account with the same
+      address): `select tgname from pg_trigger where tgname =
+      'pullup_identity_link_guard';` must return one row. If `db push`
+      printed "pullup_identity_link_guard was not installed", ask Supabase
+      support how to add a trigger on `auth.identities` on your plan before
+      launch, and keep "Allow manual linking" off meanwhile.
 - [ ] Auth ▸ URL configuration: add `pullup://auth-callback` as a redirect URL
       for email confirmation links.
 
@@ -73,6 +83,75 @@ alone. Items are in the order they unblock each other.
 - [ ] Provide a demo account with seeded data for App Review.
 - [ ] Replace the generated gauge app icon if you want a designed one.
 
+## 4a. Phase 2 services
+
+Messages
+
+- [ ] Check that realtime is on for messages: Database ▸ Publications ▸
+      `supabase_realtime` lists `messages` and `message_reactions`. (The
+      migration adds them and prints a notice if the publication is missing.)
+- [ ] Generate `CRON_SECRET` (`openssl rand -hex 32`), set it with
+      `supabase secrets set CRON_SECRET=<value>`, and schedule
+      `dm-retention` daily (Integrations ▸ Cron, HTTP request to the function
+      with headers `x-pullup-cron-secret: <value>` and
+      `Authorization: Bearer <anon key>`).
+- [ ] Decide who reviews reports (`public.reports`) and how quickly.
+      Suspensions are set by the service role on
+      `profiles.messaging_suspended_until`.
+
+Sign in with Apple token revocation (account deletion)
+
+- [ ] `supabase secrets set APPLE_TEAM_ID=… APPLE_CLIENT_ID=<bundle id>
+      APPLE_KEY_ID=… APPLE_PRIVATE_KEY="$(cat AuthKey_XXXX.p8)"` using a Sign
+      in with Apple key. Without them accounts are still deleted, and the app
+      tells the person how to remove Pull Up from their Apple Account.
+
+Pull Up Pro (nothing here is done; prices are placeholders)
+
+- [ ] Accept the Paid Apps agreement and add banking and tax details in
+      App Store Connect.
+- [ ] Create one subscription group with `app.pullup.pro.monthly` and
+      `app.pullup.pro.yearly`. The placeholder prices in the local StoreKit
+      file are $3.99 and $29.99; choose real prices yourself. Add the review
+      screenshot and description each product needs.
+- [ ] Create an In-App Purchase key (Users and Access ▸ Integrations ▸ In-App
+      Purchase) and set `supabase secrets set APPSTORE_ISSUER_ID=…
+      APPSTORE_KEY_ID=… APPSTORE_BUNDLE_ID=<bundle id>
+      APPSTORE_PRIVATE_KEY="$(cat SubscriptionKey_XXXX.p8)"`.
+- [ ] App Store Connect ▸ App Information ▸ App Store Server Notifications:
+      set both the Production and Sandbox URL to
+      `https://<project-ref>.supabase.co/functions/v1/app-store-notifications`,
+      Version 2. Send a test notification and check the function log shows it.
+- [ ] Publish a privacy policy and set `PULLUP_PRIVACY_POLICY` (without
+      `https://`) in `Secrets.xcconfig`. The paywall links Apple's standard
+      Terms of Use.
+- [ ] Sandbox test on a device with a sandbox Apple Account: buy, renew,
+      cancel, refund (via the sandbox settings), Ask to Buy, and restore on a
+      second phone. Only then submit the products with the app version.
+- [ ] Add the per-user rate limit on `verify-subscription`
+      (`SECURITY_REPORT.md` R-4).
+
+Notifications
+
+- [ ] After the APNs key (3) and webhook (1) are set, test on a device:
+      message push shows the sender but not the text; turning previews on
+      shows it; a request never shows text; turning a category off stops it;
+      tapping opens the conversation; signing in as someone else on the same
+      phone stops the first account's pushes.
+
+Parts finder
+
+- [ ] Optional: join the eBay Partner Network and set
+      `PULLUP_EPN_CAMPAIGN_ID`. The app then adds the affiliate parameters and
+      shows the disclosure. Listings inside the app need eBay Buy API
+      approval first (`MARKETPLACE_FEASIBILITY.md`).
+
+Security
+
+- [ ] Run `supabase test db` against staging, including
+      `006_security_surface.sql`, and work through "Still to do" in
+      `SECURITY_REPORT.md`.
+
 ## 5. CarPlay
 
 See `docs/CARPLAY.md`. Request the Driving Task entitlement, enable it on
@@ -94,7 +173,8 @@ the App ID, set `PULLUP_ENTITLEMENTS = PullUp/PullUp-CarPlay.entitlements`.
 - [ ] Force-quit mid-drive: next launch recovers the interrupted drive.
 - [ ] Battery use over a one-hour drive.
 - [ ] Sign in with Apple (the simulator can't complete it reliably).
-- [ ] Push notifications end to end (follow from a second account).
+- [ ] Push notifications end to end (follow from a second account), and the
+      checks under 4a ▸ Notifications.
 - [ ] Photo upload from the library: confirm EXIF GPS is stripped (download
       the stored file and inspect it).
 - [ ] Video post playback over cellular.

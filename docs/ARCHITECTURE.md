@@ -11,13 +11,15 @@ native/ios/
   Config/                  Base.xcconfig (committed) + Secrets.xcconfig (gitignored)
   PullUp/                  App shell: entry point, CarPlay scene, Info.plist, assets
   PullUpUITests/           End-to-end journeys that also capture screenshots
+  PullUpStoreTests/        App-hosted StoreKit tests against a local .storekit file
   Packages/PullUpKit/      Everything else, as a local Swift package
   scripts/                 CI helpers (simulator picker, readable xcodebuild output)
 supabase/
-  migrations/              Seven forward migrations
+  migrations/              Forward migrations (7 from Phase 1, 5 from Phase 2)
   rollback/                Matching down migrations, destructive steps guarded
-  tests/                   pgTAP suite: RLS, privacy, anti-spoofing, redaction
-  functions/               Edge functions: delete-account, send-push (APNs)
+  tests/                   pgTAP suites: RLS, privacy, accounts, messages, Pro, push, security
+  functions/               Edge functions: delete-account, send-push (APNs), dm-retention,
+                           verify-subscription, app-store-notifications; _shared/ has Deno tests
 ```
 
 ## Module layering
@@ -131,7 +133,81 @@ security boundary.
   started within 3 km of the venue during the event window.
 * Meet RSVPs never carry location. `show_me` defaults from the user's privacy
   setting, which defaults to off.
-* `anon` has no privileges on any table or function.
+* `anon` (signed out) can't run any function or write any table, and every
+  policy is for signed-in users. Phase 1 relied on this without enforcing it
+  for functions; `20261017000500_security_hardening.sql` fixed that and
+  `006_security_surface.sql` keeps it true (see `SECURITY_REPORT.md`). New
+  public functions must `revoke execute ... from public, anon`.
+* Owner-rights (`SECURITY DEFINER`) helpers that take a person as an
+  argument answer only about the caller; the ones only triggers need aren't
+  callable at all.
+
+## Accounts and sign-in
+
+* Sign in with Apple is the main path; email sign-in stays behind "Other
+  sign-in options" for review and demo accounts. A new Apple account gets a
+  placeholder username and goes through onboarding, which claims a real one
+  (`claim_username`: reserved and staff-like names refused, case-insensitive
+  uniqueness).
+* Accounts are never merged because their emails match. A trigger on
+  `auth.identities` refuses a second sign-in method unless the signed-in
+  person asked for it in the last ten minutes (`begin_identity_link`). If
+  the trigger can't be installed the migration warns loudly, and the release
+  checklist has a step to confirm it.
+* The app checks the Apple credential state at launch, on foreground and on
+  Apple's revocation notice, and signs out if it was revoked. Account
+  deletion revokes Apple's tokens when the person re-authenticates.
+
+## Direct messages
+
+One-to-one only (a canonical `user_a < user_b` pair, so one conversation per
+two people and no groups). Every read goes through membership, membership
+rows are private to their owner, messages are inserted as yourself only, and
+a trigger enforces blocks, the "who can message you" setting, request limits
+(three messages until accepted), rate limits and suspensions. A refused
+`start_conversation` looks the same whatever the reason. Shared vehicles,
+posts, meets and drive summaries are re-checked against the reader and never
+carry a location. Read receipts are reciprocal and never sent for requests.
+Messages are not end-to-end encrypted, and the conversation screen says so.
+Old requests, cleared history and tombstones are purged by `dm-retention`.
+The app listens on one realtime channel and refreshes from the server.
+
+## Pull Up Pro
+
+* The server is the only writer of `entitlements`. The app buys with
+  StoreKit 2, tags the purchase with the user's id (`appAccountToken`), and
+  sends the transaction to `verify-subscription`, which ignores the client's
+  claims and asks Apple's App Store Server API for the subscription (status,
+  expiry, grace period, revocation), then records it with
+  `apply_entitlement`. A subscription unlocks one account; older data never
+  overwrites newer; a working subscription is never replaced by a lapsed
+  one.
+* `app-store-notifications` receives Apple's V2 notifications as hints and
+  re-fetches the subscription from Apple before changing anything.
+* The app finishes a transaction only after the server has recorded it, so
+  an interrupted purchase is retried at the next launch. Pro features read
+  `my_entitlement()`; Pro looks fall back to the defaults while it's off.
+* Prices on screen come from the App Store. Without products the paywall
+  says Pro isn't on sale; demo mode uses a labelled store that takes no
+  money.
+
+## Notifications
+
+`send-push` (database webhook, shared secret) takes only the notification
+id and asks `push_content`, which applies the recipient's per-category
+preferences and returns message text only when they turned previews on for
+an accepted conversation. Tokens are registered with
+`register_device_token`, which moves a token to the account that signed in
+last on that phone; sign-out unregisters it; APNs `410` deletes it. Tapping
+a push opens the conversation or the activity list.
+
+## Parts finder
+
+Stage A of `MARKETPLACE_FEASIBILITY.md`: the app builds an eBay search URL
+from the vehicle's year, make, model and trim plus the part, shows exactly
+what will be sent, and opens it in Safari. No listing, price or seller is
+fetched or shown. eBay Partner Network parameters and the affiliate
+disclosure are added only when a campaign id is configured.
 
 ## Demo mode
 
@@ -151,6 +227,9 @@ live dashboard says it is replaying a recorded track.
   * `App build, UI tests, screenshots`: `xcodegen generate`, build, run the
     UI tests, upload the xcresult and screenshots, and publish the PNGs to
     the `ci/screenshots` branch (one folder per branch).
+  * The app build also runs `PullUpStoreTests` (StoreKit purchases, Ask to
+    Buy and expiry against `PullUpPro.storekit`, simulator only).
 * `.github/workflows/supabase.yml`: starts a real local Supabase stack, runs
-  the pgTAP suite, lints, rolls every migration back and re-applies it, and
-  type-checks the edge functions.
+  the pgTAP suite, lints, rolls every migration back and re-applies it,
+  type-checks the edge functions and runs their Deno unit tests (Apple and
+  APNs stubbed, no network).

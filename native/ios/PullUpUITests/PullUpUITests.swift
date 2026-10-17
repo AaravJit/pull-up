@@ -435,4 +435,73 @@ final class PullUpUITests: XCTestCase {
         settle()
         snap("45-parts-finder")
     }
+
+    // MARK: Phase 2 screens in dark mode and at an accessibility text size
+
+    func testPhase2ScreensDark() throws {
+        phase2Tour(launch(["-PullUpAppearance", "dark", "-PullUpTab", "feed"]), first: 48, suffix: "dark")
+    }
+
+    func testPhase2ScreensLargeText() throws {
+        phase2Tour(launch(["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityL", "-PullUpTab", "feed"]),
+                   first: 53, suffix: "large-text")
+    }
+
+    /// Inbox, conversation, paywall, notification settings and parts finder.
+    private func phase2Tour(_ app: XCUIApplication, first: Int, suffix: String) {
+        func shot(_ offset: Int, _ name: String) {
+            settle()
+            snap("\(first + offset)-\(name)-\(suffix)")
+        }
+        func reveal(_ element: XCUIElement) {
+            for _ in 0..<6 where !element.isHittable { app.swipeUp() }
+        }
+
+        let messages = element(app, "open-messages")
+        XCTAssertTrue(messages.waitForExistence(timeout: 10))
+        messages.tap()
+        let kenji = element(app, "inbox-row-kenji.dc2")
+        XCTAssertTrue(kenji.waitForExistence(timeout: 5))
+        shot(0, "messages-inbox")
+        reveal(kenji)
+        kenji.tap()
+        XCTAssertTrue(element(app, "composer-field").waitForExistence(timeout: 5))
+        shot(1, "messages-thread")
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        settle(0.5)
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+
+        let profile = app.buttons["open-profile"]
+        XCTAssertTrue(profile.waitForExistence(timeout: 5))
+        profile.tap()
+        let settings = app.buttons["open-settings"]
+        XCTAssertTrue(settings.waitForExistence(timeout: 5))
+        reveal(settings)
+        settings.tap()
+        let pro = element(app, "open-pro")
+        XCTAssertTrue(pro.waitForExistence(timeout: 5))
+        pro.tap()
+        XCTAssertTrue(element(app, "pro-subscribe").waitForExistence(timeout: 5))
+        shot(2, "pro-paywall")
+        element(app, "pro-close").tap()
+
+        let notifications = element(app, "open-notifications")
+        XCTAssertTrue(notifications.waitForExistence(timeout: 5))
+        reveal(notifications)
+        notifications.tap()
+        XCTAssertTrue(app.switches["push-messages"].waitForExistence(timeout: 5))
+        shot(3, "notification-preferences")
+
+        tab(app, "Garage")
+        let tile = element(app, "garage-tile-GSX-R750")
+        XCTAssertTrue(tile.waitForExistence(timeout: 5))
+        reveal(tile)
+        tile.tap()
+        let find = element(app, "find-parts")
+        XCTAssertTrue(find.waitForExistence(timeout: 5))
+        reveal(find)
+        find.tap()
+        XCTAssertTrue(app.buttons["parts-search"].waitForExistence(timeout: 5))
+        shot(4, "parts-finder")
+    }
 }

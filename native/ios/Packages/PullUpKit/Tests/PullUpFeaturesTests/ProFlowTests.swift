@@ -158,3 +158,18 @@ struct ProFlowTests {
         #expect(!theme.proUnlocked)
     }
 }
+
+@Suite("Pro legal links")
+struct ProLinksTests {
+    @Test func privacyPolicyComesFromTheBuildSetting() {
+        #expect(ProLinks.privacyURL(from: "pullup.app/privacy")?.absoluteString == "https://pullup.app/privacy")
+        #expect(ProLinks.privacyURL(from: "https://pullup.app/privacy")?.absoluteString == "https://pullup.app/privacy")
+    }
+
+    @Test func unsetOrUnsafeValuesShowNoLink() {
+        #expect(ProLinks.privacyURL(from: nil) == nil)
+        #expect(ProLinks.privacyURL(from: "") == nil)
+        #expect(ProLinks.privacyURL(from: "$(PULLUP_PRIVACY_POLICY)") == nil)
+        #expect(ProLinks.privacyURL(from: "http://pullup.app/privacy") == nil)
+    }
+}

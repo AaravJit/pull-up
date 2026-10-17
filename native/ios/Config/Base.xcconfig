@@ -12,6 +12,15 @@ PULLUP_TEAM_ID =
 PULLUP_SUPABASE_HOST =
 PULLUP_SUPABASE_ANON_KEY =
 
+// Privacy policy shown with the Pull Up Pro subscription, WITHOUT the
+// scheme (https is added), e.g. pullup.app/privacy. Required before Pro can
+// be submitted to App Review; empty = no link shown.
+PULLUP_PRIVACY_POLICY =
+
+// eBay Partner Network campaign id (10 digits) for parts-finder links.
+// Empty = plain eBay links with no affiliate parameters or disclosure.
+PULLUP_EPN_CAMPAIGN_ID =
+
 // Swap to PullUp/PullUp-CarPlay.entitlements once Apple grants the CarPlay
 // Driving Task entitlement (see docs/CARPLAY.md).
 PULLUP_ENTITLEMENTS = PullUp/PullUp.entitlements

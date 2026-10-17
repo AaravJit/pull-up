@@ -202,12 +202,19 @@ struct ProView: View {
 }
 
 /// Legal links shown with the subscription. Pull Up uses Apple's standard
-/// EULA; the privacy policy URL is set per build in Info.plist
-/// (`PullUpPrivacyPolicyURL`), see docs/RELEASE_CHECKLIST.md.
+/// EULA; the privacy policy is set per build (`PULLUP_PRIVACY_POLICY` in
+/// Secrets.xcconfig, without the scheme), see docs/RELEASE_CHECKLIST.md.
 enum ProLinks {
     static let terms = URL(string: "https://www.apple.com/legal/internet-services/itunes/dev/stdeula/")!
     static var privacy: URL? {
-        (Bundle.main.object(forInfoDictionaryKey: "PullUpPrivacyPolicyURL") as? String).flatMap(URL.init(string:))
+        privacyURL(from: Bundle.main.object(forInfoDictionaryKey: "PullUpPrivacyPolicyURL") as? String)
+    }
+
+    /// "pullup.app/privacy" or "https://pullup.app/privacy"; nil when unset.
+    static func privacyURL(from value: String?) -> URL? {
+        guard let value = value?.trimmingCharacters(in: .whitespaces), !value.isEmpty, !value.hasPrefix("$(") else { return nil }
+        let url = URL(string: value.contains("://") ? value : "https://\(value)")
+        return url?.scheme == "https" && url?.host() != nil ? url : nil
     }
 }
 

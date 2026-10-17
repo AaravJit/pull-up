@@ -48,6 +48,10 @@
 	<string>$(PULLUP_SUPABASE_HOST)</string>
 	<key>PullUpSupabaseAnonKey</key>
 	<string>$(PULLUP_SUPABASE_ANON_KEY)</string>
+	<key>PullUpPrivacyPolicyURL</key>
+	<string>$(PULLUP_PRIVACY_POLICY)</string>
+	<key>PullUpEPNCampaignID</key>
+	<string>$(PULLUP_EPN_CAMPAIGN_ID)</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>location</string>
