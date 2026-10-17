@@ -47,3 +47,27 @@ jobs:
       - run: deno check --config supabase/functions/deno.json supabase/functions/*/index.ts
       - name: Edge function unit tests (stubbed Apple, no network)
         run: deno test --config supabase/functions/deno.json supabase/functions/_shared/
+
+  api:
+    name: Two-account API tests (full local stack)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Start local Supabase (Auth, REST, Storage, Realtime, Edge Functions)
+        run: supabase start -x studio,imgproxy,logflare,vector,supavisor,postgres-meta
+      - name: Synthetic accounts exercise every app API
+        run: |
+          eval "$(supabase status -o env)"
+          PULLUP_API_TARGET=local PULLUP_API_URL="$API_URL" PULLUP_API_ANON_KEY="$ANON_KEY" \
+          PULLUP_API_SERVICE_ROLE_KEY="$SERVICE_ROLE_KEY" \
+            deno test --config supabase/functions/deno.json --allow-env --allow-net supabase/tests/api/
+      - name: Edge function logs
+        if: failure()
+        run: docker logs "$(docker ps -qf name=supabase_edge_runtime)" 2>&1 | tail -200
