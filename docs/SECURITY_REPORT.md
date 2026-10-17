@@ -40,7 +40,7 @@ hardening or jailbreak resistance, and load testing. See "Still to do".
 | R-1 | Accepted | Direct messages are not end-to-end encrypted | Design | Disclosed in the app |
 | R-2 | Accepted | A modified client can show Pro looks locally | Design | Server holds the truth |
 | R-3 | Residual | `app-store-notifications` is a public URL that can make the server call Apple | Design | Validated; quota risk |
-| R-4 | Residual | No per-user rate limit on `verify-subscription` | M3 | Add before launch |
+| R-4 | Low | No per-user rate limit on `verify-subscription` | M3 | Fixed in Phase 3 M5: 10 a minute, 60 an hour per account (migration `20261018000200`) |
 
 ## Findings
 
@@ -178,5 +178,4 @@ and each new export replaces the previous one. Not verified on a device.
 * Run `supabase test db` against the staging project once it exists.
 * On a device: confirm the session is in the Keychain, exported files are
   protected while locked, and pushes show no message text by default.
-* Add the `verify-subscription` rate limit (R-4).
 * Re-run this checklist before the App Store submission.
