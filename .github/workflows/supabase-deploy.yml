@@ -1,0 +1,151 @@
+name: Supabase deploy
+
+# Applies supabase/migrations and the edge functions to a hosted project.
+# Run by hand from the Actions tab; nothing deploys on push. Each run uses a
+# GitHub environment ("staging" or "production") that holds that project's
+# settings, so the two can't be mixed up. Give "production" required
+# reviewers so every production run waits for a person's approval.
+#
+# Environment settings (docs/SUPABASE_SETUP.md):
+#   variable SUPABASE_PROJECT_REF   the project's ref
+#   secret   SUPABASE_ACCESS_TOKEN  a personal access token of the project owner
+#   secret   SUPABASE_DB_PASSWORD   the project's database password
+#   optional secrets for the functions: PUSH_WEBHOOK_SECRET, CRON_SECRET,
+#   APNS_*, APPLE_*, APPSTORE_* (copied to the project only when present)
+#
+# Staging runs also run the pgTAP suite and the two-account API tests
+# against the project. Production never runs tests that write data.
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Which project
+        type: choice
+        options: [staging, production]
+        default: staging
+      apply:
+        description: Apply the changes (unticked = dry run that only lists them)
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: supabase-deploy-${{ inputs.environment }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: ${{ inputs.apply && 'Deploy to' || 'Dry run for' }} ${{ inputs.environment }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: ${{ inputs.environment }}
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+      PROJECT_REF: ${{ vars.SUPABASE_PROJECT_REF }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Check the environment is configured
+        run: |
+          missing=""
+          [ -n "$PROJECT_REF" ] || missing="$missing variable SUPABASE_PROJECT_REF,"
+          [ -n "$SUPABASE_ACCESS_TOKEN" ] || missing="$missing secret SUPABASE_ACCESS_TOKEN,"
+          [ -n "$SUPABASE_DB_PASSWORD" ] || missing="$missing secret SUPABASE_DB_PASSWORD,"
+          if [ -n "$missing" ]; then
+            echo "::error::The ${{ inputs.environment }} environment is missing:${missing%,}. See docs/SUPABASE_SETUP.md."
+            exit 1
+          fi
+
+      - name: Link the project
+        run: supabase link --project-ref "$PROJECT_REF" --password "$SUPABASE_DB_PASSWORD"
+
+      - name: List migrations the project doesn't have yet
+        id: pending
+        run: |
+          set -o pipefail
+          supabase db push --dry-run --password "$SUPABASE_DB_PASSWORD" 2>&1 | tee "$RUNNER_TEMP/dry-run.txt"
+          pending=$(grep -oE '[0-9]{14}_[a-z0-9_]+\.sql' "$RUNNER_TEMP/dry-run.txt" | sort -u | sed 's|^|supabase/migrations/|' | tr '\n' ' ')
+          echo "files=$pending" >> "$GITHUB_OUTPUT"
+          {
+            echo "### ${{ inputs.environment }}: pending migrations"
+            if [ -n "$pending" ]; then for f in $pending; do echo "- \`$f\`"; done; else echo "None"; fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Refuse migrations that could destroy data
+        if: steps.pending.outputs.files != ''
+        run: supabase/scripts/check-pending-migrations.sh ${{ steps.pending.outputs.files }}
+
+      - name: Apply migrations
+        if: inputs.apply
+        run: supabase db push --password "$SUPABASE_DB_PASSWORD"
+
+      - name: Copy function secrets that are set in this environment
+        if: inputs.apply
+        env:
+          PUSH_WEBHOOK_SECRET: ${{ secrets.PUSH_WEBHOOK_SECRET }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          APNS_KEY_ID: ${{ secrets.APNS_KEY_ID }}
+          APNS_PRIVATE_KEY: ${{ secrets.APNS_PRIVATE_KEY }}
+          APNS_TEAM_ID: ${{ secrets.APNS_TEAM_ID }}
+          APNS_TOPIC: ${{ secrets.APNS_TOPIC }}
+          APPLE_CLIENT_ID: ${{ secrets.APPLE_CLIENT_ID }}
+          APPLE_KEY_ID: ${{ secrets.APPLE_KEY_ID }}
+          APPLE_PRIVATE_KEY: ${{ secrets.APPLE_PRIVATE_KEY }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPSTORE_ISSUER_ID: ${{ secrets.APPSTORE_ISSUER_ID }}
+          APPSTORE_KEY_ID: ${{ secrets.APPSTORE_KEY_ID }}
+          APPSTORE_PRIVATE_KEY: ${{ secrets.APPSTORE_PRIVATE_KEY }}
+          APPSTORE_BUNDLE_ID: ${{ secrets.APPSTORE_BUNDLE_ID }}
+        run: |
+          umask 077
+          file="$RUNNER_TEMP/function-secrets.env"
+          : > "$file"
+          names=""
+          for name in PUSH_WEBHOOK_SECRET CRON_SECRET APNS_KEY_ID APNS_PRIVATE_KEY APNS_TEAM_ID APNS_TOPIC \
+                      APPLE_CLIENT_ID APPLE_KEY_ID APPLE_PRIVATE_KEY APPLE_TEAM_ID \
+                      APPSTORE_ISSUER_ID APPSTORE_KEY_ID APPSTORE_PRIVATE_KEY APPSTORE_BUNDLE_ID; do
+            value="${!name}"
+            [ -n "$value" ] || continue
+            printf '%s="%s"\n' "$name" "$value" >> "$file"
+            names="$names $name"
+          done
+          if [ -n "$names" ]; then
+            supabase secrets set --project-ref "$PROJECT_REF" --env-file "$file"
+            echo "Set:$names"
+          else
+            echo "No function secrets in this environment; functions that need them answer \"not configured\"."
+          fi
+          rm -f "$file"
+
+      - name: Deploy edge functions
+        if: inputs.apply
+        run: supabase functions deploy --project-ref "$PROJECT_REF"
+
+      - name: Database tests (pgTAP, rolled back) on staging
+        if: inputs.apply && inputs.environment == 'staging'
+        run: supabase test db --linked
+
+      - uses: denoland/setup-deno@v2
+        if: inputs.apply && inputs.environment == 'staging'
+        with:
+          deno-version: v2.x
+
+      - name: Two-account API tests on staging
+        if: inputs.apply && inputs.environment == 'staging'
+        run: |
+          # Legacy anon/service_role keys if the project has them, else the
+          # newer publishable/secret keys.
+          keys=$(supabase projects api-keys --project-ref "$PROJECT_REF" --reveal -o json)
+          anon=$(jq -r 'first(.[] | select(.name == "anon" or .type == "publishable") | .api_key)' <<<"$keys")
+          service=$(jq -r 'first(.[] | select(.name == "service_role" or .type == "secret") | .api_key)' <<<"$keys")
+          echo "::add-mask::$service"
+          PULLUP_API_TARGET=staging PULLUP_API_URL="https://$PROJECT_REF.supabase.co" \
+          PULLUP_API_ANON_KEY="$anon" PULLUP_API_SERVICE_ROLE_KEY="$service" \
+            deno test --config supabase/functions/deno.json --allow-env --allow-net supabase/tests/api/

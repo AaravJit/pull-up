@@ -262,8 +262,14 @@ struct SettingsView: View {
             SectionHeader("About")
             SpecRow(label: "Version", value: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "–")
             SpecRow(label: "Build", value: Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "–")
-            SpecRow(label: "Data", value: app.isDemo ? "Demo (on this device only)" : "Pull Up server")
+            SpecRow(label: "Data", value: app.isDemo ? "Demo (on this device only)" : serverName)
         }
+    }
+
+    /// Staging builds say so, so testers know their data isn't production's.
+    private var serverName: String {
+        let environment = Bundle.main.object(forInfoDictionaryKey: "PullUpBackendEnvironment") as? String ?? ""
+        return environment == "staging" ? "Pull Up server (staging)" : "Pull Up server"
     }
 }
 
