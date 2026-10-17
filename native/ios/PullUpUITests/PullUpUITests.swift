@@ -9,16 +9,14 @@ final class PullUpUITests: XCTestCase {
         continueAfterFailure = false
     }
 
-    /// Saves what was on screen when an assertion failed, so CI failures can
-    /// be read from the published screenshots without the result bundle.
-    nonisolated override func record(_ issue: XCTIssue) {
-        if Thread.isMainThread {
-            MainActor.assumeIsolated {
-                let test = name.components(separatedBy: " ").last?.trimmingCharacters(in: CharacterSet(charactersIn: "]")) ?? "test"
-                snap("zz-failed-\(test)")
-            }
+    /// Saves what was on screen when a test failed, so CI failures can be
+    /// read from the published screenshots without the result bundle.
+    override func tearDown() async throws {
+        if testRun?.hasSucceeded == false {
+            let test = name.components(separatedBy: " ").last?.trimmingCharacters(in: CharacterSet(charactersIn: "]")) ?? "test"
+            snap("zz-failed-\(test)")
         }
-        super.record(issue)
+        try await super.tearDown()
     }
 
     private func launch(_ extra: [String] = []) -> XCUIApplication {
@@ -351,6 +349,33 @@ final class PullUpUITests: XCTestCase {
 
     /// Settings → a locked Pro face opens Pull Up Pro (demo store, labelled,
     /// no payment) → subscribe → the Ring face and Pro accents unlock.
+    func testNotificationPreferences() throws {
+        let app = launch(["-PullUpTab", "feed"])
+        let profile = app.buttons["open-profile"]
+        XCTAssertTrue(profile.waitForExistence(timeout: 10))
+        profile.tap()
+        app.buttons["open-settings"].tap()
+        let link = element(app, "open-notifications")
+        XCTAssertTrue(link.waitForExistence(timeout: 5))
+        for _ in 0..<4 where !link.isHittable { app.swipeUp() }
+        link.tap()
+        let previews = app.switches["push-previews"]
+        XCTAssertTrue(previews.waitForExistence(timeout: 5))
+        XCTAssertEqual(previews.value as? String, "0", "Message text stays off lock screens by default")
+        XCTAssertEqual(app.switches["push-messages"].value as? String, "1")
+        settle()
+        snap("46-notification-preferences")
+    }
+
+    func testMessagePushOpensTheConversation() throws {
+        // Sam's message request in the demo data.
+        let app = launch(["-PullUpOpenPush", "message_request:00000000-0000-4000-8000-0000000000c3"])
+        XCTAssertTrue(app.buttons["accept-request"].waitForExistence(timeout: 10), "A request push opens that request")
+        XCTAssertFalse(element(app, "composer-field").exists)
+        settle()
+        snap("47-push-opens-request")
+    }
+
     func testProSubscription() throws {
         let app = launch(["-PullUpTab", "feed"])
         let profile = app.buttons["open-profile"]
