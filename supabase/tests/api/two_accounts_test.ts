@@ -399,6 +399,18 @@ Deno.test({
         const forged = await ben.db.functions.invoke("verify-subscription", { body: { signed_transaction: "e30.e30.sig" } });
         assert(forged.error, "a forged transaction is rejected");
         assertEquals(await isPro(), false, "still no Pro");
+
+        // Each account gets 10 calls a minute; the forged call above was one.
+        const statuses: number[] = [];
+        for (let i = 0; i < 11; i++) {
+          const call = await ben.db.functions.invoke("verify-subscription", { body: { signed_transaction: "e30.e30.sig" } });
+          statuses.push((call.error as { context?: Response } | null)?.context?.status ?? 200);
+        }
+        assertEquals(statuses.slice(0, 9).includes(429), false, `limited too early: ${statuses}`);
+        assertEquals(statuses.at(-1), 429, `not rate limited: ${statuses}`);
+        // Another account isn't affected.
+        const annCall = await ann.db.functions.invoke("verify-subscription", { body: { signed_transaction: "e30.e30.sig" } });
+        assert((annCall.error as { context?: Response } | null)?.context?.status !== 429, "Ann shares Ben's limit");
       });
 
       await t.step("account deletion removes the account and its data", async () => {

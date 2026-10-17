@@ -11,12 +11,19 @@
 //                            can't confirm it, so it grants nothing.
 //   other_account (403/409)  The subscription was bought for, or is already
 //                            recorded on, a different Pull Up account.
+//   rate_limited (429)       More than 10 calls in a minute or 60 in an
+//                            hour from this account.
 //   not_found (404), malformed (400), apple_unavailable (502).
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { applyArguments, AppStoreError, fetchSubscription, loadConfig, readJwsPayload, type TransactionInfo } from "../_shared/appstore.ts";
 
 const fail = (error: string, status: number) => Response.json({ error }, { status });
+
+// The app calls this at launch and after a purchase or restore, so these
+// leave plenty of room while keeping one account from hammering Apple.
+const PER_MINUTE = 10;
+const PER_HOUR = 60;
 
 Deno.serve(async (req: Request): Promise<Response> => {
   if (req.method !== "POST") return new Response("Method not allowed", { status: 405 });
@@ -28,6 +35,13 @@ Deno.serve(async (req: Request): Promise<Response> => {
   const { data: userData, error: userError } = await asUser.auth.getUser();
   if (userError || !userData.user) return fail("invalid session", 401);
   const uid = userData.user.id.toLowerCase();
+
+  const admin = createClient(url, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, { auth: { persistSession: false } });
+  const { data: allowed, error: limitError } = await admin.rpc("take_function_slot", {
+    p_user: uid, p_function: "verify-subscription", p_per_minute: PER_MINUTE, p_per_hour: PER_HOUR,
+  });
+  if (limitError) return fail(limitError.message, 500);
+  if (allowed !== true) return fail("rate_limited", 429);
 
   const body = await req.json().catch(() => ({})) as { signed_transaction?: unknown };
   if (typeof body.signed_transaction !== "string" || body.signed_transaction.length > 16_000) return fail("malformed", 400);
@@ -60,7 +74,6 @@ Deno.serve(async (req: Request): Promise<Response> => {
   // bought from this account.
   if (subscription.appAccountToken !== uid) return fail("other_account", 403);
 
-  const admin = createClient(url, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, { auth: { persistSession: false } });
   const { error: applyError } = await admin.rpc("apply_entitlement", applyArguments(uid, subscription));
   if (applyError) {
     return applyError.code === "23505" ? fail("other_account", 409) : fail(applyError.message, 500);

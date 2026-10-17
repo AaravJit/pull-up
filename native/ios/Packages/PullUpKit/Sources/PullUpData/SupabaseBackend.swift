@@ -593,6 +593,7 @@ public final class SupabaseBackend: BackendService, @unchecked Sendable {
             case "xcode_environment": throw SubscriptionError.testEnvironment
             case "other_account": throw SubscriptionError.otherAccount
             case "not_found": throw SubscriptionError.notFound
+            case "rate_limited": throw SubscriptionError.unavailable("too many attempts, try again in a minute")
             default: throw SubscriptionError.unavailable(reason ?? "HTTP \(code)")
             }
         } catch {
