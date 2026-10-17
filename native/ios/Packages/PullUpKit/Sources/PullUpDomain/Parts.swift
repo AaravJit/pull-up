@@ -1,9 +1,47 @@
 import Foundation
 
+/// The vehicle a parts search is for: picked from the garage or typed in.
+/// Every field is optional and editable, because a search still works with
+/// only some of them.
+public struct PartsVehicle: Equatable, Sendable {
+    public var year: String
+    public var make: String
+    public var model: String
+    public var trim: String
+    /// Not stored on garage vehicles, so always typed in ("2.0 TDI", "750cc").
+    public var engine: String
+
+    public init(year: String = "", make: String = "", model: String = "", trim: String = "", engine: String = "") {
+        self.year = year
+        self.make = make
+        self.model = model
+        self.trim = trim
+        self.engine = engine
+    }
+
+    /// Year, make, model and trim from the garage. Never the nickname,
+    /// mileage or anything personal: this text goes to eBay.
+    public init(_ vehicle: Vehicle) {
+        self.init(year: vehicle.year > 0 ? String(vehicle.year) : "", make: vehicle.make, model: vehicle.model, trim: vehicle.trim)
+    }
+
+    private var fields: [String] { [year, make, model, trim, engine] }
+
+    /// "2001 Suzuki GSX-R750 K1", in that order, blanks left out.
+    public var terms: String { PartsQuery.tidy(fields) }
+
+    public var isEmpty: Bool { terms.isEmpty }
+
+    /// Year, make and model are what eBay listings are usually titled by.
+    public var hasYearMakeModel: Bool {
+        [year, make, model].allSatisfy { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    }
+}
+
 /// A parts search. Stage A of the parts finder (docs/MARKETPLACE_FEASIBILITY.md):
-/// Pull Up builds an eBay search link and opens it in Safari. No listing,
-/// price or seller is fetched or shown in the app, because without eBay's
-/// Buy API approval Pull Up has none.
+/// Pull Up builds an eBay search link and opens it. No listing, price or
+/// seller is fetched or shown in the app, because without eBay's Buy API
+/// approval Pull Up has none, and nothing here checks fitment.
 public struct PartsQuery: Equatable, Sendable {
     public enum Condition: String, CaseIterable, Sendable, Identifiable {
         case any, new, used
@@ -11,44 +49,130 @@ public struct PartsQuery: Equatable, Sendable {
         public var label: String { rawValue.capitalized }
     }
 
-    /// "2001 Suzuki GSX-R750", editable before searching. May be empty.
-    public var vehicle: String
-    public var part: String
-    public var condition: Condition
+    /// Searching by what the part is, or by its exact number.
+    public enum Mode: String, CaseIterable, Sendable, Identifiable {
+        case description, partNumber
+        public var id: String { rawValue }
+        public var label: String {
+            switch self {
+            case .description: "Part"
+            case .partNumber: "Part number"
+            }
+        }
+    }
 
-    public init(vehicle: String = "", part: String = "", condition: Condition = .any) {
+    /// OEM parts come from the vehicle's maker or its supplier; aftermarket
+    /// parts are other brands. eBay sellers label these themselves, so the
+    /// choice only adds a word to the search.
+    public enum Source: String, CaseIterable, Sendable, Identifiable {
+        case any, oem, aftermarket
+        public var id: String { rawValue }
+        public var label: String {
+            switch self {
+            case .any: "Any"
+            case .oem: "OEM"
+            case .aftermarket: "Aftermarket"
+            }
+        }
+        /// The word added to the search, as sellers usually write it.
+        public var keyword: String? {
+            switch self {
+            case .any: nil
+            case .oem: "OEM"
+            case .aftermarket: "aftermarket"
+            }
+        }
+    }
+
+    public var vehicle: PartsVehicle
+    public var part: String
+    public var partNumber: String
+    public var mode: Mode
+    public var condition: Condition
+    public var source: Source
+
+    public init(
+        vehicle: PartsVehicle = PartsVehicle(), part: String = "", partNumber: String = "",
+        mode: Mode = .description, condition: Condition = .any, source: Source = .any
+    ) {
         self.vehicle = vehicle
         self.part = part
+        self.partNumber = partNumber
+        self.mode = mode
         self.condition = condition
+        self.source = source
     }
 
     public init(vehicle: Vehicle, part: String = "") {
-        self.init(vehicle: PartsQuery.terms(for: vehicle), part: part)
-    }
-
-    /// Year, make, model and trim. Never the nickname, mileage or anything
-    /// personal: this text goes to eBay.
-    public static func terms(for vehicle: Vehicle) -> String {
-        [String(vehicle.year), vehicle.make, vehicle.model, vehicle.trim]
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
-            .joined(separator: " ")
+        self.init(vehicle: PartsVehicle(vehicle), part: part)
     }
 
     /// Longest keyword string sent, so a pasted paragraph can't build a
     /// silly URL.
     public static let maxLength = 200
 
-    /// Exactly what will be sent to eBay, shown before searching.
-    public var keywords: String {
-        let joined = [vehicle, part]
+    /// Part numbers are short; anything longer was pasted by mistake.
+    public static let maxPartNumberLength = 40
+
+    static func tidy(_ words: [String]) -> String {
+        words
             .map { $0.split(whereSeparator: \.isWhitespace).joined(separator: " ") }
             .filter { !$0.isEmpty }
             .joined(separator: " ")
-        return String(joined.prefix(Self.maxLength))
     }
 
-    public var canSearch: Bool { !part.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    /// The part number as it will be searched: spaces collapsed, at most
+    /// `maxPartNumberLength` characters.
+    public var normalizedPartNumber: String {
+        String(Self.tidy([partNumber]).prefix(Self.maxPartNumberLength))
+    }
+
+    /// Exactly what will be sent to eBay, shown before searching. A part
+    /// number is searched on its own: listings rarely repeat the vehicle
+    /// next to it, so adding the vehicle would hide matches.
+    public var keywords: String {
+        let words: [String] = switch mode {
+        case .description: [vehicle.terms, part, source.keyword ?? ""]
+        case .partNumber: [normalizedPartNumber, source.keyword ?? ""]
+        }
+        return String(Self.tidy(words).prefix(Self.maxLength))
+    }
+
+    public var canSearch: Bool {
+        switch mode {
+        case .description:
+            !part.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        case .partNumber:
+            // At least three letters or digits: "12" would match everything.
+            normalizedPartNumber.filter { $0.isLetter || $0.isNumber }.count >= 3
+        }
+    }
+
+    /// How much the search says about fit. None of these is a fitment
+    /// check: Pull Up never verifies that a listing fits.
+    public enum Fitment: Equatable, Sendable {
+        case partNumber, vehicle, partialVehicle, noVehicle
+    }
+
+    public var fitment: Fitment {
+        if mode == .partNumber { return .partNumber }
+        if vehicle.hasYearMakeModel { return .vehicle }
+        return vehicle.isEmpty ? .noVehicle : .partialVehicle
+    }
+
+    /// Shown next to the search so nobody mistakes a keyword match for a fit.
+    public var fitmentNote: String {
+        switch fitment {
+        case .partNumber:
+            "eBay matches the number as text. Listings that \u{201C}replace\u{201D} or \u{201C}fit\u{201D} it are the seller's claim; check it against your vehicle before you buy."
+        case .vehicle:
+            "Results match these words, not checked fitment. Confirm on the listing (eBay's compatibility list or the seller's details) that it fits your exact year, trim and engine."
+        case .partialVehicle:
+            "Add the year, make and model to narrow results to your vehicle. Either way, Pull Up doesn't check that a listing fits."
+        case .noVehicle:
+            "No vehicle in the search, so results aren't narrowed to one. Pull Up doesn't check that a listing fits."
+        }
+    }
 
     /// Common parts to start from, by vehicle kind.
     public static func suggestions(for kind: VehicleKind?) -> [String] {
