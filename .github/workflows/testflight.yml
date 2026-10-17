@@ -1,0 +1,208 @@
+name: TestFlight
+
+# Builds a signed Release archive on a macOS runner and uploads it to App
+# Store Connect for TestFlight. Run by hand from the Actions tab and pick
+# which backend the build talks to; it uses the GitHub environment of the
+# same name (docs/TESTFLIGHT_SETUP.md lists what each one needs).
+#
+# Signing is cloud-managed: Xcode signs with Apple's servers using an App
+# Store Connect API key, so no certificate or provisioning profile is
+# stored anywhere. The key lives only in the environment's secrets and is
+# written to the runner's temp folder for the run.
+#
+# On pull requests and pushes that touch it, the same archive is built
+# unsigned, to prove the Release build works before anyone needs it.
+
+on:
+  workflow_dispatch:
+    inputs:
+      backend:
+        description: Which Supabase project the build uses
+        type: choice
+        options: [staging, production]
+        default: staging
+      notes:
+        description: What to test (shown in the run summary; paste into TestFlight)
+        type: string
+        default: ""
+  pull_request:
+    paths: [".github/workflows/testflight.yml", "native/ios/project.yml", "native/ios/Config/**", "native/ios/PullUp/**"]
+  push:
+    branches: ["claude/**"]
+    paths: [".github/workflows/testflight.yml", "native/ios/project.yml", "native/ios/Config/**", "native/ios/PullUp/**"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: testflight-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' }}
+
+jobs:
+  unsigned:
+    name: Release archive (unsigned)
+    if: github.event_name != 'workflow_dispatch'
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+      - run: brew install xcodegen
+      - name: Generate project
+        working-directory: native/ios
+        run: xcodegen generate
+      - name: Archive Release without signing
+        working-directory: native/ios
+        run: |
+          ./scripts/xcodebuild-ci.sh archive -project PullUp.xcodeproj -scheme PullUp -configuration Release \
+            -destination generic/platform=iOS -archivePath "$RUNNER_TEMP/PullUp.xcarchive" \
+            -skipPackagePluginValidation CODE_SIGNING_ALLOWED=NO
+      - name: Check the archive
+        run: |
+          app="$RUNNER_TEMP/PullUp.xcarchive/Products/Applications/PullUp.app"
+          plutil -p "$app/Info.plist" | grep -E 'CFBundleIdentifier|CFBundleShortVersionString|CFBundleVersion|MinimumOSVersion'
+          test -f "$app/PrivacyInfo.xcprivacy" || { echo "::error::PrivacyInfo.xcprivacy is missing from the app bundle"; exit 1; }
+          plutil -lint "$app/PrivacyInfo.xcprivacy"
+          test -f "$app/Assets.car" || { echo "::error::asset catalog (app icon) missing"; exit 1; }
+
+  upload:
+    name: Build and upload (${{ inputs.backend }} backend)
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: macos-26
+    timeout-minutes: 60
+    environment: ${{ inputs.backend }}
+    permissions:
+      contents: read
+      id-token: write     # build provenance attestation
+      attestations: write
+    env:
+      ASC_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+      ASC_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+      ASC_PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
+      TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+      BUNDLE_ID: ${{ vars.PULLUP_BUNDLE_ID }}
+      PROJECT_REF: ${{ vars.SUPABASE_PROJECT_REF }}
+      ANON_KEY: ${{ vars.SUPABASE_ANON_KEY }}
+      PRIVACY_POLICY: ${{ vars.PULLUP_PRIVACY_POLICY }}
+      EPN_CAMPAIGN_ID: ${{ vars.PULLUP_EPN_CAMPAIGN_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check the environment is configured
+        run: |
+          missing=""
+          for v in ASC_KEY_ID:secret/APP_STORE_CONNECT_KEY_ID ASC_ISSUER_ID:secret/APP_STORE_CONNECT_ISSUER_ID \
+                   ASC_PRIVATE_KEY:secret/APP_STORE_CONNECT_PRIVATE_KEY TEAM_ID:variable/APPLE_TEAM_ID \
+                   PROJECT_REF:variable/SUPABASE_PROJECT_REF ANON_KEY:variable/SUPABASE_ANON_KEY; do
+            name="${v%%:*}"
+            [ -n "${!name}" ] || missing="$missing ${v#*:},"
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::The ${{ inputs.backend }} environment is missing:${missing%,}. See docs/TESTFLIGHT_SETUP.md."
+            exit 1
+          fi
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+      - run: brew install xcodegen
+
+      - name: Write build settings and the API key
+        working-directory: native/ios
+        run: |
+          umask 077
+          {
+            echo "PULLUP_TEAM_ID = $TEAM_ID"
+            [ -z "$BUNDLE_ID" ] || echo "PULLUP_BUNDLE_ID = $BUNDLE_ID"
+            echo "PULLUP_SUPABASE_HOST = $PROJECT_REF.supabase.co"
+            echo "PULLUP_SUPABASE_ANON_KEY = $ANON_KEY"
+            echo "PULLUP_BACKEND_ENVIRONMENT = ${{ inputs.backend }}"
+            [ -z "$PRIVACY_POLICY" ] || echo "PULLUP_PRIVACY_POLICY = $PRIVACY_POLICY"
+            [ -z "$EPN_CAMPAIGN_ID" ] || echo "PULLUP_EPN_CAMPAIGN_ID = $EPN_CAMPAIGN_ID"
+          } > Config/Secrets.xcconfig
+          mkdir -p "$RUNNER_TEMP/private_keys"
+          printf '%s\n' "$ASC_PRIVATE_KEY" > "$RUNNER_TEMP/private_keys/AuthKey_$ASC_KEY_ID.p8"
+          xcodegen generate
+
+      - name: Pick the build number
+        id: version
+        run: |
+          # Every upload needs a higher build number. The run number only
+          # grows; the offset keeps clear of builds uploaded by hand.
+          build=$(( ${{ github.run_number }} + 100 ))
+          version=$(grep -E '^\s*MARKETING_VERSION:' native/ios/project.yml | sed -E 's/.*"(.*)".*/\1/')
+          echo "build=$build" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Archive (signed by Apple's cloud signing)
+        working-directory: native/ios
+        run: |
+          ./scripts/xcodebuild-ci.sh archive -project PullUp.xcodeproj -scheme PullUp -configuration Release \
+            -destination generic/platform=iOS -archivePath "$RUNNER_TEMP/PullUp.xcarchive" \
+            -skipPackagePluginValidation -allowProvisioningUpdates \
+            -authenticationKeyPath "$RUNNER_TEMP/private_keys/AuthKey_$ASC_KEY_ID.p8" \
+            -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
+            CURRENT_PROJECT_VERSION=${{ steps.version.outputs.build }}
+
+      - name: Export for App Store Connect
+        working-directory: native/ios
+        run: |
+          cat > "$RUNNER_TEMP/ExportOptions.plist" <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key><string>app-store-connect</string>
+            <key>destination</key><string>export</string>
+            <key>signingStyle</key><string>automatic</string>
+            <key>teamID</key><string>$TEAM_ID</string>
+            <key>uploadSymbols</key><true/>
+            <key>manageAppVersionAndBuildNumber</key><false/>
+          </dict>
+          </plist>
+          PLIST
+          ./scripts/xcodebuild-ci.sh -exportArchive -archivePath "$RUNNER_TEMP/PullUp.xcarchive" \
+            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" -exportPath "$RUNNER_TEMP/export" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$RUNNER_TEMP/private_keys/AuthKey_$ASC_KEY_ID.p8" \
+            -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID"
+          ls -l "$RUNNER_TEMP/export"
+
+      - name: Record build provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: ${{ runner.temp }}/export/*.ipa
+
+      - name: Keep the build and its symbols
+        uses: actions/upload-artifact@v4
+        with:
+          name: PullUp-${{ steps.version.outputs.version }}-${{ steps.version.outputs.build }}
+          path: |
+            ${{ runner.temp }}/export/*.ipa
+            ${{ runner.temp }}/PullUp.xcarchive/dSYMs
+          retention-days: 90
+
+      - name: Upload to App Store Connect
+        run: |
+          # altool looks for the key in ./private_keys.
+          cd "$RUNNER_TEMP"
+          xcrun altool --upload-app --type ios --file export/*.ipa \
+            --apiKey "$ASC_KEY_ID" --apiIssuer "$ASC_ISSUER_ID" --output-format normal
+
+      - name: Summary
+        if: always()
+        env:
+          NOTES: ${{ inputs.notes }}
+        run: |
+          {
+            echo "### Pull Up ${{ steps.version.outputs.version }} (${{ steps.version.outputs.build }}), ${{ inputs.backend }} backend"
+            echo
+            echo "Commit \`${{ github.sha }}\`."
+            echo "If the upload step passed, Apple has received the build. It is not on TestFlight until"
+            echo "App Store Connect finishes processing it and shows it under TestFlight ▸ iOS Builds."
+            if [ -n "$NOTES" ]; then echo; echo "**What to test:** $NOTES"; fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Remove the key
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/private_keys" native/ios/Config/Secrets.xcconfig
