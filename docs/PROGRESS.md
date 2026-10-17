@@ -18,6 +18,7 @@ a row says so.
 | M2 | Live Sign in with Apple | Needs Apple | Not run: needs the Services ID, key and a device |
 | M5 | Per-account rate limit on `verify-subscription` (10 a minute, 60 an hour) | Working (local stack in CI) | Migration `20261018000200`; API test calls it 12 times. Pro state comes only from the server's entitlement; local StoreKit state never grants it |
 | M5 | Pro prices ($3.99 a month, $29.99 a year) | Proposed | Not set up in App Store Connect; no products exist |
+| M4 | Messages recover after going offline: channel rebuilt with backoff, chats and inbox reload on reconnect and on returning to the foreground | Working (local stack in CI) / app side unverified on a device | API test takes a client offline and checks the reload and resumed delivery; `DEVICE_TEST_PLAN.md` D4.3–D4.4 |
 | M1 | Build label for the staging backend | Working | Settings ▸ About shows "Pull Up server (staging)" when `PULLUP_BACKEND_ENVIRONMENT = staging` |
 
 ## Phase 2

@@ -294,8 +294,9 @@ Deno.test({
         ok(await ben.db.from("messages").insert({ id: missed, conversation_id: conversation, sender_id: ben.id, body: "You there?" }), "sent while Ann is offline");
         await wait(1_000);
         assert(!heard.ann.includes(missed), "an offline client hears nothing");
-        const unread = ok(await ann.db.rpc("unread_message_counts"), "unread counts") as { unread_conversations: number }[];
-        assertEquals(unread[0]?.unread_conversations, 1, "the reload shows the chat as unread");
+        const inbox = ok(await ann.db.rpc("inbox", { p_state: "active" }), "Ann reloads her inbox") as { conversation_id: string; unread_count: number }[];
+        const row = inbox.find((r) => r.conversation_id === conversation);
+        assert(row && row.unread_count >= 2, `the reload shows both unread messages: ${JSON.stringify(row)}`);
         const latest = ok(await ann.db.from("messages").select("id").eq("conversation_id", conversation)
           .order("created_at", { ascending: false }).limit(1), "Ann reloads the chat");
         assertEquals(latest[0]?.id, missed);
