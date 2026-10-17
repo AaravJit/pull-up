@@ -134,10 +134,12 @@ security boundary.
 * Meet RSVPs never carry location. `show_me` defaults from the user's privacy
   setting, which defaults to off.
 * `anon` (signed out) can't run any function or write any table, and every
-  policy is for signed-in users. Phase 1 relied on this without enforcing it
-  for functions; `20261017000500_security_hardening.sql` fixed that and
+  policy is for signed-in users. `20261016000800_security_hardening.sql`
+  enforces this for Phase 1 functions, `20261017000500` for Phase 2's, and
   `006_security_surface.sql` keeps it true (see `SECURITY_REPORT.md`). New
-  public functions must `revoke execute ... from public, anon`.
+  public functions must `revoke execute ... from public, anon`; a later
+  migration can call `private.revoke_anon_execute('<its id>')` to do it and
+  record what it removed.
 * Owner-rights (`SECURITY DEFINER`) helpers that take a person as an
   argument answer only about the caller; the ones only triggers need aren't
   callable at all.

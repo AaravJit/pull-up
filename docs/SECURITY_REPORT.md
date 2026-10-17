@@ -30,10 +30,10 @@ hardening or jailbreak resistance, and load testing. See "Still to do".
 
 | ID | Severity | Finding | Introduced | Status |
 | --- | --- | --- | --- | --- |
-| SEC-01 | High | Owner-rights helpers callable by any signed-in user: read the route of anyone's private drive; forge notifications (and pushes) from anyone to anyone | PR #2 | Fixed, `20261017000500` |
-| SEC-02 | Medium | Anyone could ask who has blocked whom, and whether two private accounts are friends | PR #2 | Fixed, `20261017000500` |
+| SEC-01 | High | Owner-rights helpers callable by any signed-in user: read the route of anyone's private drive; forge notifications (and pushes) from anyone to anyone | PR #2 | Fixed in PR #2, `20261016000800` |
+| SEC-02 | Medium | Anyone could ask who has blocked whom, and whether two private accounts are friends | PR #2 | Fixed in PR #2, `20261016000800` |
 | SEC-03 | Low | DM helpers answered "who is in conversation X" for any caller who knew its id | PR #3 (M2) | Fixed, `20261017000500` |
-| SEC-04 | Medium | Every public function was executable signed out (Postgres' default PUBLIC grant) | PR #2 | Fixed, `20261017000500` |
+| SEC-04 | Medium | Every public function was executable signed out (Postgres' default PUBLIC grant) | PR #2 | Fixed in PR #2, `20261016000800`; Phase 2 functions in `20261017000500` |
 | SEC-05 | Medium | A phone's push token stayed with the previous account after someone else signed in, so their notifications kept arriving there | PR #2 | Fixed in M5, `20261017000400` |
 | SEC-06 | Low | Opening a message request told the sender it had been read | PR #3 (M2) | Fixed in M2 (`4553118`) |
 | SEC-07 | Low | GPX/CSV exports of a full route were written without file protection and piled up in tmp | PR #3 (M3) | Fixed (client) |
@@ -98,7 +98,9 @@ Nothing in the app calls the API signed out and every policy targets
 `authenticated`. **Fix:** `EXECUTE` revoked from `public` and `anon` on each
 of them, with signed-in and server access kept explicitly; the exact grants
 removed are recorded in `private.revoked_anon_execute` so the rollback
-restores them. **Evidence:** tests 12–14. Test 14 fails if a future
+restores them. `20261016000800` (in PR #2) does this for the Phase 1
+functions and `20261017000500` for the ones Phase 2 adds, each recording
+its own rows. **Evidence:** tests 12–14. Test 14 fails if a future
 migration adds a public function without
 `revoke execute ... from public, anon`.
 
