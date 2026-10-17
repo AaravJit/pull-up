@@ -24,6 +24,12 @@ servers or with eBay; those steps are in `RELEASE_CHECKLIST.md` §4a and §6.
 | M6 | Security assessment | Done for the local stack | `SECURITY_REPORT.md`; pgTAP `006` (20); 4 database fixes |
 | M7 | Phase 2 screens in dark mode and Accessibility L | Working | UI tours (48–57) |
 
+Phase 2 CI, green on `99f9b66`: [iOS run 39](https://github.com/AaravJit/pull-up/actions/runs/39005443175)
+(package tests, app build, 15 UI journeys on iOS 26.5, `PullUpStoreTests`
+on iOS 26.2 because of Apple FB22237318) and [backend run 27](https://github.com/AaravJit/pull-up/actions/runs/39005443166)
+(pgTAP `001`–`006`, rollbacks, Deno tests). Screenshots 01–57:
+[`ci/screenshots/claude-pull-up-phase-2`](https://github.com/AaravJit/pull-up/tree/ci/screenshots/claude-pull-up-phase-2).
+
 ## Evidence
 
 * iOS workflow, green: package tests on the simulator, app build, 7 UI
