@@ -89,23 +89,30 @@ jobs:
             -skip-testing:PullUpStoreTests \
             -skipPackagePluginValidation \
             CODE_SIGNING_ALLOWED=NO
-      - name: StoreKit tests on an older iOS runtime
-        # `xcodebuild test` on the iOS 26.5 simulator doesn't hand the
-        # StoreKit configuration to storekitd, so SKTestSession sees no
-        # products (Apple FB22237318, a known issue with no workaround). These
-        # tests run on the newest runtime before 26.5 instead.
+      - name: StoreKit tests
+        # Run separately and ad-hoc signed ("Sign to Run Locally": no team,
+        # certificate or profile). With CODE_SIGNING_ALLOWED=NO the app has no
+        # signature or entitlements, and SKTestSession returned no products
+        # on both iOS 26.5 and 26.4. Runs on the newest runtime and on the one
+        # before it, so a runtime-specific StoreKit bug shows up as such.
         if: always()
         working-directory: native/ios
         run: |
-          SIM=$(IOS_BELOW=26.5 ./scripts/simulator-id.sh)
-          ./scripts/xcodebuild-ci.sh test \
-            -project PullUp.xcodeproj \
-            -scheme PullUp \
-            -destination "id=$SIM" \
-            -resultBundlePath "$RUNNER_TEMP/PullUpStore.xcresult" \
-            -only-testing:PullUpStoreTests \
-            -skipPackagePluginValidation \
-            CODE_SIGNING_ALLOWED=NO
+          status=0
+          for below in "" 26.5; do
+            # Prints "Using iPhone … (iOS x.y)" so the log says which runtime.
+            SIM=$(IOS_BELOW=$below ./scripts/simulator-id.sh)
+            ./scripts/xcodebuild-ci.sh test \
+              -project PullUp.xcodeproj \
+              -scheme PullUp \
+              -destination "id=$SIM" \
+              -resultBundlePath "$RUNNER_TEMP/PullUpStore${below:+-below-$below}.xcresult" \
+              -only-testing:PullUpStoreTests \
+              -skipPackagePluginValidation \
+              CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM= PROVISIONING_PROFILE_SPECIFIER= \
+              || status=1
+          done
+          exit $status
       - name: Upload screenshots
         if: always()
         uses: actions/upload-artifact@v4
@@ -120,7 +127,7 @@ jobs:
           name: PullUp-xcresult
           path: |
             ${{ runner.temp }}/PullUp.xcresult
-            ${{ runner.temp }}/PullUpStore.xcresult
+            ${{ runner.temp }}/PullUpStore*.xcresult
           if-no-files-found: ignore
       - name: Publish screenshots to ci/screenshots branch
         # Lets reviewers (and the agent building this app without a Mac) look
