@@ -52,6 +52,7 @@ public struct Speedometer: View {
             case .analog: AnalogSpeedometer(reading: reading)
             case .digital: DigitalSpeedometer(reading: reading)
             case .tape: TapeSpeedometer(reading: reading)
+            case .ring: RingSpeedometer(reading: reading)
             }
         }
         .accessibilityElement(children: .ignore)
@@ -328,5 +329,77 @@ private struct TapeStrip: View, Animatable {
             line.addLine(to: CGPoint(x: center, y: size.height - 12))
             context.stroke(line, with: .color(accent), lineWidth: 2)
         }
+    }
+}
+
+// MARK: - Ring (Pull Up Pro)
+
+struct RingSpeedometer: View {
+    let reading: SpeedometerReading
+    @Environment(\.clusterTheme) private var theme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @ScaledMetric(relativeTo: .largeTitle) private var numeralSize: CGFloat = 104
+
+    var body: some View {
+        GeometryReader { proxy in
+            let side = min(proxy.size.width, proxy.size.height)
+            let line = max(8, side * 0.07)
+            let redline = reading.fraction >= 0.8
+            ZStack {
+                RingArc(from: 0, to: 1)
+                    .stroke(ClusterColor.rule, style: StrokeStyle(lineWidth: line, lineCap: .butt))
+                RingArc(from: 0.8, to: 1)
+                    .stroke(ClusterColor.live.opacity(0.25), style: StrokeStyle(lineWidth: line, lineCap: .butt))
+                RingArc(from: 0, to: reading.fraction)
+                    .stroke(redline ? ClusterColor.live : theme.accentColor, style: StrokeStyle(lineWidth: line, lineCap: .butt))
+                    .opacity(reading.isDerived ? 0.75 : 1)
+                    .animation(Motion.resolved(Motion.needle, reduceMotion: reduceMotion), value: reading.fraction)
+                if let top = reading.topSpeed {
+                    let f = min(1, max(0, top / reading.maximum))
+                    RingArc(from: max(0, f - 0.004), to: min(1, f + 0.004))
+                        .stroke(ClusterColor.ink, style: StrokeStyle(lineWidth: line * 1.6, lineCap: .butt))
+                }
+                VStack(spacing: Space.xs) {
+                    Text(reading.displayValue)
+                        .font(ClusterFont.numeral(numeralSize))
+                        .minimumScaleFactor(0.4)
+                        .lineLimit(1)
+                        .foregroundStyle(reading.speed == nil ? ClusterColor.inkTertiary : ClusterColor.ink)
+                        .opacity(reading.isDerived ? 0.75 : 1)
+                        .contentTransition(.numericText(value: reading.speed ?? 0))
+                        .animation(Motion.resolved(Motion.quick, reduceMotion: reduceMotion), value: reading.displayValue)
+                    Legend(reading.unit.label, color: ClusterColor.inkSecondary)
+                    if let top = reading.topSpeed {
+                        Legend("Top \(Int(top.rounded()))", color: theme.accentColor)
+                    }
+                }
+                .padding(.horizontal, line * 2)
+            }
+            .padding(line)
+            .frame(width: side, height: side)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+}
+
+/// A 300° arc opening at the bottom; `from`/`to` are fractions of it.
+private struct RingArc: Shape {
+    var from: Double
+    var to: Double
+
+    nonisolated var animatableData: AnimatablePair<Double, Double> {
+        get { AnimatablePair(from, to) }
+        set { from = newValue.first; to = newValue.second }
+    }
+
+    nonisolated func path(in rect: CGRect) -> Path {
+        let start = 120.0, sweep = 300.0
+        var path = Path()
+        guard to > from else { return path }
+        path.addArc(
+            center: CGPoint(x: rect.midX, y: rect.midY), radius: min(rect.width, rect.height) / 2,
+            startAngle: .degrees(start + sweep * from), endAngle: .degrees(start + sweep * to), clockwise: false
+        )
+        return path
     }
 }

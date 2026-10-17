@@ -86,6 +86,26 @@ jobs:
             -scheme PullUp \
             -destination "id=$SIM" \
             -resultBundlePath "$RUNNER_TEMP/PullUp.xcresult" \
+            -skip-testing:PullUpStoreTests \
+            -skipPackagePluginValidation \
+            CODE_SIGNING_ALLOWED=NO
+      - name: StoreKit tests
+        # `xcodebuild test` from the command line doesn't hand the StoreKit
+        # configuration to the simulator's storekitd on iOS 26.4 and 26.5, so
+        # SKTestSession silently falls through to the real App Store and finds
+        # no products (Apple FB22237318, no workaround; signing doesn't help).
+        # iOS 26.2 is unaffected, so these tests run there. Move them back to
+        # the main run once Apple ships a fix.
+        if: always()
+        working-directory: native/ios
+        run: |
+          SIM=$(IOS_BELOW=26.4 ./scripts/simulator-id.sh)
+          ./scripts/xcodebuild-ci.sh test \
+            -project PullUp.xcodeproj \
+            -scheme PullUp \
+            -destination "id=$SIM" \
+            -resultBundlePath "$RUNNER_TEMP/PullUpStore.xcresult" \
+            -only-testing:PullUpStoreTests \
             -skipPackagePluginValidation \
             CODE_SIGNING_ALLOWED=NO
       - name: Upload screenshots
@@ -100,7 +120,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: PullUp-xcresult
-          path: ${{ runner.temp }}/PullUp.xcresult
+          path: |
+            ${{ runner.temp }}/PullUp.xcresult
+            ${{ runner.temp }}/PullUpStore.xcresult
           if-no-files-found: ignore
       - name: Publish screenshots to ci/screenshots branch
         # Lets reviewers (and the agent building this app without a Mac) look

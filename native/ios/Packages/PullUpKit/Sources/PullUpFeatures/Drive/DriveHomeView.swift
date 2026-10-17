@@ -246,6 +246,11 @@ struct NotificationBell: View {
                 .frame(width: 44, height: 44)
         }
         .accessibilityLabel(app.unreadNotifications > 0 ? "Notifications, \(app.unreadNotifications) unread" : "Notifications")
+        .onChange(of: app.pendingPush, initial: true) { _, route in
+            guard route == .activity else { return }
+            app.pendingPush = nil
+            showing = true
+        }
         .sheet(isPresented: $showing) {
             NavigationStack { NotificationsView() }
                 .clusterTheme(app.themeStore.theme)

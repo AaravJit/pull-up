@@ -14,11 +14,13 @@ public struct FeedView: View {
     @State private var error: String?
     @State private var composing = false
     @State private var commentsFor: Post?
+    @State private var sharing: Post?
+    @State private var path = NavigationPath()
 
     public init() {}
 
     public var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: Space.xl) {
                     header
@@ -34,7 +36,7 @@ public struct FeedView: View {
                         )
                     }
                     ForEach(posts) { post in
-                        PostCard(post: post, onLike: { toggleLike(post) }, onComments: { commentsFor = post })
+                        PostCard(post: post, onLike: { toggleLike(post) }, onComments: { commentsFor = post }, onShare: { sharing = post })
                     }
                 }
                 .padding(.bottom, Space.xl)
@@ -44,10 +46,20 @@ public struct FeedView: View {
             .toolbar(.hidden, for: .navigationBar)
             .navigationDestination(for: ProfileRoute.self) { route in ProfileView(userID: route.id) }
             .navigationDestination(for: SettingsRoute.self) { _ in SettingsView() }
+            .navigationDestination(for: MessagesRoute.self) { _ in InboxView() }
             .task(id: scope) { await load() }
+            .onChange(of: app.pendingPush, initial: true) { _, route in
+                // A tapped message push: open Messages, which then opens the conversation.
+                guard case .conversation = route else { return }
+                path = NavigationPath()
+                path.append(MessagesRoute())
+            }
             .sheet(isPresented: $composing, onDismiss: { Task { await load() } }) { PostComposerView() }
             .sheet(item: $commentsFor) { post in
                 CommentsView(post: post).presentationDetents([.medium, .large])
+            }
+            .sheet(item: $sharing) { post in
+                ShareToMessageView(shared: SharedRef(kind: .post, id: post.id))
             }
         }
     }
@@ -65,6 +77,7 @@ public struct FeedView: View {
                         .frame(width: 44, height: 44)
                 }
                 .accessibilityLabel("New post")
+                MessagesButton()
                 if let me = app.userID {
                     NavigationLink(value: ProfileRoute(id: me)) {
                         Image(systemName: "person.crop.square")
@@ -116,6 +129,7 @@ struct PostCard: View {
     let post: Post
     let onLike: () -> Void
     let onComments: () -> Void
+    var onShare: (() -> Void)?
 
     var body: some View {
         VStack(alignment: .leading, spacing: Space.m) {
@@ -161,6 +175,7 @@ struct PostCard: View {
         }
         .buttonStyle(.plain)
         .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("post-author-\(post.author?.username ?? "")")
     }
 
     private var kindLabel: String {
@@ -193,6 +208,10 @@ struct PostCard: View {
             }
             .accessibilityLabel("Comments")
             .accessibilityValue("\(post.commentCount)")
+            if let onShare {
+                Button(action: onShare) { Image(systemName: "paperplane") }
+                    .accessibilityLabel("Send in a message")
+            }
             Spacer()
             VisibilityTag(post.visibility)
         }

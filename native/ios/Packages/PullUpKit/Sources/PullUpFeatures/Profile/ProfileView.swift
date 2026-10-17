@@ -16,6 +16,9 @@ struct ProfileView: View {
     @State private var error: String?
     @State private var editing = false
     @State private var followBusy = false
+    @State private var conversation: ConversationTarget?
+    @State private var glance: Vehicle?
+    @State private var messageBusy = false
 
     private var isMe: Bool { userID == app.userID }
 
@@ -56,6 +59,13 @@ struct ProfileView: View {
         .sheet(isPresented: $editing, onDismiss: { Task { await load() } }) {
             if let page { ProfileEditorView(page: page) }
         }
+        .sheet(item: $conversation) { target in
+            NavigationStack { ThreadView(target: target, showsDone: true) }
+                .clusterTheme(app.themeStore.theme)
+        }
+        .sheet(item: $glance) { vehicle in
+            if let page { VehicleGlanceView(vehicle: vehicle, owner: stub(page)).clusterTheme(app.themeStore.theme) }
+        }
         .task { await load() }
         .accessibilityIdentifier("profile")
     }
@@ -66,7 +76,7 @@ struct ProfileView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: Space.xl) {
                 if layout == .showcase, let featured, page.canViewContent {
-                    hero(featured)
+                    glanceButton(featured) { hero(featured) }
                 }
                 VStack(alignment: .leading, spacing: Space.xl) {
                     identity(page, compact: layout == .garage)
@@ -147,7 +157,10 @@ struct ProfileView: View {
                 .buttonStyle(.clusterSecondary)
                 .accessibilityIdentifier("edit-profile")
             } else {
-                followButton(page)
+                HStack(spacing: Space.s) {
+                    followButton(page)
+                    messageButton(page)
+                }
             }
         }
     }
@@ -162,6 +175,31 @@ struct ProfileView: View {
         }
         .buttonStyle(ClusterButtonStyle(state == nil ? .primary : .secondary))
         .disabled(followBusy)
+    }
+
+    private func messageButton(_ page: ProfilePage) -> some View {
+        Button {
+            Task { await openConversation(page) }
+        } label: {
+            Label(messageBusy ? "Opening" : "Message", systemImage: "paperplane").frame(maxWidth: .infinity)
+        }
+        .buttonStyle(.clusterSecondary)
+        .disabled(messageBusy)
+        .accessibilityIdentifier("message-profile")
+    }
+
+    private func stub(_ page: ProfilePage) -> ProfileStub {
+        ProfileStub(id: page.profile.id, username: page.profile.username, displayName: page.profile.displayName, avatarPath: page.profile.avatarPath)
+    }
+
+    private func openConversation(_ page: ProfilePage) async {
+        messageBusy = true
+        defer { messageBusy = false }
+        do {
+            conversation = try await app.conversation(with: stub(page))
+        } catch {
+            self.error = error.localizedDescription
+        }
     }
 
     private func stats(big: Bool) -> some View {
@@ -190,20 +228,37 @@ struct ProfileView: View {
                     .font(ClusterFont.body(.subheadline)).foregroundStyle(ClusterColor.inkSecondary)
             } else if list {
                 ForEach(shown) { vehicle in
-                    HStack(spacing: Space.m) {
-                        VehicleArtwork(vehicle: vehicle).frame(width: 72, height: 46).clipShape(ChamferedRectangle(cut: 4))
-                        VStack(alignment: .leading, spacing: 2) {
-                            Legend("\(vehicle.year) · \(vehicle.kind.label)")
-                            Text("\(vehicle.make) \(vehicle.model)").font(ClusterFont.headline(.subheadline)).foregroundStyle(ClusterColor.ink)
+                    glanceButton(vehicle) {
+                        HStack(spacing: Space.m) {
+                            VehicleArtwork(vehicle: vehicle).frame(width: 72, height: 46).clipShape(ChamferedRectangle(cut: 4))
+                            VStack(alignment: .leading, spacing: 2) {
+                                Legend("\(vehicle.year) · \(vehicle.kind.label)")
+                                Text("\(vehicle.make) \(vehicle.model)").font(ClusterFont.headline(.subheadline)).foregroundStyle(ClusterColor.ink)
+                            }
+                            Spacer(minLength: 0)
                         }
+                        .accessibilityElement(children: .combine)
                     }
-                    .accessibilityElement(children: .combine)
                 }
             } else {
                 LazyVGrid(columns: [GridItem(.flexible(), spacing: Space.m), GridItem(.flexible(), spacing: Space.m)], spacing: Space.l) {
-                    ForEach(shown) { GarageTile(vehicle: $0) }
+                    ForEach(shown) { vehicle in glanceButton(vehicle) { GarageTile(vehicle: vehicle) } }
                 }
             }
+        }
+    }
+
+    /// Other people's vehicles open a glance with "Message owner"; your own
+    /// are managed from the Garage tab.
+    @ViewBuilder
+    private func glanceButton<Content: View>(_ vehicle: Vehicle, @ViewBuilder label: () -> Content) -> some View {
+        if isMe {
+            label()
+        } else {
+            Button { glance = vehicle } label: { label() }
+                .buttonStyle(.plain)
+                .accessibilityHint("Opens the vehicle, with a button to message the owner")
+                .accessibilityIdentifier("glance-\(vehicle.model)")
         }
     }
 

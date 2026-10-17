@@ -370,7 +370,7 @@ public struct SwitchBank<Value: Hashable & Identifiable>: View {
                         .minimumScaleFactor(0.6)
                         .allowsTightening(true)
                         .foregroundStyle(selected ? ClusterColor.ink : ClusterColor.inkTertiary)
-                        .padding(.horizontal, 2)
+                        .padding(.horizontal, Space.xs)
                         .frame(maxWidth: .infinity, minHeight: 36)
                         .overlay(alignment: .bottom) {
                             if selected {

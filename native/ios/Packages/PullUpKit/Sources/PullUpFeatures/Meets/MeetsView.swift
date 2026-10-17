@@ -163,6 +163,7 @@ struct MeetDetailView: View {
     @State private var error: String?
     @State private var busy = false
     @State private var confirmingCancel = false
+    @State private var sharing = false
 
     init(meetID: UUID, initial: Meet) {
         self.meetID = meetID
@@ -234,6 +235,18 @@ struct MeetDetailView: View {
         }
         .canvasBackground()
         .clusterNavigation(meet.title)
+        .toolbar {
+            if !meet.isCancelled {
+                ToolbarItem(placement: .primaryAction) {
+                    Button { sharing = true } label: { Image(systemName: "paperplane") }
+                        .accessibilityLabel("Send in a message")
+                        .accessibilityIdentifier("share-meet")
+                }
+            }
+        }
+        .sheet(isPresented: $sharing) {
+            ShareToMessageView(shared: SharedRef(kind: .meet, id: meet.id))
+        }
         .task { await loadAttendees() }
         .confirmationDialog("Cancel \(meet.title)?", isPresented: $confirmingCancel, titleVisibility: .visible) {
             Button("Cancel meet", role: .destructive) {

@@ -136,8 +136,15 @@ public enum AccentChoice: String, Codable, CaseIterable, Sendable, Identifiable 
     case gulf        // pale blue
     case ultraviolet
     case titanium    // neutral, for people who want no colour
+    case papaya      // Pull Up Pro
+    case acid        // Pull Up Pro
 
     public var id: String { rawValue }
+
+    /// Pro accents are app colours only. Vehicle identity colours and
+    /// profile accents use the standard set, which the server accepts.
+    public var isPro: Bool { self == .papaya || self == .acid }
+    public static let standard: [AccentChoice] = allCases.filter { !$0.isPro }
 
     public var label: String {
         switch self {
@@ -147,6 +154,8 @@ public enum AccentChoice: String, Codable, CaseIterable, Sendable, Identifiable 
         case .gulf: "Gulf"
         case .ultraviolet: "Ultraviolet"
         case .titanium: "Titanium"
+        case .papaya: "Papaya"
+        case .acid: "Acid"
         }
     }
 }

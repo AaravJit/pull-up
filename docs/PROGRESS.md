@@ -1,7 +1,34 @@
 # Progress
 
-Native iOS rebuild of Pull Up on branch `claude/native-ios-85igsc`. The Expo
-app at the repository root is unchanged.
+Native iOS rebuild of Pull Up. Phase 1 is on branch `claude/native-ios-85igsc`
+(PR #2); Phase 2 is on `claude/pull-up-phase-2` (PR #3, stacked on PR #2).
+The Expo app at the repository root is unchanged.
+
+## Phase 2
+
+Plan: `PHASE2_PLAN.md`. Status uses the legend below. Nothing in Phase 2 has
+run on a real device, against a hosted Supabase project, against Apple's
+servers or with eBay; those steps are in `RELEASE_CHECKLIST.md` §4a and §6.
+
+| Milestone | Feature | Status | Evidence / remaining action |
+| --- | --- | --- | --- |
+| M1 | Sign in with Apple first, onboarding (username, photo, privacy), email behind "Other options" | Working (demo data) / needs Apple | UI tests `testSignedOutShowsAuth`, `testNewAccountOnboarding` (screenshots 28–33); real Apple sign-in needs a device |
+| M1 | No account merge on matching email; explicit linking only | Working (backend) | pgTAP `002_accounts.sql`; confirm the trigger on the hosted project (checklist §1) |
+| M1 | Apple revocation sign-out, deletion with token revocation | Needs Apple | `APPLE_*` secrets (checklist §4a) |
+| M2 | One-to-one messages: inbox, requests, read receipts, photos, reactions, unsend, report, block, sharing | Working (demo data), rules enforced in backend | pgTAP `003_direct_messages.sql` (44); UI `testDirectMessages` (34–40). Realtime not yet run against a live server |
+| M3 | Pull Up Pro paywall, Ring face, Papaya/Acid accents, speed-band analytics, GPX/CSV export | Working (demo store, no payment) | `ProFlowTests`, UI `testProSubscription` (41–44) |
+| M3 | StoreKit 2 purchase, Ask to Buy, expiry | Working (local StoreKit file only) | `PullUpStoreTests`; no products exist in App Store Connect |
+| M3 | Server-verified entitlements | Working (backend, Apple stubbed) | pgTAP `004` (20), Deno tests; never called Apple's real API |
+| M4 | Parts finder: vehicle-aware eBay search links, no listings | Working | `PartsTests`, UI `testPartsFinderBuildsAVehicleSearch` (45). No eBay API access; listings need eBay approval |
+| M5 | Per-category push preferences, previews off by default, token rotation, push-tap routing | Working (backend, demo UI) / needs Apple for delivery | pgTAP `005` (24), Deno `push_test.ts`, `PushFlowTests`, UI tests (46–47) |
+| M6 | Security assessment | Done for the local stack | `SECURITY_REPORT.md`; pgTAP `006` (20); 4 database fixes |
+| M7 | Phase 2 screens in dark mode and Accessibility L | Working | UI tours (48–57) |
+
+Phase 2 CI, green on `99f9b66`: [iOS run 39](https://github.com/AaravJit/pull-up/actions/runs/39005443175)
+(package tests, app build, 15 UI journeys on iOS 26.5, `PullUpStoreTests`
+on iOS 26.2 because of Apple FB22237318) and [backend run 27](https://github.com/AaravJit/pull-up/actions/runs/39005443166)
+(pgTAP `001`–`006`, rollbacks, Deno tests). Screenshots 01–57:
+[`ci/screenshots/claude-pull-up-phase-2`](https://github.com/AaravJit/pull-up/tree/ci/screenshots/claude-pull-up-phase-2).
 
 ## Evidence
 

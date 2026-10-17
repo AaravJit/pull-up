@@ -58,6 +58,24 @@ struct VehicleDetailView: View {
                     titleBlock(vehicle)
                     statsStrip
                     specs(vehicle)
+                    NavigationLink {
+                        PartsFinderView(vehicle: vehicle)
+                    } label: {
+                        HStack(spacing: Space.m) {
+                            Image(systemName: "wrench.and.screwdriver").foregroundStyle(theme.accentColor).accessibilityHidden(true)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Find parts").font(ClusterFont.headline(.subheadline)).foregroundStyle(ClusterColor.ink)
+                                Text("Search eBay for parts that fit this \(vehicle.kind == .car ? "car" : "bike").")
+                                    .font(ClusterFont.body(.caption)).foregroundStyle(ClusterColor.inkSecondary)
+                            }
+                            Spacer()
+                            Image(systemName: "chevron.right").foregroundStyle(ClusterColor.inkTertiary)
+                        }
+                        .padding(Space.m)
+                        .plate()
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("find-parts")
                     modsSection
                     drivesSection
                     if let error { ErrorLine(message: error) }

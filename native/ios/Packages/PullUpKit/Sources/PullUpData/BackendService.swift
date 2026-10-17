@@ -16,13 +16,25 @@ public protocol BackendService: AnyObject, Sendable {
     // Auth
     func currentUserID() async -> UserID?
     func authChanges() -> AsyncStream<UserID?>
+    /// Email sign-in exists only for accounts created by Pull Up support (the
+    /// App Review demo account). New accounts use Sign in with Apple.
     func signIn(email: String, password: String) async throws
-    func signUp(email: String, password: String, username: String) async throws -> SignUpOutcome
     func signInWithApple(idToken: String, nonce: String) async throws
     func signOut() async throws
-    /// Completes sign-in from an email confirmation link (pullup://auth-callback).
+    /// Completes sign-in from an auth link (pullup://auth-callback).
     func handleAuthCallback(_ url: URL) async throws
-    func deleteAccount() async throws
+    /// Deletes the account on the server. For Sign in with Apple accounts the
+    /// server also revokes Apple's tokens when given a fresh authorization code.
+    func deleteAccount(appleAuthorizationCode: String?) async throws -> AccountDeletion
+
+    // Account and onboarding
+    func account() async throws -> AccountState
+    func usernameStatus(_ username: String) async throws -> UsernameStatus
+    /// Claims a username (and display name). Throws when it's taken or not allowed.
+    func claimUsername(_ username: String, displayName: String) async throws
+    /// Uploads an already EXIF-stripped JPEG as the profile photo.
+    func uploadAvatar(jpegData: Data) async throws
+    func completeOnboarding() async throws
 
     // Profiles and graph
     func profilePage(_ id: UserID) async throws -> ProfilePage
@@ -76,10 +88,54 @@ public protocol BackendService: AnyObject, Sendable {
     // Leaderboards
     func leaderboard(_ query: LeaderboardQuery) async throws -> [LeaderboardEntry]
 
+    // Direct messages. Every rule (blocks, requests, rate limits, who can
+    // read what) is enforced by the server; see the DM migration.
+    /// Returns the conversation with this person, creating it if needed.
+    /// Refusals all read "you can't message this person", whatever the reason.
+    func startConversation(with user: UserID) async throws -> UUID
+    /// One page of the inbox, newest first; pass the last entry's
+    /// `lastMessageAt` as `before` for the next page.
+    func inbox(_ state: ConversationState, before: Date?) async throws -> [InboxEntry]
+    /// One page of a conversation, oldest first, ending just before `before`.
+    func messages(conversation: UUID, before: Date?, limit: Int) async throws -> [DirectMessage]
+    /// Idempotent: sending the same `OutgoingMessage.id` twice stores one message.
+    func send(_ message: OutgoingMessage) async throws -> DirectMessage
+    /// Sets or (with nil) removes your reaction.
+    func setReaction(_ emoji: String?, message: UUID) async throws
+    func unsend(message: UUID) async throws
+    func markRead(conversation: UUID) async throws
+    func respondToRequest(conversation: UUID, accept: Bool) async throws
+    func setMuted(_ muted: Bool, conversation: UUID) async throws
+    /// Hides the conversation until a new message; `clearHistory` also
+    /// deletes your copy of everything so far.
+    func hideConversation(_ id: UUID, clearHistory: Bool) async throws
+    func peerReadAt(conversation: UUID) async throws -> Date?
+    func unreadMessages() async throws -> UnreadMessages
+    func sharedPreview(_ ref: SharedRef) async throws -> SharedPreview
+    func report(user: UserID, reason: ReportReason, details: String, message: UUID?) async throws
+    func block(_ user: UserID) async throws
+    /// Nudges when something changes in your conversations. Ends when the
+    /// consuming task is cancelled.
+    func messagingChanges() -> AsyncStream<MessagingChange>
+
+    // Pull Up Pro
+    /// The caller's entitlement as the server records it.
+    func entitlement() async throws -> Entitlement
+    /// Hands a StoreKit transaction (its JWS) to the server, which confirms
+    /// it with Apple and returns the resulting entitlement. Throws
+    /// `SubscriptionError`.
+    func verifySubscription(signedTransaction: String) async throws -> Entitlement
+
     // Notifications
     func notifications() async throws -> [AppNotification]
     func markNotificationsRead() async throws
+    /// Registers this phone's APNs token for the signed-in account. The
+    /// server moves a token to whoever registered it last.
     func registerPushToken(_ token: String, sandbox: Bool) async throws
+    /// Stops pushes to this phone for the signed-in account (sign-out).
+    func unregisterPushToken(_ token: String) async throws
+    func notificationPreferences() async throws -> NotificationPreferences
+    func updateNotificationPreferences(_ preferences: NotificationPreferences) async throws
 
     // Media
     func mediaURL(_ bucket: MediaBucket, path: String) async -> URL?
@@ -92,9 +148,23 @@ public enum BackendMode: Sendable, Equatable {
     case unconfigured
 }
 
-public enum SignUpOutcome: Sendable {
-    case signedIn
-    case confirmEmail
+/// What the server reported after deleting an account.
+public struct AccountDeletion: Sendable, Equatable {
+    public enum AppleRevocation: Sendable, Equatable {
+        /// Not a Sign in with Apple account.
+        case notApplicable
+        case revoked
+        /// The account is gone, but Apple's link wasn't revoked (server not
+        /// configured, prompt cancelled, or Apple refused). The person can
+        /// remove Pull Up under Settings ▸ Apple Account ▸ Sign in with Apple.
+        case notRevoked(reason: String)
+    }
+
+    public var apple: AppleRevocation
+
+    public init(apple: AppleRevocation) {
+        self.apple = apple
+    }
 }
 
 public enum FeedScope: String, Sendable, CaseIterable, Identifiable {
@@ -108,6 +178,7 @@ public enum MediaBucket: String, Sendable {
     case avatars
     case vehicleMedia = "vehicle-media"
     case postMedia = "post-media"
+    case dmMedia = "dm-media"
 }
 
 public struct LeaderboardQuery: Hashable, Sendable {

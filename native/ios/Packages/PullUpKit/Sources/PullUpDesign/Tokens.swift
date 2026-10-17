@@ -55,14 +55,16 @@ public enum ClusterColor {
         case .gulf: dynamic(light: 0x2E7FB8, dark: 0x8CC4EA)
         case .ultraviolet: dynamic(light: 0x6542D6, dark: 0x9B80FF)
         case .titanium: dynamic(light: 0x5F646C, dark: 0xB9BDC4)
+        case .papaya: dynamic(light: 0xD9531E, dark: 0xFF7A3D)
+        case .acid: dynamic(light: 0x7FA300, dark: 0xC4EC2E)
         }
     }
 
     /// Whether dark text reads better than light text on this accent.
     public static func accentPrefersDarkText(_ choice: AccentChoice) -> Bool {
         switch choice {
-        case .sodium, .gulf, .titanium: true
-        case .redline, .britishGreen, .ultraviolet: false
+        case .sodium, .gulf, .titanium, .acid: true
+        case .redline, .britishGreen, .ultraviolet, .papaya: false
         }
     }
 }

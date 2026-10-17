@@ -26,9 +26,16 @@ additional_redirect_urls = ["pullup://auth-callback"]
 jwt_expiry = 3600
 enable_refresh_token_rotation = true
 enable_signup = true
+# Lets a signed-in user add a second sign-in method (Google on Android).
+# Pull Up refuses links the user didn't start: see migration
+# 20261017000100_accounts.sql.
+enable_manual_linking = true
 
+# New accounts are created with Sign in with Apple (Google on Android later).
+# Email stays enabled for sign-in only: the App Review demo account is made
+# in the dashboard.
 [auth.email]
-enable_signup = true
+enable_signup = false
 enable_confirmations = true
 
 # Enabled in production once the Services ID and signing key exist.
@@ -44,3 +51,8 @@ file_size_limit = "100MiB"
 [edge_runtime]
 enabled = true
 policy = "oneshot"
+
+# Apple calls this without a Supabase token; it checks every claim against
+# the App Store Server API instead (functions/app-store-notifications).
+[functions.app-store-notifications]
+verify_jwt = false

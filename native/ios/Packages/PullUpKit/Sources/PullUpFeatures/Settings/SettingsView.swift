@@ -9,14 +9,15 @@ struct SettingsView: View {
     @State private var privacy: PrivacySettings?
     @State private var savedPrivacy: PrivacySettings?
     @State private var privacyError: String?
-    @State private var confirmingDelete = false
-    @State private var deleteText = ""
-    @State private var accountError: String?
+    @State private var deleting = false
+    @State private var showingPro = false
+    @State private var proHighlight: ProFeature?
 
     var body: some View {
         @Bindable var store = app.themeStore
         ScrollView {
             VStack(alignment: .leading, spacing: Space.xxl) {
+                proRow
                 appearance(theme: $store.theme)
                 dashboard(theme: $store.theme)
                 privacySection
@@ -37,19 +38,50 @@ struct SettingsView: View {
             guard let value, value != savedPrivacy else { return }
             Task { await savePrivacy(value) }
         }
-        .alert("Delete your account?", isPresented: $confirmingDelete) {
-            TextField("Type DELETE", text: $deleteText)
-            Button("Delete account", role: .destructive) {
-                guard deleteText == "DELETE" else { return }
-                Task {
-                    do { try await app.deleteAccount() } catch { accountError = error.localizedDescription }
-                }
-            }
-            Button("Cancel", role: .cancel) { deleteText = "" }
-        } message: {
-            Text("This permanently deletes your profile, garage, drives, routes, posts and photos from the server. It can't be undone.")
-        }
+        .sheet(isPresented: $deleting) { DeleteAccountView() }
+        .proSheet(isPresented: $showingPro, highlight: proHighlight)
+        .task { await app.refreshAccount() }
         .accessibilityIdentifier("settings")
+    }
+
+    // MARK: Pro
+
+    private var proRow: some View {
+        Button {
+            proHighlight = nil
+            showingPro = true
+        } label: {
+            HStack(spacing: Space.m) {
+                Image(systemName: "gauge.open.with.lines.needle.67percent.and.arrowtriangle")
+                    .font(.system(size: 22, weight: .semibold))
+                    .foregroundStyle(app.themeStore.theme.accentColor)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Pull Up Pro").font(ClusterFont.headline(.subheadline)).foregroundStyle(ClusterColor.ink)
+                    Text(proSummary).font(ClusterFont.body(.caption)).foregroundStyle(ClusterColor.inkSecondary)
+                }
+                Spacer()
+                Image(systemName: "chevron.right").foregroundStyle(ClusterColor.inkTertiary)
+            }
+            .padding(Space.m)
+            .plate()
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("open-pro")
+    }
+
+    private var proSummary: String {
+        let entitlement = app.pro.entitlement
+        guard entitlement.isPro else { return "Extra faces, colours, drive analytics and export." }
+        if let expires = entitlement.expiresAt {
+            return "Active · \(entitlement.autoRenew ? "renews" : "ends") \(expires.formatted(date: .abbreviated, time: .omitted))"
+        }
+        return "Active"
+    }
+
+    private func openPro(_ feature: ProFeature) {
+        proHighlight = feature
+        showingPro = true
     }
 
     // MARK: Look
@@ -63,15 +95,22 @@ struct SettingsView: View {
             }
             VStack(alignment: .leading, spacing: Space.s) {
                 Legend("Accent")
-                AccentSwatches(selection: theme.accent)
+                AccentSwatches(selection: theme.accent, choices: AccentChoice.allCases, locked: { $0.isPro && !app.pro.isPro }) {
+                    openPro(.accentPalettes)
+                }
                 Text(theme.wrappedValue.accent.label).font(ClusterFont.body(.caption)).foregroundStyle(ClusterColor.inkSecondary)
             }
             VStack(alignment: .leading, spacing: Space.s) {
                 Legend("Speedometer")
-                HStack(spacing: Space.s) {
+                LazyVGrid(columns: [GridItem(.flexible(), spacing: Space.s), GridItem(.flexible(), spacing: Space.s)], spacing: Space.s) {
                     ForEach(SpeedometerStyle.allCases) { style in
-                        SpeedometerChoice(style: style, unit: theme.wrappedValue.unit, isSelected: theme.wrappedValue.speedometer == style) {
-                            withAnimation(Motion.select) { theme.wrappedValue.speedometer = style }
+                        let locked = style.isPro && !app.pro.isPro
+                        SpeedometerChoice(style: style, unit: theme.wrappedValue.unit, isSelected: theme.wrappedValue.speedometer == style, locked: locked) {
+                            if locked {
+                                openPro(.speedometerFaces)
+                            } else {
+                                withAnimation(Motion.select) { theme.wrappedValue.speedometer = style }
+                            }
                         }
                     }
                 }
@@ -133,10 +172,33 @@ struct SettingsView: View {
                 PrivacyToggle(title: "Appear on leaderboards", detail: "Shows your username, vehicle and totals on the boards you qualify for.", isOn: binding.leaderboardOptIn)
                 PrivacyToggle(title: "Appear on closed-course boards", detail: "Only runs from verified closed-course events are ever ranked.", isOn: binding.performanceLeaderboardOptIn)
                 PrivacyToggle(title: "Approve new followers", detail: "People must request to follow you.", isOn: binding.requireFollowApproval)
+                MessagesFromPicker(selection: binding.messagesFrom)
+                PrivacyToggle(title: "Read receipts", detail: "Shows people when you've read their messages. Off: you won't see theirs either.", isOn: binding.dmReadReceipts)
+                    .accessibilityIdentifier("read-receipts")
             } else {
                 ProgressView()
             }
         }
+    }
+
+    private var notificationsLink: some View {
+        NavigationLink {
+            NotificationPreferencesView()
+        } label: {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Notifications").font(ClusterFont.headline(.subheadline)).foregroundStyle(ClusterColor.ink)
+                    Text("Which pushes you get, and whether they show message text.")
+                        .font(ClusterFont.body(.caption)).foregroundStyle(ClusterColor.inkSecondary)
+                }
+                Spacer()
+                Image(systemName: "chevron.right").foregroundStyle(ClusterColor.inkTertiary)
+            }
+            .padding(Space.m)
+            .plate()
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("open-notifications")
     }
 
     private var zonesLink: some View {
@@ -175,15 +237,23 @@ struct SettingsView: View {
     private var account: some View {
         VStack(alignment: .leading, spacing: Space.m) {
             SectionHeader("Account")
-            NotificationSettingsRow()
-            if let accountError { ErrorLine(message: accountError) }
+            if let account = app.account {
+                VStack(alignment: .leading, spacing: 0) {
+                    SpecRow(label: "Username", value: "@\(account.username)")
+                    SpecRow(label: "Signs in with", value: account.signInMethods.isEmpty ? "–" : account.signInMethods.map(\.label).joined(separator: ", "))
+                    if account.usesPrivateRelayEmail {
+                        SpecRow(label: "Email", value: "Hidden by Apple")
+                    }
+                }
+                Text("Your email is never shown on your profile or to other people.")
+                    .font(ClusterFont.body(.caption)).foregroundStyle(ClusterColor.inkTertiary)
+            }
+            notificationsLink
             Button("Sign out") { Task { await app.signOut() } }
                 .buttonStyle(.clusterSecondary)
-            Button("Delete account") {
-                deleteText = ""
-                confirmingDelete = true
-            }
-            .buttonStyle(.clusterDestructive)
+            Button("Delete account") { deleting = true }
+                .buttonStyle(.clusterDestructive)
+                .accessibilityIdentifier("open-delete-account")
         }
     }
 
@@ -194,6 +264,25 @@ struct SettingsView: View {
             SpecRow(label: "Build", value: Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "–")
             SpecRow(label: "Data", value: app.isDemo ? "Demo (on this device only)" : "Pull Up server")
         }
+    }
+}
+
+/// "Who can message you", with what each choice means.
+struct MessagesFromPicker: View {
+    @Binding var selection: MessagesFrom
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Space.s) {
+            Legend("Who can message you")
+            SwitchBank(MessagesFrom.allCases, selection: $selection) { $0.label }
+            Text(selection.explanation)
+                .font(ClusterFont.body(.footnote))
+                .foregroundStyle(ClusterColor.inkSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .contentTransition(.opacity)
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("messages-from")
     }
 }
 
@@ -218,6 +307,7 @@ struct SpeedometerChoice: View {
     let style: SpeedometerStyle
     let unit: SpeedUnit
     let isSelected: Bool
+    var locked = false
     let action: () -> Void
 
     var body: some View {
@@ -232,14 +322,18 @@ struct SpeedometerChoice: View {
                     .frame(width: 86, height: 86)
                     .allowsHitTesting(false)
                     .accessibilityHidden(true)
-                Legend(style.label, color: isSelected ? ClusterColor.ink : ClusterColor.inkTertiary)
+                HStack(spacing: Space.xs) {
+                    Legend(style.label, color: isSelected ? ClusterColor.ink : ClusterColor.inkTertiary)
+                    if locked { ProBadge() }
+                }
             }
             .padding(Space.s)
             .frame(maxWidth: .infinity)
             .plate(raised: isSelected, cut: Radius.chamferSmall, stroke: isSelected ? theme.accentColor : nil)
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("\(style.label) speedometer")
+        .accessibilityLabel(locked ? "\(style.label) speedometer, Pull Up Pro" : "\(style.label) speedometer")
+        .accessibilityIdentifier("speedometer-\(style.rawValue)")
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }

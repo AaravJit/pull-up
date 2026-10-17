@@ -3,7 +3,7 @@
 
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(17);
+select plan(20);
 
 insert into auth.users (id, email, raw_user_meta_data) values
   ('f1000000-0000-0000-0000-00000000000a', 'sec-ann@example.com', '{"username":"sec_ann"}'),
@@ -73,12 +73,25 @@ select pg_temp.act_as('f1000000-0000-0000-0000-00000000000c');
 select is(public.is_friend('f1000000-0000-0000-0000-00000000000a', 'f1000000-0000-0000-0000-00000000000b'), false,
   'SEC-02: Cat cannot find out that two private accounts are friends');
 
--- 8: blocking still works where it matters ------------------------------------------
+-- 8–9: blocking still works where it matters ------------------------------------------
 select pg_temp.act_as('f1000000-0000-0000-0000-00000000000c');
 select is(public.is_blocked_between('f1000000-0000-0000-0000-00000000000a', auth.uid()), true,
   'the blocked person''s own checks still see the block');
+select throws_ok($$ select public.start_conversation('f1000000-0000-0000-0000-00000000000a') $$, '42501', null,
+  'and still cannot message the person who blocked them');
 
--- 9–11: SEC-04 nothing in the API is callable signed out -------------------------------
+-- 10–11: SEC-03 DM membership helpers only answer about yourself -------------------------
+select pg_temp.act_as('f1000000-0000-0000-0000-00000000000a');
+create temporary table ids (name text primary key, id uuid) on commit drop;
+grant all on ids to authenticated;
+insert into ids values ('ab', public.start_conversation('f1000000-0000-0000-0000-00000000000b'));
+select pg_temp.act_as('f1000000-0000-0000-0000-00000000000c');
+select is(private.peer_of((select id from ids where name = 'ab'), 'f1000000-0000-0000-0000-00000000000a'), null,
+  'SEC-03: knowing a conversation id doesn''t reveal who is in it');
+select is(private.is_member((select id from ids where name = 'ab'), 'f1000000-0000-0000-0000-00000000000b'), false,
+  'SEC-03: nor whether someone else is a member');
+
+-- 12–14: SEC-04 nothing in the API is callable signed out -------------------------------
 select pg_temp.as_anon();
 select throws_ok($$ select public.is_blocked_between('f1000000-0000-0000-0000-00000000000a', 'f1000000-0000-0000-0000-00000000000c') $$,
   '42501', null, 'SEC-04: signed-out callers cannot probe blocks');
@@ -92,7 +105,7 @@ select is(
      and p.prorettype <> 'trigger'::regtype),
   '{}'::text[], 'SEC-04: no public function is executable by anon (and anon has no access to private)');
 
--- 12–17: structural checks so new code can't quietly reopen these ---------------------------
+-- 15–20: structural checks so new code can't quietly reopen these ---------------------------
 select is(
   (select coalesce(array_agg(c.relname::text order by c.relname), '{}') from pg_class c join pg_namespace n on n.oid = c.relnamespace
    where n.nspname = 'public' and c.relkind = 'r' and not c.relrowsecurity),
@@ -106,8 +119,8 @@ select is(
   (select coalesce(array_agg(p.proname::text order by p.proname), '{}') from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'private' and p.prosecdef and p.prorettype <> 'trigger'::regtype
      and has_function_privilege('authenticated', p.oid, 'execute')),
-  '{}'::text[],
-  'no private owner-rights helper is callable by signed-in users');
+  array['can_read_message', 'can_view_shared', 'dm_path_member', 'is_member', 'peer_of', 'username_problem']::text[],
+  'only reviewed private definer helpers are callable by signed-in users (they answer for the caller only)');
 select is(
   (select coalesce(array_agg(tablename || ':' || policyname order by 1), '{}') from pg_policies
    where schemaname = 'public' and not (roles <@ array['authenticated']::name[])),

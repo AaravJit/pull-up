@@ -9,6 +9,16 @@ final class PullUpUITests: XCTestCase {
         continueAfterFailure = false
     }
 
+    /// Saves what was on screen when a test failed, so CI failures can be
+    /// read from the published screenshots without the result bundle.
+    override func tearDown() async throws {
+        if (testRun?.totalFailureCount ?? 0) > 0 {
+            let test = name.components(separatedBy: " ").last?.trimmingCharacters(in: CharacterSet(charactersIn: "]")) ?? "test"
+            snap("zz-failed-\(test)")
+        }
+        try await super.tearDown()
+    }
+
     private func launch(_ extra: [String] = []) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = ["-PullUpDemo", "-PullUpResetDefaults"] + extra
@@ -228,7 +238,270 @@ final class PullUpUITests: XCTestCase {
     func testSignedOutShowsAuth() throws {
         let app = launch(["-PullUpSignedOut"])
         XCTAssertTrue(element(app, "auth").waitForExistence(timeout: 10))
+        XCTAssertTrue(element(app, "continue-with-apple").exists, "Sign in with Apple is the primary way in")
+        XCTAssertFalse(app.secureTextFields.firstMatch.exists, "Email sign-in stays tucked away")
         settle()
         snap("28-sign-in")
+        app.buttons["other-sign-in"].tap()
+        settle()
+        XCTAssertTrue(app.secureTextFields.firstMatch.waitForExistence(timeout: 3))
+        XCTAssertFalse(app.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] 'create account'")).firstMatch.exists,
+                       "There is no email sign-up")
+        snap("29-sign-in-other-options")
+        app.buttons["demo-sign-in"].tap()
+        XCTAssertTrue(app.buttons["start-drive"].waitForExistence(timeout: 10))
+    }
+
+    /// A new Sign in with Apple account picks a username (taken names are
+    /// refused live), may skip the photo, sets privacy, then lands on Drive.
+    func testNewAccountOnboarding() throws {
+        let app = launch(["-PullUpOnboarding"])
+        XCTAssertTrue(element(app, "onboarding").waitForExistence(timeout: 10))
+        XCTAssertFalse(app.tabBars.firstMatch.exists, "Onboarding comes before the app")
+        let field = app.textFields["onboarding-username"]
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.tap()
+        field.typeText("maya.s15")
+        let status = element(app, "username-status")
+        expectation(for: NSPredicate(format: "label CONTAINS[c] 'already'"), evaluatedWith: status)
+        waitForExpectations(timeout: 5)
+        XCTAssertFalse(app.buttons["onboarding-continue"].isEnabled)
+        snap("30-onboarding-username-taken")
+
+        field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 8) + "rx7_kenji")
+        expectation(for: NSPredicate(format: "label CONTAINS[c] 'available'"), evaluatedWith: status)
+        waitForExpectations(timeout: 5)
+        snap("31-onboarding-username")
+        app.buttons["onboarding-continue"].tap()
+
+        let photoNext = app.buttons["onboarding-photo-next"]
+        XCTAssertTrue(photoNext.waitForExistence(timeout: 5))
+        settle()
+        snap("32-onboarding-photo")
+        photoNext.tap()
+
+        let finish = app.buttons["onboarding-finish"]
+        XCTAssertTrue(finish.waitForExistence(timeout: 5))
+        settle()
+        snap("33-onboarding-privacy")
+        app.swipeUp()
+        finish.tap()
+        XCTAssertTrue(app.buttons["start-drive"].waitForExistence(timeout: 10), "Finishing onboarding opens the app")
+    }
+
+    /// Inbox → conversation → send; message requests; "Message owner" from
+    /// someone else's vehicle, which attaches the vehicle to the message.
+    func testDirectMessages() throws {
+        let app = launch(["-PullUpTab", "feed"])
+        let messages = element(app, "open-messages")
+        XCTAssertTrue(messages.waitForExistence(timeout: 10))
+        messages.tap()
+        XCTAssertTrue(element(app, "inbox-row-maya.s15").waitForExistence(timeout: 5))
+        settle()
+        snap("34-messages-inbox")
+
+        element(app, "inbox-row-kenji.dc2").tap()
+        let field = element(app, "composer-field")
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Read"].waitForExistence(timeout: 5), "Read receipts show when both people share them")
+        settle()
+        snap("35-messages-thread")
+        field.tap()
+        field.typeText("Levee loop on Sunday if you're around")
+        app.buttons["composer-send"].tap()
+        XCTAssertTrue(app.staticTexts["Sent"].waitForExistence(timeout: 5))
+        settle()
+        snap("36-messages-sent")
+
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        let requests = app.buttons.matching(NSPredicate(format: "label BEGINSWITH[c] 'Requests'")).firstMatch
+        XCTAssertTrue(requests.waitForExistence(timeout: 5))
+        requests.tap()
+        let request = element(app, "inbox-row-sam.ek9")
+        XCTAssertTrue(request.waitForExistence(timeout: 5))
+        settle()
+        snap("37-messages-requests")
+        request.tap()
+        XCTAssertTrue(app.buttons["accept-request"].waitForExistence(timeout: 5), "A request offers Accept before any reply")
+        XCTAssertFalse(element(app, "composer-field").exists, "No composer until the request is accepted")
+        settle()
+        snap("38-messages-request")
+
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        settle(0.5)
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        let author = element(app, "post-author-maya.s15")
+        XCTAssertTrue(author.waitForExistence(timeout: 5))
+        author.tap()
+        XCTAssertTrue(element(app, "message-profile").waitForExistence(timeout: 5))
+        let vehicle = element(app, "glance-Silvia")
+        XCTAssertTrue(vehicle.waitForExistence(timeout: 5))
+        vehicle.tap()
+        let owner = element(app, "message-owner")
+        XCTAssertTrue(owner.waitForExistence(timeout: 5))
+        settle()
+        snap("39-vehicle-message-owner")
+        owner.tap()
+        XCTAssertTrue(element(app, "composer-field").waitForExistence(timeout: 5))
+        settle(1.5)
+        snap("40-message-owner-thread")
+    }
+
+    /// Settings → a locked Pro face opens Pull Up Pro (demo store, labelled,
+    /// no payment) → subscribe → the Ring face and Pro accents unlock.
+    func testNotificationPreferences() throws {
+        let app = launch(["-PullUpTab", "feed"])
+        let profile = app.buttons["open-profile"]
+        XCTAssertTrue(profile.waitForExistence(timeout: 10))
+        profile.tap()
+        app.buttons["open-settings"].tap()
+        let link = element(app, "open-notifications")
+        XCTAssertTrue(link.waitForExistence(timeout: 5))
+        for _ in 0..<4 where !link.isHittable { app.swipeUp() }
+        link.tap()
+        let previews = app.switches["push-previews"]
+        XCTAssertTrue(previews.waitForExistence(timeout: 5))
+        XCTAssertEqual(previews.value as? String, "0", "Message text stays off lock screens by default")
+        XCTAssertEqual(app.switches["push-messages"].value as? String, "1")
+        settle()
+        snap("46-notification-preferences")
+    }
+
+    func testMessagePushOpensTheConversation() throws {
+        // Sam's message request in the demo data.
+        let app = launch(["-PullUpOpenPush", "message_request:00000000-0000-4000-8000-0000000000c3"])
+        XCTAssertTrue(app.buttons["accept-request"].waitForExistence(timeout: 10), "A request push opens that request")
+        XCTAssertFalse(element(app, "composer-field").exists)
+        settle()
+        snap("47-push-opens-request")
+    }
+
+    func testProSubscription() throws {
+        let app = launch(["-PullUpTab", "feed"])
+        let profile = app.buttons["open-profile"]
+        XCTAssertTrue(profile.waitForExistence(timeout: 10))
+        profile.tap()
+        app.buttons["open-settings"].tap()
+        XCTAssertTrue(element(app, "open-pro").waitForExistence(timeout: 5))
+        let ring = element(app, "speedometer-ring")
+        XCTAssertTrue(ring.waitForExistence(timeout: 5))
+        if !ring.isHittable { app.swipeUp() }
+        settle()
+        snap("41-settings-pro-locked")
+        ring.tap()
+
+        let subscribe = element(app, "pro-subscribe")
+        XCTAssertTrue(subscribe.waitForExistence(timeout: 5), "A locked face opens Pull Up Pro")
+        XCTAssertTrue(app.staticTexts["Demo: prices are placeholders and no payment is taken."].exists)
+        settle()
+        snap("42-pro-paywall")
+        element(app, "pro-plan-yearly").tap()
+        subscribe.tap()
+        XCTAssertTrue(element(app, "pro-purchased").waitForExistence(timeout: 5))
+        settle()
+        snap("43-pro-active")
+        element(app, "pro-close").tap()
+
+        XCTAssertTrue(ring.waitForExistence(timeout: 5))
+        ring.tap()
+        settle()
+        XCTAssertTrue(ring.isSelected, "Pro unlocks the Ring face")
+        let papaya = element(app, "accent-papaya")
+        if !papaya.isHittable { app.swipeDown() }
+        papaya.tap()
+        settle()
+        snap("44-settings-pro-unlocked")
+    }
+
+    /// Garage → vehicle → Find parts: the eBay search is built from the
+    /// vehicle, shown before anything is sent, and opens Safari (not tapped
+    /// here, so the test stays in the app).
+    func testPartsFinderBuildsAVehicleSearch() throws {
+        let app = launch(["-PullUpTab", "garage"])
+        let tile = element(app, "garage-tile-GSX-R750")
+        XCTAssertTrue(tile.waitForExistence(timeout: 10))
+        tile.tap()
+        let find = element(app, "find-parts")
+        XCTAssertTrue(find.waitForExistence(timeout: 5))
+        if !find.isHittable { app.swipeUp() }
+        find.tap()
+        let search = app.buttons["parts-search"]
+        XCTAssertTrue(search.waitForExistence(timeout: 5))
+        XCTAssertFalse(search.isEnabled, "Nothing to search until a part is named")
+        app.buttons["Brake pads"].tap()
+        let preview = element(app, "parts-preview")
+        XCTAssertTrue(preview.label.contains("2001 Suzuki GSX-R750 K1 Brake pads"), "Preview shows \(preview.label)")
+        XCTAssertTrue(search.isEnabled)
+        settle()
+        snap("45-parts-finder")
+    }
+
+    // MARK: Phase 2 screens in dark mode and at an accessibility text size
+
+    func testPhase2ScreensDark() throws {
+        phase2Tour(launch(["-PullUpAppearance", "dark", "-PullUpTab", "feed"]), first: 48, suffix: "dark")
+    }
+
+    func testPhase2ScreensLargeText() throws {
+        phase2Tour(launch(["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityL", "-PullUpTab", "feed"]),
+                   first: 53, suffix: "large-text")
+    }
+
+    /// Inbox, conversation, paywall, notification settings and parts finder.
+    private func phase2Tour(_ app: XCUIApplication, first: Int, suffix: String) {
+        func shot(_ offset: Int, _ name: String) {
+            settle()
+            snap("\(first + offset)-\(name)-\(suffix)")
+        }
+        func reveal(_ element: XCUIElement) {
+            for _ in 0..<6 where !element.isHittable { app.swipeUp() }
+        }
+
+        let messages = element(app, "open-messages")
+        XCTAssertTrue(messages.waitForExistence(timeout: 10))
+        messages.tap()
+        let kenji = element(app, "inbox-row-kenji.dc2")
+        XCTAssertTrue(kenji.waitForExistence(timeout: 5))
+        shot(0, "messages-inbox")
+        reveal(kenji)
+        kenji.tap()
+        XCTAssertTrue(element(app, "composer-field").waitForExistence(timeout: 5))
+        shot(1, "messages-thread")
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        settle(0.5)
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+
+        let profile = app.buttons["open-profile"]
+        XCTAssertTrue(profile.waitForExistence(timeout: 5))
+        profile.tap()
+        let settings = app.buttons["open-settings"]
+        XCTAssertTrue(settings.waitForExistence(timeout: 5))
+        reveal(settings)
+        settings.tap()
+        let pro = element(app, "open-pro")
+        XCTAssertTrue(pro.waitForExistence(timeout: 5))
+        pro.tap()
+        XCTAssertTrue(element(app, "pro-subscribe").waitForExistence(timeout: 5))
+        shot(2, "pro-paywall")
+        element(app, "pro-close").tap()
+
+        let notifications = element(app, "open-notifications")
+        XCTAssertTrue(notifications.waitForExistence(timeout: 5))
+        reveal(notifications)
+        notifications.tap()
+        XCTAssertTrue(app.switches["push-messages"].waitForExistence(timeout: 5))
+        shot(3, "notification-preferences")
+
+        tab(app, "Garage")
+        let tile = element(app, "garage-tile-GSX-R750")
+        XCTAssertTrue(tile.waitForExistence(timeout: 5))
+        reveal(tile)
+        tile.tap()
+        let find = element(app, "find-parts")
+        XCTAssertTrue(find.waitForExistence(timeout: 5))
+        reveal(find)
+        find.tap()
+        XCTAssertTrue(app.buttons["parts-search"].waitForExistence(timeout: 5))
+        shot(4, "parts-finder")
     }
 }

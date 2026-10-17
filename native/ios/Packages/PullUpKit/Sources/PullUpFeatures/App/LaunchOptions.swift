@@ -11,11 +11,15 @@ public struct LaunchOptions: Sendable, Equatable {
     public var emptyGarage = false
     /// Demo starting signed out (auth screen).
     public var signedOut = false
+    /// Demo starting as a new Sign in with Apple account that hasn't onboarded.
+    public var onboarding = false
     /// Start from fresh preferences (no remembered vehicle, default theme).
     public var resetDefaults = false
     public var appearance: AppearancePreference?
     /// Tab to open at launch.
     public var initialTab: MainTab?
+    /// Acts as if a push was tapped after sign-in: "kind" or "kind:conversation-id".
+    public var openPush: String?
 
     public init() {}
 
@@ -29,9 +33,11 @@ public struct LaunchOptions: Sendable, Equatable {
         options.demo = args.contains("-PullUpDemo")
         options.emptyGarage = args.contains("-PullUpEmptyGarage")
         options.signedOut = args.contains("-PullUpSignedOut")
+        options.onboarding = args.contains("-PullUpOnboarding")
         options.resetDefaults = args.contains("-PullUpResetDefaults")
         options.appearance = value(after: "-PullUpAppearance").flatMap(AppearancePreference.init(rawValue:))
         options.initialTab = value(after: "-PullUpTab").flatMap(MainTab.init(rawValue:))
+        options.openPush = value(after: "-PullUpOpenPush")
         return options
     }
 }
