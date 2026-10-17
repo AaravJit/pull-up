@@ -320,7 +320,8 @@ Deno.test({
         // Retrying a send after a lost response is a no-op, not a duplicate.
         ok(await ben.db.from("messages").upsert({ id: first, conversation_id: conversation, sender_id: ben.id, body: "Hi Ann" },
           { onConflict: "id", ignoreDuplicates: true }), "retry");
-        assertEquals(ok(await ann.db.from("messages").select("id").eq("conversation_id", conversation), "Ann's view").length, 1);
+        const view = ok(await ann.db.from("messages").select("id").eq("conversation_id", conversation), "Ann's view");
+        assertEquals(view.map((m) => m.id).sort(), [first, missed, after].sort());
 
         assertEquals(ok(await cat.db.from("messages").select("id").eq("conversation_id", conversation), "Cat reads"), []);
         refused(await cat.db.from("messages").insert({ conversation_id: conversation, sender_id: cat.id, body: "hey" }), "Cat posting in their chat");
