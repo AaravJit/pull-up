@@ -123,8 +123,7 @@ struct MeetRow: View {
             DateStamp(date: meet.startsAt, isLive: meet.isLive())
             VStack(alignment: .leading, spacing: Space.xxs) {
                 HStack(spacing: Space.s) {
-                    Legend(meet.kind.label)
-                    if meet.focus != .all { Legend(meet.focus.label) }
+                    Legend(meet.focus == .all ? meet.kind.label : "\(meet.kind.label) · \(meet.focus.label)")
                     if meet.isCancelled { Legend("Cancelled", color: ClusterColor.caution) }
                 }
                 Text(meet.title)
@@ -272,14 +271,10 @@ struct MeetDetailView: View {
                 Text(meet.isCancelled ? "This meet was cancelled." : "This meet has ended.")
                     .font(ClusterFont.body(.subheadline)).foregroundStyle(ClusterColor.inkSecondary)
             } else {
-                HStack(spacing: Space.s) {
-                    rsvpButton("Going", status: .going)
-                    rsvpButton("Interested", status: .interested)
-                    if meet.myRSVP != nil {
-                        Button("Not going") { Task { await setRSVP(nil) } }
-                            .buttonStyle(.clusterSecondary)
-                            .disabled(busy)
-                    }
+                // One row when the words fit without breaking, else stacked.
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: Space.s) { rsvpButtons }
+                    VStack(spacing: Space.s) { rsvpButtons }
                 }
                 if meet.myRSVP?.status == .going {
                     Toggle(isOn: Binding(get: { showMe }, set: { value in
@@ -304,12 +299,28 @@ struct MeetDetailView: View {
         }
     }
 
+    @ViewBuilder
+    private var rsvpButtons: some View {
+        rsvpButton("Going", status: .going)
+        rsvpButton("Interested", status: .interested)
+        if meet.myRSVP != nil {
+            Button { Task { await setRSVP(nil) } } label: {
+                Text("Not going").lineLimit(1).fixedSize().frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.clusterSecondary)
+            .disabled(busy)
+        }
+    }
+
     private func rsvpButton(_ title: String, status: RSVP.Status) -> some View {
         let selected = meet.myRSVP?.status == status
         return Button {
             Task { await setRSVP(RSVP(status: status, showMe: status == .going ? showMe : false)) }
         } label: {
             Label(title, systemImage: selected ? "checkmark" : status == .going ? "car" : "star")
+                .lineLimit(1)
+                .fixedSize()
+                .frame(maxWidth: .infinity)
         }
         .buttonStyle(ClusterButtonStyle(selected ? .primary : .secondary))
         .disabled(busy || (status == .going && meet.isFull && !selected))

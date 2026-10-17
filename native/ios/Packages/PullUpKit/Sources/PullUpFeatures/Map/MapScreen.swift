@@ -130,6 +130,9 @@ public struct MapScreen: View {
         }
         .scrollTargetBehavior(.viewAligned)
         .contentMargins(.horizontal, Space.gutter, for: .scrollContent)
+        // A horizontal scroll view otherwise takes all the height offered,
+        // which floated the cards mid-screen and squeezed the map above them.
+        .fixedSize(horizontal: false, vertical: true)
     }
 
     private func load() async {

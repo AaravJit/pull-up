@@ -356,6 +356,18 @@ public struct SwitchBank<Value: Hashable & Identifiable>: View {
     }
 
     public var body: some View {
+        // Every segment at full size on one line if they all fit; otherwise
+        // labels may wrap to two lines. Shrinking each label on its own made
+        // long ones visibly smaller than their neighbours.
+        ViewThatFits(in: .horizontal) {
+            bank(lines: 1)
+            bank(lines: 2)
+        }
+        .overlay(alignment: .bottom) { Hairline() }
+        .sensoryFeedback(.selection, trigger: selection)
+    }
+
+    private func bank(lines: Int) -> some View {
         HStack(spacing: 0) {
             ForEach(options) { option in
                 let selected = option == selection
@@ -366,9 +378,11 @@ public struct SwitchBank<Value: Hashable & Identifiable>: View {
                         .font(ClusterFont.legend(.caption))
                         .textCase(.uppercase)
                         .tracking(1)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.6)
+                        .lineLimit(lines)
+                        .multilineTextAlignment(.center)
                         .allowsTightening(true)
+                        .minimumScaleFactor(lines == 1 ? 1 : 0.8)
+                        .fixedSize(horizontal: lines == 1, vertical: false)
                         .foregroundStyle(selected ? ClusterColor.ink : ClusterColor.inkTertiary)
                         .padding(.horizontal, Space.xs)
                         .frame(maxWidth: .infinity, minHeight: 36)
@@ -384,8 +398,6 @@ public struct SwitchBank<Value: Hashable & Identifiable>: View {
                 .accessibilityAddTraits(selected ? .isSelected : [])
             }
         }
-        .overlay(alignment: .bottom) { Hairline() }
-        .sensoryFeedback(.selection, trigger: selection)
     }
 }
 

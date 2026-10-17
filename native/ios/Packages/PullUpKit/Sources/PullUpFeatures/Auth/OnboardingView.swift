@@ -100,7 +100,8 @@ struct OnboardingView: View {
                         .font(ClusterFont.body())
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
-                        .textContentType(.username)
+                        // Not .username: that brings up the Passwords bar.
+                        .textContentType(.nickname)
                         .submitLabel(.continue)
                         .onSubmit { Task { await claim() } }
                         .accessibilityLabel("Username")
@@ -135,7 +136,7 @@ struct OnboardingView: View {
             } else if let status {
                 Image(systemName: status == .available ? "checkmark.circle.fill" : "exclamationmark.circle")
                     .foregroundStyle(status == .available ? ClusterColor.verified : ClusterColor.caution)
-                Text(status.message).foregroundStyle(ClusterColor.inkSecondary)
+                Text(status.message).foregroundStyle(status == .available ? ClusterColor.inkSecondary : ClusterColor.caution)
             } else {
                 Text(UsernameRules.formatHint).foregroundStyle(ClusterColor.inkTertiary)
             }
