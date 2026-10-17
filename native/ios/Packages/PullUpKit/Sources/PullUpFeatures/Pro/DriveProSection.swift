@@ -125,11 +125,13 @@ struct DriveProSection: View {
         }
     }
 
-    /// Writes both formats to a per-drive temporary folder.
+    /// Writes both formats to a per-drive temporary folder, replacing any
+    /// earlier export of the drive so old copies don't pile up.
     static func write(_ track: [LocationSample], drive: Drive) throws -> [TrackExport.Format: URL] {
         let folder = FileManager.default.temporaryDirectory
             .appendingPathComponent("Exports", isDirectory: true)
             .appendingPathComponent(drive.id.uuidString, isDirectory: true)
+        try? FileManager.default.removeItem(at: folder)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let day = drive.startedAt.formatted(.iso8601.year().month().day())
         let base = "Pull Up \(day) \(drive.title)"
@@ -138,7 +140,13 @@ struct DriveProSection: View {
         var urls: [TrackExport.Format: URL] = [:]
         for format in TrackExport.Format.allCases {
             let url = folder.appendingPathComponent("\(base).\(format.fileExtension)")
-            try TrackExport.render(track, name: drive.title, format: format).write(to: url, atomically: true, encoding: .utf8)
+            // Same protection as saved drives: the file holds the full route.
+            let data = Data(TrackExport.render(track, name: drive.title, format: format).utf8)
+            #if os(iOS)
+            try data.write(to: url, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+            #else
+            try data.write(to: url, options: [.atomic])
+            #endif
             urls[format] = url
         }
         return urls
