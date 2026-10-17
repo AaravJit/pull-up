@@ -387,4 +387,27 @@ final class PullUpUITests: XCTestCase {
         settle()
         snap("44-settings-pro-unlocked")
     }
+
+    /// Garage → vehicle → Find parts: the eBay search is built from the
+    /// vehicle, shown before anything is sent, and opens Safari (not tapped
+    /// here, so the test stays in the app).
+    func testPartsFinderBuildsAVehicleSearch() throws {
+        let app = launch(["-PullUpTab", "garage"])
+        let tile = element(app, "garage-tile-GSX-R750")
+        XCTAssertTrue(tile.waitForExistence(timeout: 10))
+        tile.tap()
+        let find = element(app, "find-parts")
+        XCTAssertTrue(find.waitForExistence(timeout: 5))
+        if !find.isHittable { app.swipeUp() }
+        find.tap()
+        let search = app.buttons["parts-search"]
+        XCTAssertTrue(search.waitForExistence(timeout: 5))
+        XCTAssertFalse(search.isEnabled, "Nothing to search until a part is named")
+        app.buttons["Brake pads"].tap()
+        let preview = element(app, "parts-preview")
+        XCTAssertTrue(preview.label.contains("2001 Suzuki GSX-R750 K1 Brake pads"), "Preview shows \(preview.label)")
+        XCTAssertTrue(search.isEnabled)
+        settle()
+        snap("45-parts-finder")
+    }
 }
