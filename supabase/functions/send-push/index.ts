@@ -20,6 +20,7 @@ interface NotificationRow {
   recipient_id: string;
   actor_id: string | null;
   kind: string;
+  conversation_id: string | null;
 }
 
 const COPY: Record<string, string> = {
@@ -32,6 +33,9 @@ const COPY: Record<string, string> = {
   meet_cancelled: "cancelled a meet you were going to",
   meet_starting_soon: "Your meet starts soon",
   drive_validated: "Your drive has been checked",
+  // Never the message itself: previews stay off the lock screen.
+  message: "sent you a message",
+  message_request: "wants to send you a message",
 };
 
 function sameSecret(a: string, b: string): boolean {
@@ -83,7 +87,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
     auth: { persistSession: false },
   });
   const { data: row } = await admin.from("notifications")
-    .select("id, recipient_id, actor_id, kind, pushed_at").eq("id", id).maybeSingle<NotificationRow & { pushed_at: string | null }>();
+    .select("id, recipient_id, actor_id, kind, conversation_id, pushed_at").eq("id", id).maybeSingle<NotificationRow & { pushed_at: string | null }>();
   if (!row) return Response.json({ error: "unknown notification" }, { status: 404 });
   // Each notification is pushed at most once, so replaying a request does nothing.
   if (row.pushed_at) return Response.json({ sent: 0, duplicate: true });
@@ -105,8 +109,15 @@ Deno.serve(async (req: Request): Promise<Response> => {
     const host = t.environment === "sandbox" ? "api.sandbox.push.apple.com" : "api.push.apple.com";
     const res = await fetch(`https://${host}/3/device/${t.token}`, {
       method: "POST",
-      headers: { authorization: `bearer ${jwt}`, "apns-topic": topic, "apns-push-type": "alert" },
-      body: JSON.stringify({ aps: { alert: { body }, sound: "default" }, notification_id: row.id, kind: row.kind }),
+      headers: {
+        authorization: `bearer ${jwt}`, "apns-topic": topic, "apns-push-type": "alert",
+        // One banner per conversation instead of one per message.
+        ...(row.conversation_id ? { "apns-collapse-id": row.conversation_id.slice(0, 64) } : {}),
+      },
+      body: JSON.stringify({
+        aps: { alert: { body }, sound: "default", ...(row.conversation_id ? { "thread-id": row.conversation_id } : {}) },
+        notification_id: row.id, kind: row.kind, conversation_id: row.conversation_id ?? undefined,
+      }),
     });
     if (res.status === 410) {
       await admin.from("device_tokens").delete().eq("token", t.token);

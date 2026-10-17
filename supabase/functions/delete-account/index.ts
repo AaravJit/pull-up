@@ -45,6 +45,35 @@ Deno.serve(async (req: Request): Promise<Response> => {
     apple = await revokeAppleTokens(code).catch(() => ({ revoked: false, reason: "revoke_failed" } as const));
   }
 
+  // Message photos live under "<conversation>/<sender>/...". The person's
+  // conversations are deleted with the account, so their whole folders go,
+  // including what the other person sent in them.
+  const { data: conversations, error: conversationError } = await admin.from("conversations")
+    .select("id").or(`user_a.eq.${uid},user_b.eq.${uid}`);
+  if (conversationError) return Response.json({ error: conversationError.message }, { status: 500 });
+  const removeTree = async (bucket: string, root: string): Promise<string | null> => {
+    const queue = [root];
+    while (queue.length > 0) {
+      const prefix = queue.pop()!;
+      const { data: entries, error } = await admin.storage.from(bucket).list(prefix, { limit: 1000 });
+      if (error) return `listing ${bucket}: ${error.message}`;
+      const files: string[] = [];
+      for (const entry of entries ?? []) {
+        if (entry.id === null) queue.push(`${prefix}/${entry.name}`);
+        else files.push(`${prefix}/${entry.name}`);
+      }
+      if (files.length > 0) {
+        const { error: removeError } = await admin.storage.from(bucket).remove(files);
+        if (removeError) return `removing from ${bucket}: ${removeError.message}`;
+      }
+    }
+    return null;
+  };
+  for (const conversation of conversations ?? []) {
+    const problem = await removeTree("dm-media", conversation.id);
+    if (problem) return Response.json({ error: problem }, { status: 500 });
+  }
+
   for (const bucket of BUCKETS) {
     // Objects live under "<uid>/..."; list recursively one level at a time.
     const queue = [uid];
