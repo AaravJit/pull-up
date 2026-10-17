@@ -36,6 +36,15 @@ yarn-error.*
 # typescript
 *.tsbuildinfo
 
-# generated native folders
+# generated native folders (Expo prebuild output for the legacy React Native app)
 /ios
 /android
+
+# Native iOS
+native/ios/PullUp.xcodeproj/
+native/**/xcuserdata/
+native/**/.build/
+native/**/.swiftpm/
+native/ios/Config/Secrets.xcconfig
+*.xcresult
+DerivedData/
