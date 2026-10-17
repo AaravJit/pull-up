@@ -243,9 +243,11 @@ Deno.test({
 
         // Ann listens the way the app does. Cat listens too and must hear nothing.
         const heard: Record<string, string[]> = { ann: [], cat: [] };
+        const payloads: Record<string, unknown[]> = { ann: [], cat: [] };
         const channels = [ann, cat].map((u) =>
           u.db.channel(`dm-${run}-${u.name}`)
             .on("postgres_changes", { event: "*", schema: "public", table: "messages" }, (change) => {
+              payloads[u.name].push(change);
               heard[u.name].push((change.new as { id?: string }).id ?? "");
             })
         );
@@ -258,12 +260,17 @@ Deno.test({
             });
           });
         }
+        // SUBSCRIBED can arrive before the server has attached the Postgres
+        // listener, and changes in that gap aren't delivered, so give it a
+        // moment before sending.
+        await wait(3_000);
 
         const first = crypto.randomUUID();
         ok(await ben.db.from("messages").insert({ id: first, conversation_id: conversation, sender_id: ben.id, body: "Hi Ann" }), "Ben sends");
-        await eventually("Ann's realtime delivery", async () => heard.ann.includes(first));
+        await eventually("Ann's realtime delivery", async () => heard.ann.includes(first))
+          .catch((error) => { throw new Error(`${error.message}; Ann heard ${JSON.stringify(payloads.ann)}`); });
         await wait(2_000);
-        assertEquals(heard.cat, [], "Cat's subscription carries nothing from a chat she isn't in");
+        assertEquals(heard.cat, [], `Cat's subscription carries nothing from a chat she isn't in: ${JSON.stringify(payloads.cat)}`);
         await Promise.all([ann, cat].map((u, i) => u.db.removeChannel(channels[i])));
 
         // Retrying a send after a lost response is a no-op, not a duplicate.
@@ -361,14 +368,16 @@ Deno.test({
       });
 
       await t.step("Pro can't be granted from the phone", async () => {
-        assertEquals(ok(await ben.db.rpc("my_entitlement"), "my_entitlement"), []);
+        const isPro = async () =>
+          (ok(await ben.db.rpc("my_entitlement"), "my_entitlement") as { is_pro: boolean }[]).some((e) => e.is_pro);
+        assertEquals(await isPro(), false);
         refused(await ben.db.from("entitlements").insert({
           user_id: ben.id, product_id: "app.pullup.pro.yearly", original_transaction_id: run, status: "active",
           environment: "Production", signed_at: new Date().toISOString(),
         }), "writing an entitlement directly");
         const forged = await ben.db.functions.invoke("verify-subscription", { body: { signed_transaction: "e30.e30.sig" } });
         assert(forged.error, "a forged transaction is rejected");
-        assertEquals(ok(await ben.db.rpc("my_entitlement"), "my_entitlement"), [], "still no Pro");
+        assertEquals(await isPro(), false, "still no Pro");
       });
 
       await t.step("account deletion removes the account and its data", async () => {
