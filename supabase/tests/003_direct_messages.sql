@@ -3,7 +3,7 @@
 
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(40);
+select plan(44);
 
 insert into auth.users (id, email, raw_user_meta_data) values
   ('d1000000-0000-0000-0000-00000000000a', 'alice@example.com', '{"username":"alice"}'),
@@ -88,6 +88,10 @@ select pg_temp.act_as('d1000000-0000-0000-0000-00000000000a');
 select is((select count(*)::int from public.inbox('request')), 1, 'the request shows under Requests');
 select is((select unread_count from public.inbox('request')), 3, 'requests count unread messages');
 select is((select count(*)::int from public.notifications where kind = 'message_request'), 3, 'requests notify without content');
+select public.mark_conversation_read((select id from ids where name = 'ca'));
+select pg_temp.act_as('d1000000-0000-0000-0000-00000000000c');
+select is(public.peer_read_at((select id from ids where name = 'ca')), null, 'opening a request sends no read receipt');
+select pg_temp.act_as('d1000000-0000-0000-0000-00000000000a');
 insert into public.messages (conversation_id, sender_id, body) values ((select id from ids where name = 'ca'), auth.uid(), 'not selling, sorry');
 select is((select count(*)::int from public.inbox('request')), 0, 'replying accepts the request');
 
@@ -181,6 +185,14 @@ insert into public.messages (conversation_id, sender_id, body)
 select throws_ok($$ insert into public.messages (conversation_id, sender_id, body)
   values ((select id from ids where name = 'ca'), auth.uid(), 'one too many') $$,
   '54000', null, 'per-minute rate limit');
+
+-- 42–44: retention ------------------------------------------------------------------
+select throws_ok($$ select * from public.dm_purge() $$, '42501', null, 'people cannot run the retention purge');
+select pg_temp.as_admin();
+update public.conversation_members set cleared_at = now() where conversation_id = (select id from ids where name = 'ca');
+select lives_ok($$ select * from public.dm_purge() $$, 'the retention purge runs');
+select is((select count(*)::int from public.messages where conversation_id = (select id from ids where name = 'ca')), 0,
+  'history both people deleted is purged');
 
 select * from finish();
 rollback;

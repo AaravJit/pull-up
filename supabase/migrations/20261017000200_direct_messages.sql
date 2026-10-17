@@ -462,7 +462,8 @@ begin
 end;
 $$;
 
--- The peer's read time, when both people share read receipts.
+-- The peer's read time, when both people share read receipts and the peer
+-- has accepted the conversation.
 create or replace function public.peer_read_at(p_conversation uuid)
 returns timestamptz
 language sql
@@ -476,6 +477,8 @@ as $$
   join public.privacy_settings my_ps on my_ps.user_id = auth.uid()
   where peer.conversation_id = p_conversation
     and peer.user_id = private.peer_of(p_conversation, auth.uid())
+    -- Opening a request never tells the sender it was seen.
+    and peer.state = 'active'
     and peer_ps.dm_read_receipts and my_ps.dm_read_receipts
     and not public.is_blocked_between(peer.user_id, auth.uid());
 $$;
@@ -659,9 +662,8 @@ security definer
 set search_path = ''
 as $$
 begin
-  create temporary table if not exists pg_temp.dm_purged (media_path text) on commit drop;
-  delete from pg_temp.dm_purged;
-
+  -- Each RETURN QUERY appends the storage paths its delete removed.
+  return query
   with stale as (
     select c.id from public.conversations c
     join public.conversation_members cm on cm.conversation_id = c.id
@@ -670,23 +672,22 @@ begin
   ), gone as (
     delete from public.messages m using stale where m.conversation_id = stale.id returning m.media_path
   )
-  insert into pg_temp.dm_purged select g.media_path from gone g where g.media_path is not null;
+  select g.media_path from gone g where g.media_path is not null;
   delete from public.conversations c
   where exists (select 1 from public.conversation_members cm where cm.conversation_id = c.id and cm.state in ('request', 'declined'))
     and c.created_at < now() - interval '30 days';
 
+  return query
   with gone as (
     delete from public.messages m
     where m.created_at <= (select min(coalesce(cm.cleared_at, '-infinity'::timestamptz))
                            from public.conversation_members cm where cm.conversation_id = m.conversation_id)
     returning m.media_path
   )
-  insert into pg_temp.dm_purged select g.media_path from gone g where g.media_path is not null;
+  select g.media_path from gone g where g.media_path is not null;
 
   delete from public.messages where unsent_at < now() - interval '30 days';
   delete from public.reports where status in ('actioned', 'dismissed') and created_at < now() - interval '1 year';
-
-  return query select p.media_path from pg_temp.dm_purged p;
 end;
 $$;
 
