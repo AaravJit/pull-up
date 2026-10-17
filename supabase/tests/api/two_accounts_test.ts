@@ -119,6 +119,19 @@ Deno.test({
         refused(await anon.from("vehicles").select("id").limit(1), "anon vehicle read");
       });
 
+      await t.step("nobody can register with email from outside", async () => {
+        // The accounts above were made with the admin API, which the
+        // sign-up hook doesn't see. The public endpoint must refuse.
+        const outsider = createClient(url, anonKey, noSession);
+        const email = `pullup-api-${run}-outsider@example.com`;
+        const attempt = await outsider.auth.signUp({ email, password: `${crypto.randomUUID()}Aa1!` });
+        assert(attempt.error, "a public email sign-up should have been refused");
+        assertEquals(attempt.data.user, null);
+        const listed = await admin.auth.admin.listUsers({ perPage: 1000 });
+        assertEquals(listed.error, null);
+        assert(!listed.data.users.some((u) => u.email === email), "no account was created");
+      });
+
       await t.step("profiles and onboarding", async () => {
         for (const u of users) {
           const row = ok(await u.db.from("profiles").select("username, onboarded_at").eq("id", u.id).single(), "own profile");
