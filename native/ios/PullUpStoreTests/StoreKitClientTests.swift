@@ -65,8 +65,18 @@ final class StoreKitClientTests: XCTestCase {
         let session = try makeSession()
         defer { session.clearTransactions() }
         _ = try await StoreKitClient().purchaseOutcome(productID: "app.pullup.pro.monthly", account: UUID())
+        var current = await currentEntitlements()
+        XCTAssertFalse(current.isEmpty, "the purchase is current before it expires")
         try session.expireSubscription(productIdentifier: "app.pullup.pro.monthly")
-        let current = await currentEntitlements()
-        XCTAssertTrue(current.isEmpty)
+        // expireSubscription returns before storekitd has applied it, so an
+        // immediate read can still see the subscription (seen in CI run
+        // 39066961924). Wait for the change, up to a deadline.
+        current = await currentEntitlements()
+        let deadline = Date.now.addingTimeInterval(15)
+        while !current.isEmpty, Date.now < deadline {
+            try await Task.sleep(for: .milliseconds(250))
+            current = await currentEntitlements()
+        }
+        XCTAssertTrue(current.isEmpty, "still current: \(current.map(\.productID))")
     }
 }
