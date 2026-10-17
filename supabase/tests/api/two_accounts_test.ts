@@ -328,7 +328,11 @@ Deno.test({
         assert(requests.some((r) => r.conversation_id === request), "Cat's chat is in Ann's requests");
         const active = ok(await ann.db.rpc("inbox", { p_state: "active" }), "inbox") as { conversation_id: string }[];
         assert(active.some((r) => r.conversation_id === conversation) && !active.some((r) => r.conversation_id === request));
-        assertEquals(refused(await cat.db.from("messages").insert({ conversation_id: request, sender_id: cat.id, body: "Hello??" }), "a second unanswered request message"), "54000");
+        // Until Ann answers, Cat gets three messages.
+        for (const body of ["Hello??", "Hello???"]) {
+          ok(await cat.db.from("messages").insert({ conversation_id: request, sender_id: cat.id, body }), "request message");
+        }
+        assertEquals(refused(await cat.db.from("messages").insert({ conversation_id: request, sender_id: cat.id, body: "Hello????" }), "a fourth unanswered request message"), "54000");
         ok(await ann.db.rpc("respond_to_request", { p_conversation: request, p_accept: false }), "Ann declines");
       });
 
