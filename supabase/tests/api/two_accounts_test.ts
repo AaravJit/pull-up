@@ -314,7 +314,11 @@ Deno.test({
         assertEquals(older.length, 3);
 
         ok(await ann.db.rpc("set_conversation_muted", { p_conversation: conversation, p_muted: true }), "mute");
-        refused(await cat.db.rpc("set_conversation_muted", { p_conversation: conversation, p_muted: false }), "Cat unmuting Ann");
+        // Muting only ever touches the caller's own membership, so Cat's call is a no-op.
+        ok(await cat.db.rpc("set_conversation_muted", { p_conversation: conversation, p_muted: false }), "Cat's unmute");
+        const membership = ok(await ann.db.from("conversation_members").select("muted")
+          .eq("conversation_id", conversation).eq("user_id", ann.id).single(), "Ann's membership");
+        assertEquals(membership.muted, true, "Ann's chat stays muted");
 
         // Ann doesn't follow Cat, so Cat's message is a request.
         const request = ok(await cat.db.rpc("start_conversation", { p_user: ann.id }), "Cat starts a chat") as string;
