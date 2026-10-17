@@ -124,6 +124,12 @@ struct LiveDashboardView: View {
             if recorder.usesReplay {
                 NoticeStrip("Demo: replaying a recorded track instead of live GPS.", tone: .estimate)
             }
+            if recorder.resumedDrive != nil {
+                NoticeStrip("Pull Up was closed during this drive and picked it up again. The time it wasn't running is bridged with a straight line and flagged in the summary.", tone: .caution)
+            }
+            if recorder.isLowPowerMode {
+                NoticeStrip("Low Power Mode is on. iOS may record location less often, so distance and speeds can be less precise.", tone: .estimate)
+            }
             switch live.signalState {
             case .acquiring:
                 NoticeStrip("Waiting for a GPS fix. Speeds appear once the signal is good enough to trust.")

@@ -61,30 +61,41 @@ public final class CoreLocationProvider: NSObject, LocationProvider, CLLocationM
         backgroundSession = CLBackgroundActivitySession()
         return AsyncStream { continuation in
             let task = Task { @MainActor in
-                do {
-                    var wasStationary = false
-                    for try await update in CLLocationUpdate.liveUpdates(.automotiveNavigation) {
-                        if Task.isCancelled { break }
-                        if update.authorizationDenied || update.authorizationDeniedGlobally {
-                            continuation.yield(.denied)
-                            break
+                // The live-updates sequence can end or throw (for example when
+                // location services hiccup). While recording, start it again
+                // after a short pause instead of going silent for the rest of
+                // the drive. Only a permission denial or stop() ends the stream.
+                var wasStationary = false
+                var restartDelay: Duration = .seconds(1)
+                restart: while !Task.isCancelled {
+                    do {
+                        for try await update in CLLocationUpdate.liveUpdates(.automotiveNavigation) {
+                            if Task.isCancelled { break restart }
+                            if update.authorizationDenied || update.authorizationDeniedGlobally {
+                                continuation.yield(.denied)
+                                break restart
+                            }
+                            if update.accuracyLimited {
+                                continuation.yield(.accuracyReduced)
+                                continue
+                            }
+                            if update.stationary != wasStationary {
+                                wasStationary = update.stationary
+                                continuation.yield(.stationary(wasStationary))
+                            }
+                            if let location = update.location {
+                                restartDelay = .seconds(1)
+                                continuation.yield(.sample(LocationSample(location)))
+                            } else if update.locationUnavailable {
+                                continuation.yield(.unavailable)
+                            }
                         }
-                        if update.accuracyLimited {
-                            continuation.yield(.accuracyReduced)
-                            continue
-                        }
-                        if update.stationary != wasStationary {
-                            wasStationary = update.stationary
-                            continuation.yield(.stationary(wasStationary))
-                        }
-                        if let location = update.location {
-                            continuation.yield(.sample(LocationSample(location)))
-                        } else if update.locationUnavailable {
-                            continuation.yield(.unavailable)
-                        }
+                    } catch {
+                        continuation.yield(.unavailable)
                     }
-                } catch {
-                    continuation.yield(.unavailable)
+                    if Task.isCancelled { break }
+                    try? await Task.sleep(for: restartDelay)
+                    restartDelay = min(restartDelay * 2, .seconds(30))
                 }
                 continuation.finish()
             }

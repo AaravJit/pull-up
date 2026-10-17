@@ -13,11 +13,18 @@ final class InstantProvider: LocationProvider {
     private(set) var startCount = 0
     private(set) var stopCount = 0
     let speeds: [Double]
+    /// Seconds after "now" the track begins, e.g. to continue after an
+    /// earlier track.
+    let startOffset: TimeInterval
 
-    init(permission: LocationPermission = .authorized, grantOnRequest: LocationPermission = .authorized, speeds: [Double]) {
+    init(
+        permission: LocationPermission = .authorized, grantOnRequest: LocationPermission = .authorized,
+        speeds: [Double], startOffset: TimeInterval = 0
+    ) {
         self.permission = permission
         self.grantOnRequest = grantOnRequest
         self.speeds = speeds
+        self.startOffset = startOffset
     }
 
     func requestPermission() async -> LocationPermission {
@@ -27,7 +34,7 @@ final class InstantProvider: LocationProvider {
 
     func start() -> AsyncStream<LocationEvent> {
         startCount += 1
-        let samples = DemoTracks.track(start: Date(), speeds: speeds, headingSeed: 0.2)
+        let samples = DemoTracks.track(start: Date().addingTimeInterval(startOffset), speeds: speeds, headingSeed: 0.2)
         return AsyncStream { continuation in
             for sample in samples { continuation.yield(.sample(sample)) }
             continuation.finish()
@@ -54,10 +61,12 @@ struct RecorderHarness {
     static let drive: [Double] = Array(repeating: 0, count: 4) + (1...8).map { Double($0) * 3.5 } + Array(repeating: 28, count: 40)
     static let short: [Double] = [0, 1, 2, 3, 2, 1, 0]
 
-    init(backend: DemoBackend = DemoBackend(), provider: InstantProvider = InstantProvider(speeds: drive)) async {
+    init(
+        backend: DemoBackend = DemoBackend(), provider: InstantProvider = InstantProvider(speeds: drive),
+        suite: String = "recorder-tests-\(UUID().uuidString)"
+    ) async {
         self.backend = backend
         self.provider = provider
-        let suite = "recorder-tests-\(UUID().uuidString)"
         defaults = UserDefaults(suiteName: suite)!
         let store = LocalDriveStore(directory: FileManager.default.temporaryDirectory.appendingPathComponent(suite))
         let counter = requests
@@ -183,6 +192,92 @@ struct DriveRecorderTests {
         let h = await RecorderHarness()
         h.recorder.ownerID = nil
         #expect(await h.recorder.start(with: nil) == .notSignedIn)
+    }
+
+    // MARK: Interruptions
+
+    /// The app was closed mid-drive: a new recorder on the same disk store
+    /// (what a relaunch builds) picks the drive up again.
+    @Test func recentInterruptedDriveResumes() async throws {
+        let suite = "recorder-tests-\(UUID().uuidString)"
+        let backend = DemoBackend()
+        let first = await RecorderHarness(backend: backend, suite: suite)
+        let me = try #require(await backend.currentUserID())
+        let vehicle = try #require(try await backend.vehicles(owner: me).first)
+        _ = await first.recorder.start(with: vehicle)
+        try await first.drain(expecting: RecorderHarness.drive.count)
+        await first.recorder.flush()
+        let before = first.recorder.acceptedCount
+        #expect(before > 30)
+
+        // The first track's fixes run about a minute ahead; the relaunched
+        // one continues two minutes on, so the closed app leaves a gap.
+        let relaunched = await RecorderHarness(
+            backend: backend, provider: InstantProvider(speeds: RecorderHarness.drive, startOffset: 120), suite: suite
+        )
+        await relaunched.recorder.recoverInterrupted(vehicles: try await backend.vehicles(owner: me))
+        #expect(relaunched.recorder.phase == .recording)
+        #expect(relaunched.recorder.resumedDrive != nil)
+        #expect(relaunched.recorder.vehicle?.id == vehicle.id)
+        #expect(relaunched.recorder.acceptedCount >= before)
+        try await relaunched.drain(expecting: before + RecorderHarness.drive.count)
+
+        let result = try #require(await relaunched.recorder.finish())
+        #expect(result.upload == .uploaded)
+        #expect(result.track.count > before)
+        #expect(result.drive.vehicleID == vehicle.id)
+        #expect(result.summary.longestSignalGap > 10, "the time the app was closed is disclosed as a gap")
+    }
+
+    /// Too long ago to resume: the drive is finished at its last fix and
+    /// uploaded instead of being lost.
+    @Test func staleInterruptedDriveIsFinished() async throws {
+        let suite = "recorder-tests-\(UUID().uuidString)"
+        let backend = DemoBackend()
+        let first = await RecorderHarness(backend: backend, suite: suite)
+        let me = try #require(await backend.currentUserID())
+        _ = await first.recorder.start(with: nil)
+        try await first.drain(expecting: RecorderHarness.drive.count)
+        await first.recorder.flush()
+        let before = try await backend.drives(owner: me, limit: 50).count
+
+        let relaunched = await RecorderHarness(backend: backend, suite: suite)
+        await relaunched.recorder.recoverInterrupted(now: Date().addingTimeInterval(DriveRecorder.resumeWindow + 120))
+        #expect(relaunched.recorder.phase == .idle)
+        #expect(relaunched.recorder.recoveredDrive != nil)
+        #expect(relaunched.recorder.pendingUploads == 0)
+        #expect(try await backend.drives(owner: me, limit: 50).count == before + 1)
+    }
+
+    /// Precise location was turned off while the app wasn't running.
+    @Test func interruptedDriveIsNotResumedWithoutPermission() async throws {
+        let suite = "recorder-tests-\(UUID().uuidString)"
+        let backend = DemoBackend()
+        let first = await RecorderHarness(backend: backend, suite: suite)
+        _ = await first.recorder.start(with: nil)
+        try await first.drain(expecting: RecorderHarness.drive.count)
+        await first.recorder.flush()
+
+        let relaunched = await RecorderHarness(
+            backend: backend, provider: InstantProvider(permission: .reducedAccuracy, speeds: RecorderHarness.drive), suite: suite
+        )
+        await relaunched.recorder.recoverInterrupted()
+        #expect(relaunched.recorder.phase == .idle)
+        #expect(relaunched.recorder.recoveredDrive != nil)
+        #expect(relaunched.provider.startCount == 0)
+    }
+
+    /// The server keeps drives up to 24 hours; recording stops before that.
+    @Test func stopsItselfBeforeTheDurationLimit() async throws {
+        let h = await RecorderHarness()
+        _ = await h.recorder.start(with: nil)
+        try await h.drain(expecting: RecorderHarness.drive.count)
+        let started = try #require(h.recorder.startedAt)
+        h.recorder.tick(flush: false, now: started.addingTimeInterval(DriveRecorder.maximumDuration))
+        for _ in 0..<200 where h.recorder.phase != .idle { try await Task.sleep(for: .milliseconds(10)) }
+        #expect(h.recorder.phase == .idle)
+        #expect(h.recorder.interruption != nil)
+        #expect(h.recorder.lastResult?.upload == .uploaded)
     }
 }
 
