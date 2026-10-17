@@ -12,7 +12,7 @@ final class PullUpUITests: XCTestCase {
     /// Saves what was on screen when a test failed, so CI failures can be
     /// read from the published screenshots without the result bundle.
     override func tearDown() async throws {
-        if testRun?.hasSucceeded == false {
+        if (testRun?.totalFailureCount ?? 0) > 0 {
             let test = name.components(separatedBy: " ").last?.trimmingCharacters(in: CharacterSet(charactersIn: "]")) ?? "test"
             snap("zz-failed-\(test)")
         }
