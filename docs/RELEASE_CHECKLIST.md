@@ -10,7 +10,7 @@ alone. Items are in the order they unblock each other.
       project ref and anon key (Project Settings ▸ API).
 - [ ] Link and push the schema from a machine with the Supabase CLI:
       `supabase link --project-ref <ref>` then `supabase db push`.
-      All seven migrations are additive. Each has a matching file in
+      All eight migrations are additive. Each has a matching file in
       `supabase/rollback/` (CI rolls every one back and re-applies it), and
       rollbacks that would drop data refuse to run unless
       `pullup.allow_destructive_rollback` is set for the session.
