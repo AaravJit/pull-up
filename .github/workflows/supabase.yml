@@ -45,3 +45,5 @@ jobs:
         with:
           deno-version: v2.x
       - run: deno check --config supabase/functions/deno.json supabase/functions/*/index.ts
+      - name: Edge function unit tests (stubbed Apple, no network)
+        run: deno test --config supabase/functions/deno.json supabase/functions/_shared/

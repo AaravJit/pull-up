@@ -51,3 +51,8 @@ file_size_limit = "100MiB"
 [edge_runtime]
 enabled = true
 policy = "oneshot"
+
+# Apple calls this without a Supabase token; it checks every claim against
+# the App Store Server API instead (functions/app-store-notifications).
+[functions.app-store-notifications]
+verify_jwt = false
