@@ -9,6 +9,18 @@ final class PullUpUITests: XCTestCase {
         continueAfterFailure = false
     }
 
+    /// Saves what was on screen when an assertion failed, so CI failures can
+    /// be read from the published screenshots without the result bundle.
+    nonisolated override func record(_ issue: XCTIssue) {
+        if Thread.isMainThread {
+            MainActor.assumeIsolated {
+                let test = name.components(separatedBy: " ").last?.trimmingCharacters(in: CharacterSet(charactersIn: "]")) ?? "test"
+                snap("zz-failed-\(test)")
+            }
+        }
+        super.record(issue)
+    }
+
     private func launch(_ extra: [String] = []) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = ["-PullUpDemo", "-PullUpResetDefaults"] + extra
@@ -335,5 +347,44 @@ final class PullUpUITests: XCTestCase {
         XCTAssertTrue(element(app, "composer-field").waitForExistence(timeout: 5))
         settle(1.5)
         snap("40-message-owner-thread")
+    }
+
+    /// Settings → a locked Pro face opens Pull Up Pro (demo store, labelled,
+    /// no payment) → subscribe → the Ring face and Pro accents unlock.
+    func testProSubscription() throws {
+        let app = launch(["-PullUpTab", "feed"])
+        let profile = app.buttons["open-profile"]
+        XCTAssertTrue(profile.waitForExistence(timeout: 10))
+        profile.tap()
+        app.buttons["open-settings"].tap()
+        XCTAssertTrue(element(app, "open-pro").waitForExistence(timeout: 5))
+        let ring = element(app, "speedometer-ring")
+        XCTAssertTrue(ring.waitForExistence(timeout: 5))
+        if !ring.isHittable { app.swipeUp() }
+        settle()
+        snap("41-settings-pro-locked")
+        ring.tap()
+
+        let subscribe = element(app, "pro-subscribe")
+        XCTAssertTrue(subscribe.waitForExistence(timeout: 5), "A locked face opens Pull Up Pro")
+        XCTAssertTrue(app.staticTexts["Demo: prices are placeholders and no payment is taken."].exists)
+        settle()
+        snap("42-pro-paywall")
+        element(app, "pro-plan-yearly").tap()
+        subscribe.tap()
+        XCTAssertTrue(element(app, "pro-purchased").waitForExistence(timeout: 5))
+        settle()
+        snap("43-pro-active")
+        element(app, "pro-close").tap()
+
+        XCTAssertTrue(ring.waitForExistence(timeout: 5))
+        ring.tap()
+        settle()
+        XCTAssertTrue(ring.isSelected, "Pro unlocks the Ring face")
+        let papaya = element(app, "accent-papaya")
+        if !papaya.isHittable { app.swipeDown() }
+        papaya.tap()
+        settle()
+        snap("44-settings-pro-unlocked")
     }
 }

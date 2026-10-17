@@ -45,6 +45,9 @@ struct DriveSummaryView: View {
                 if result.speedSeries.count > 2 { speedChart }
                 zeroToSixty
                 details
+                if result.speedSeries.count > 2 {
+                    DriveProSection(drive: drive, track: result.track, series: result.speedSeries)
+                }
                 if isStored {
                     editSection
                     shareSection

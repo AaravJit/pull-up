@@ -22,13 +22,17 @@ public enum SpeedometerStyle: String, Codable, CaseIterable, Sendable, Identifia
     case digital
     /// Horizontal moving tape, like an aircraft HUD speed tape.
     case tape
+    /// Open ring that fills with speed. Pull Up Pro.
+    case ring
 
     public var id: String { rawValue }
+    public var isPro: Bool { self == .ring }
     public var label: String {
         switch self {
         case .analog: "Sweep"
         case .digital: "Digital"
         case .tape: "Tape"
+        case .ring: "Ring"
         }
     }
 }
@@ -83,6 +87,15 @@ public struct ClusterTheme: Equatable, Sendable {
     }
 
     public var accentColor: Color { ClusterColor.accent(accent) }
+
+    /// The same theme with Pro-only choices swapped for the defaults, shown
+    /// while Pro isn't active. The person's picks are kept for when it is.
+    public var withoutPro: ClusterTheme {
+        var theme = self
+        if accent.isPro { theme.accent = ClusterTheme().accent }
+        if speedometer.isPro { theme.speedometer = ClusterTheme().speedometer }
+        return theme
+    }
 }
 
 private struct ClusterThemeKey: EnvironmentKey {

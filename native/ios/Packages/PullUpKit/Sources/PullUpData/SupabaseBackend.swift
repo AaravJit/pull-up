@@ -571,6 +571,37 @@ public final class SupabaseBackend: BackendService, @unchecked Sendable {
             .execute()
     }
 
+    // MARK: Pull Up Pro
+
+    public func entitlement() async throws -> Entitlement {
+        let rows: [Entitlement] = try await client.rpc("my_entitlement").execute().value
+        return rows.first ?? .none
+    }
+
+    public func verifySubscription(signedTransaction: String) async throws -> Entitlement {
+        struct Body: Encodable { let signed_transaction: String }
+        struct Failure: Decodable { let error: String }
+        do {
+            try await client.functions.invoke(
+                "verify-subscription",
+                options: FunctionInvokeOptions(method: .post, body: Body(signed_transaction: signedTransaction))
+            )
+        } catch let FunctionsError.httpError(code, data) {
+            let reason = (try? JSONDecoder().decode(Failure.self, from: data))?.error
+            switch reason {
+            case "not_configured": throw SubscriptionError.notConfigured
+            case "xcode_environment": throw SubscriptionError.testEnvironment
+            case "other_account": throw SubscriptionError.otherAccount
+            case "not_found": throw SubscriptionError.notFound
+            default: throw SubscriptionError.unavailable(reason ?? "HTTP \(code)")
+            }
+        } catch {
+            throw SubscriptionError.unavailable(error.localizedDescription)
+        }
+        // Read back through PostgREST so dates decode the same way everywhere.
+        return try await entitlement()
+    }
+
     public func messagingChanges() -> AsyncStream<MessagingChange> {
         let client = client
         return AsyncStream { continuation in

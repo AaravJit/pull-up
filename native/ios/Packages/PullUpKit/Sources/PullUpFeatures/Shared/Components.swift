@@ -165,16 +165,26 @@ struct SpecRow: View {
     }
 }
 
-/// Swatch row for choosing an accent or vehicle identity colour.
+/// Swatches for choosing an accent or vehicle identity colour. Vehicles and
+/// profiles use the standard set; the app accent adds the Pro colours, which
+/// call `onLocked` instead of selecting while Pro is off.
 struct AccentSwatches: View {
     @Binding var selection: AccentChoice
+    var choices: [AccentChoice] = AccentChoice.standard
+    var locked: (AccentChoice) -> Bool = { _ in false }
+    var onLocked: () -> Void = {}
 
     var body: some View {
-        HStack(spacing: Space.m) {
-            ForEach(AccentChoice.allCases) { choice in
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 46, maximum: 46), spacing: Space.m)], alignment: .leading, spacing: Space.m) {
+            ForEach(choices) { choice in
                 let selected = choice == selection
+                let isLocked = locked(choice)
                 Button {
-                    withAnimation(Motion.select) { selection = choice }
+                    if isLocked {
+                        onLocked()
+                    } else {
+                        withAnimation(Motion.select) { selection = choice }
+                    }
                 } label: {
                     ChamferedRectangle(cut: 7)
                         .fill(ClusterColor.accent(choice))
@@ -185,14 +195,19 @@ struct AccentSwatches: View {
                                 Image(systemName: "checkmark")
                                     .font(.system(size: 13, weight: .heavy))
                                     .foregroundStyle(ClusterColor.accentPrefersDarkText(choice) ? ClusterColor.onAccent : .white)
+                            } else if isLocked {
+                                Image(systemName: "lock.fill")
+                                    .font(.system(size: 11, weight: .bold))
+                                    .foregroundStyle(ClusterColor.accentPrefersDarkText(choice) ? ClusterColor.onAccent : .white)
                             }
                         }
                         .frame(width: 46, height: 46)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel(choice.label)
+                .accessibilityLabel(isLocked ? "\(choice.label), Pull Up Pro" : choice.label)
                 .accessibilityAddTraits(selected ? .isSelected : [])
+                .accessibilityIdentifier("accent-\(choice.rawValue)")
             }
         }
         .sensoryFeedback(.selection, trigger: selection)

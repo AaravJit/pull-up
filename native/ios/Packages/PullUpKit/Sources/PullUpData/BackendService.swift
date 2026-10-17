@@ -118,6 +118,14 @@ public protocol BackendService: AnyObject, Sendable {
     /// consuming task is cancelled.
     func messagingChanges() -> AsyncStream<MessagingChange>
 
+    // Pull Up Pro
+    /// The caller's entitlement as the server records it.
+    func entitlement() async throws -> Entitlement
+    /// Hands a StoreKit transaction (its JWS) to the server, which confirms
+    /// it with Apple and returns the resulting entitlement. Throws
+    /// `SubscriptionError`.
+    func verifySubscription(signedTransaction: String) async throws -> Entitlement
+
     // Notifications
     func notifications() async throws -> [AppNotification]
     func markNotificationsRead() async throws

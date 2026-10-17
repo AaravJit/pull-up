@@ -10,11 +10,14 @@ struct SettingsView: View {
     @State private var savedPrivacy: PrivacySettings?
     @State private var privacyError: String?
     @State private var deleting = false
+    @State private var showingPro = false
+    @State private var proHighlight: ProFeature?
 
     var body: some View {
         @Bindable var store = app.themeStore
         ScrollView {
             VStack(alignment: .leading, spacing: Space.xxl) {
+                proRow
                 appearance(theme: $store.theme)
                 dashboard(theme: $store.theme)
                 privacySection
@@ -36,8 +39,49 @@ struct SettingsView: View {
             Task { await savePrivacy(value) }
         }
         .sheet(isPresented: $deleting) { DeleteAccountView() }
+        .proSheet(isPresented: $showingPro, highlight: proHighlight)
         .task { await app.refreshAccount() }
         .accessibilityIdentifier("settings")
+    }
+
+    // MARK: Pro
+
+    private var proRow: some View {
+        Button {
+            proHighlight = nil
+            showingPro = true
+        } label: {
+            HStack(spacing: Space.m) {
+                Image(systemName: "gauge.open.with.lines.needle.67percent.and.arrowtriangle")
+                    .font(.system(size: 22, weight: .semibold))
+                    .foregroundStyle(app.themeStore.theme.accentColor)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Pull Up Pro").font(ClusterFont.headline(.subheadline)).foregroundStyle(ClusterColor.ink)
+                    Text(proSummary).font(ClusterFont.body(.caption)).foregroundStyle(ClusterColor.inkSecondary)
+                }
+                Spacer()
+                Image(systemName: "chevron.right").foregroundStyle(ClusterColor.inkTertiary)
+            }
+            .padding(Space.m)
+            .plate()
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("open-pro")
+    }
+
+    private var proSummary: String {
+        let entitlement = app.pro.entitlement
+        guard entitlement.isPro else { return "Extra faces, colours, drive analytics and export." }
+        if let expires = entitlement.expiresAt {
+            return "Active · \(entitlement.autoRenew ? "renews" : "ends") \(expires.formatted(date: .abbreviated, time: .omitted))"
+        }
+        return "Active"
+    }
+
+    private func openPro(_ feature: ProFeature) {
+        proHighlight = feature
+        showingPro = true
     }
 
     // MARK: Look
@@ -51,15 +95,22 @@ struct SettingsView: View {
             }
             VStack(alignment: .leading, spacing: Space.s) {
                 Legend("Accent")
-                AccentSwatches(selection: theme.accent)
+                AccentSwatches(selection: theme.accent, choices: AccentChoice.allCases, locked: { $0.isPro && !app.pro.isPro }) {
+                    openPro(.accentPalettes)
+                }
                 Text(theme.wrappedValue.accent.label).font(ClusterFont.body(.caption)).foregroundStyle(ClusterColor.inkSecondary)
             }
             VStack(alignment: .leading, spacing: Space.s) {
                 Legend("Speedometer")
-                HStack(spacing: Space.s) {
+                LazyVGrid(columns: [GridItem(.flexible(), spacing: Space.s), GridItem(.flexible(), spacing: Space.s)], spacing: Space.s) {
                     ForEach(SpeedometerStyle.allCases) { style in
-                        SpeedometerChoice(style: style, unit: theme.wrappedValue.unit, isSelected: theme.wrappedValue.speedometer == style) {
-                            withAnimation(Motion.select) { theme.wrappedValue.speedometer = style }
+                        let locked = style.isPro && !app.pro.isPro
+                        SpeedometerChoice(style: style, unit: theme.wrappedValue.unit, isSelected: theme.wrappedValue.speedometer == style, locked: locked) {
+                            if locked {
+                                openPro(.speedometerFaces)
+                            } else {
+                                withAnimation(Motion.select) { theme.wrappedValue.speedometer = style }
+                            }
                         }
                     }
                 }
@@ -236,6 +287,7 @@ struct SpeedometerChoice: View {
     let style: SpeedometerStyle
     let unit: SpeedUnit
     let isSelected: Bool
+    var locked = false
     let action: () -> Void
 
     var body: some View {
@@ -250,14 +302,18 @@ struct SpeedometerChoice: View {
                     .frame(width: 86, height: 86)
                     .allowsHitTesting(false)
                     .accessibilityHidden(true)
-                Legend(style.label, color: isSelected ? ClusterColor.ink : ClusterColor.inkTertiary)
+                HStack(spacing: Space.xs) {
+                    Legend(style.label, color: isSelected ? ClusterColor.ink : ClusterColor.inkTertiary)
+                    if locked { ProBadge() }
+                }
             }
             .padding(Space.s)
             .frame(maxWidth: .infinity)
             .plate(raised: isSelected, cut: Radius.chamferSmall, stroke: isSelected ? theme.accentColor : nil)
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("\(style.label) speedometer")
+        .accessibilityLabel(locked ? "\(style.label) speedometer, Pull Up Pro" : "\(style.label) speedometer")
+        .accessibilityIdentifier("speedometer-\(style.rawValue)")
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }

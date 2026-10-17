@@ -195,8 +195,9 @@ struct OnboardingView: View {
             HStack(spacing: Space.l) {
                 Avatar(name: displayName.isEmpty ? username : displayName, path: avatarPath, size: 96)
                 let isUploading = uploading
+                let pickerTitle = avatarPath == nil ? "Choose photo" : "Change"
                 PhotosPicker(selection: $photoItem, matching: .images) {
-                    MediaPickerLabel(isLoading: isUploading, symbol: "camera", title: avatarPath == nil ? "Choose photo" : "Change", width: 120, height: 96, cut: 6)
+                    MediaPickerLabel(isLoading: isUploading, symbol: "camera", title: pickerTitle, width: 120, height: 96, cut: 6)
                 }
                 .buttonStyle(.plain)
                 .disabled(uploading)

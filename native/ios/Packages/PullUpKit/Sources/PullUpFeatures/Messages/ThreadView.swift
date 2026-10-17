@@ -72,7 +72,6 @@ struct ThreadView: View {
         } message: {
             Text("Your copy is deleted. @\(target.peer.username) keeps theirs.")
         }
-        .accessibilityIdentifier("thread")
     }
 
     private var menu: some View {

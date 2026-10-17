@@ -35,6 +35,7 @@ public final class DemoBackend: BackendService, Sendable {
         var messages: [DirectMessage] = []
         var blocks: Set<UserID> = []
         var reports = 0
+        var entitlement = Entitlement.none
     }
 
     /// The demo driver's side of a conversation, plus what the server would
@@ -714,6 +715,35 @@ public final class DemoBackend: BackendService, Sendable {
                 _ = self?.messagingContinuations.withLock { $0.removeValue(forKey: key) }
             }
         }
+    }
+
+    // MARK: Pull Up Pro
+
+    public func entitlement() async throws -> Entitlement {
+        _ = try me()
+        return state.withLock { s in
+            var e = s.entitlement
+            if let expires = e.expiresAt, expires <= .now { e.isPro = false; e.status = .expired }
+            return e
+        }
+    }
+
+    /// Accepts only the demo store's transactions ("demo.<plan>.<id>"); no
+    /// money changes hands in demo mode.
+    /// Tests set this to see how the app handles the server refusing.
+    let subscriptionFailure = Mutex<SubscriptionError?>(nil)
+
+    public func verifySubscription(signedTransaction: String) async throws -> Entitlement {
+        _ = try me()
+        if let failure = subscriptionFailure.withLock({ $0 }) { throw failure }
+        let parts = signedTransaction.split(separator: ".")
+        guard parts.count == 3, parts[0] == "demo", let plan = ProPlan(rawValue: String(parts[1]).replacingOccurrences(of: "_", with: ".")) else {
+            throw SubscriptionError.testEnvironment
+        }
+        let expires = Calendar.current.date(byAdding: plan == .yearly ? .year : .month, value: 1, to: .now)
+        let entitlement = Entitlement(isPro: true, status: .active, plan: plan, expiresAt: expires, autoRenew: true, environment: "Demo")
+        state.withLock { $0.entitlement = entitlement }
+        return entitlement
     }
 
     // MARK: Notifications

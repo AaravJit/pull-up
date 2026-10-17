@@ -26,6 +26,8 @@ public final class AppModel {
     public private(set) var garage: GarageStore
     public private(set) var recorder: DriveRecorder
     public let themeStore: ThemeStore
+    /// Pull Up Pro: the server's entitlement and the App Store.
+    public let pro: ProStore
     public let options: LaunchOptions
     public var selectedTab: MainTab = .drive
     public private(set) var unreadNotifications = 0
@@ -58,11 +60,13 @@ public final class AppModel {
     private var authTask: Task<Void, Never>?
     private var messagingTask: Task<Void, Never>?
 
-    public convenience init(options: LaunchOptions = .fromProcess()) {
-        self.init(options: options, appleCredentials: SystemAppleCredentials())
+    /// `store` is the live App Store client from the app target. Demo mode
+    /// always uses the demo store instead, so it can never take money.
+    public convenience init(options: LaunchOptions = .fromProcess(), store: (any StoreClient)? = nil) {
+        self.init(options: options, appleCredentials: SystemAppleCredentials(), store: store)
     }
 
-    init(options: LaunchOptions, appleCredentials: any AppleCredentialChecking) {
+    init(options: LaunchOptions, appleCredentials: any AppleCredentialChecking, store: (any StoreClient)? = nil) {
         self.options = options
         self.appleCredentials = appleCredentials
         let defaults = UserDefaults.standard
@@ -74,6 +78,8 @@ public final class AppModel {
         self.backend = backend
         garage = GarageStore(backend: backend)
         recorder = Self.makeRecorder(backend: backend, defaults: defaults)
+        let storeClient: any StoreClient = if backend.mode == .demo { DemoStoreClient() } else { store ?? UnavailableStoreClient() }
+        pro = ProStore(store: storeClient, backend: backend, theme: themeStore)
         if let tab = options.initialTab { selectedTab = tab }
         Self.shared = self
     }
@@ -137,6 +143,7 @@ public final class AppModel {
     public func enterDemo() async {
         let backend = DemoBackend()
         self.backend = backend
+        pro.configure(store: DemoStoreClient(), backend: backend)
         garage = GarageStore(backend: backend)
         recorder = Self.makeRecorder(backend: backend, defaults: .standard)
         phase = .launching
@@ -161,6 +168,7 @@ public final class AppModel {
             messagingTask?.cancel()
             messagingTask = nil
             unreadMessages = UnreadMessages()
+            pro.stop()
             recorder.ownerID = nil
             await garage.setOwner(nil)
         }
@@ -175,6 +183,7 @@ public final class AppModel {
         await refreshNotifications()
         await refreshMessages()
         startMessagingUpdates()
+        await pro.start(account: user)
     }
 
     private func startMessagingUpdates() {
@@ -335,6 +344,8 @@ final class UnconfiguredBackend: BackendService, Sendable {
     func report(user: UserID, reason: ReportReason, details: String, message: UUID?) async throws { throw BackendError.notConfigured }
     func block(_ user: UserID) async throws { throw BackendError.notConfigured }
     func messagingChanges() -> AsyncStream<MessagingChange> { AsyncStream { $0.finish() } }
+    func entitlement() async throws -> Entitlement { throw BackendError.notConfigured }
+    func verifySubscription(signedTransaction: String) async throws -> Entitlement { throw SubscriptionError.notConfigured }
     func notifications() async throws -> [AppNotification] { throw BackendError.notConfigured }
     func markNotificationsRead() async throws { throw BackendError.notConfigured }
     func registerPushToken(_ token: String, sandbox: Bool) async throws {}

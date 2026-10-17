@@ -6,7 +6,7 @@ import PullUpFeatures
 @main
 struct PullUpApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var delegate
-    @State private var model = AppModel()
+    @State private var model = AppModel(store: StoreKitClient())
 
     var body: some Scene {
         WindowGroup {
