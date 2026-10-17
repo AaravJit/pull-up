@@ -4,6 +4,12 @@ Native iOS rebuild of Pull Up. Phase 1 is on branch `claude/native-ios-85igsc`
 (PR #2); Phase 2 is on `claude/pull-up-phase-2` (PR #3, stacked on PR #2).
 The Expo app at the repository root is unchanged.
 
+## Phase 3
+
+Plan: `PHASE3_PLAN.md`. Device checks: `DEVICE_TEST_PLAN.md`, failures
+reported with the **Device test result** issue template. No physical-device
+test has been run yet.
+
 ## Phase 2
 
 Plan: `PHASE2_PLAN.md`. Status uses the legend below. Nothing in Phase 2 has

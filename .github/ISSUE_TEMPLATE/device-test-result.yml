@@ -1,0 +1,74 @@
+name: Device test result
+description: A failure (or a surprise) from docs/DEVICE_TEST_PLAN.md on a real iPhone
+title: "[Device] D?.?: "
+labels: ["device-test"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        One issue per failing test. Don't include passwords, tokens or anything from Settings ▸ About beyond the build number and server label.
+  - type: input
+    id: test
+    attributes:
+      label: Test ID
+      description: From DEVICE_TEST_PLAN.md, for example D3.12
+      placeholder: D3.12
+    validations:
+      required: true
+  - type: input
+    id: build
+    attributes:
+      label: Build
+      description: Version and build number from Settings ▸ About, and the server label
+      placeholder: 0.1.0 (142), Pull Up server (staging)
+    validations:
+      required: true
+  - type: input
+    id: device
+    attributes:
+      label: Device and iOS version
+      placeholder: iPhone 18 Pro Max, iOS 26.1
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: How it was installed
+      options:
+        - TestFlight
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: What you did
+      description: Steps, including anything special (Low Power Mode, airplane mode, tunnel, locked screen)
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What should have happened
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened
+      description: Screenshots or a screen recording help. For drives, include the trip-meter distance and the time.
+    validations:
+      required: true
+  - type: input
+    id: when
+    attributes:
+      label: When it happened
+      description: Local time, so a crash in App Store Connect can be matched
+  - type: dropdown
+    id: repeat
+    attributes:
+      label: Does it happen again?
+      options:
+        - Every time
+        - Sometimes
+        - Once so far
