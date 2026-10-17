@@ -138,6 +138,14 @@ Notifications
       shows it; a request never shows text; turning a category off stops it;
       tapping opens the conversation; signing in as someone else on the same
       phone stops the first account's pushes.
+- [ ] `send-push` answers `{ sent, failed }`. `sent` only means APNs
+      accepted the push; it counts as delivered once it shows up on the
+      phone. Refusals are in the function's logs as `APNs <environment>
+      refused a push: <status> <reason>` (never the token or the text):
+      `InvalidProviderToken` means the key, team ID or topic is wrong;
+      `BadDeviceToken` means a sandbox token went to production or the
+      reverse, and that token is removed. Tokens for deleted apps (410) are
+      removed too.
 
 Parts finder
 
