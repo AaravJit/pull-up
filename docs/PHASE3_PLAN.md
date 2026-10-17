@@ -16,7 +16,7 @@ Product order stays: driving first, community second, parts discovery third.
 | Phase 1 and Phase 2 in `main` | **Missing, both.** `git merge-base --is-ancestor` fails for both branch heads against `origin/main`. |
 | Integration PR | PR #2 already is one: it is based on `main`, contains every Phase 1 and Phase 2 commit, and has no conflicts with `main` (`main` hasn't moved since PR #2 branched). A new integration PR would duplicate it. Merging it needs the owner's approval. |
 | Migrations on PR #2 | 13 (`20261016000100`–`000800`, `20261017000100`–`000500`), each with a rollback in `supabase/rollback/`. |
-| CI on `05035b3` | Backend (push and PR): green. iOS (push and PR): see `PROGRESS.md` Phase 3. |
+| CI on `05035b3` | Backend: green. iOS: all 15 UI journeys passed; one StoreKit test failed on a timing race (`expireSubscription` applies asynchronously). Fixed in PR #2 by `e42e33d`; see `PROGRESS.md` for the run on that head. |
 | Other open PRs | None. PR #1 and PR #3 are merged. |
 | Open issues | None. |
 | Failed workflow runs | 15 in history, all on superseded commits of the two feature branches (16–17 Oct), each followed by a green run on a later commit. None on a current head. |
