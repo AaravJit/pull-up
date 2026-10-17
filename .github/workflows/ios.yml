@@ -53,7 +53,7 @@ jobs:
   app:
     name: App build, UI tests, screenshots
     runs-on: macos-26
-    timeout-minutes: 60
+    timeout-minutes: 90
     permissions:
       contents: write # pushes screenshots to the ci/screenshots branch
     steps:
@@ -90,29 +90,32 @@ jobs:
             -skipPackagePluginValidation \
             CODE_SIGNING_ALLOWED=NO
       - name: StoreKit tests
-        # Run separately and ad-hoc signed ("Sign to Run Locally": no team,
-        # certificate or profile). With CODE_SIGNING_ALLOWED=NO the app has no
-        # signature or entitlements, and SKTestSession returned no products
-        # on both iOS 26.5 and 26.4. Runs on the newest runtime and on the one
-        # before it, so a runtime-specific StoreKit bug shows up as such.
+        # `xcodebuild test` from the command line doesn't hand the StoreKit
+        # configuration to the simulator's storekitd on recent runtimes, so
+        # SKTestSession silently falls through to the real App Store and finds
+        # no products (Apple FB22237318; reported unaffected on iOS 26.1). Seen
+        # here on 26.5 and 26.4, signed or not. Diagnostic for now: try the
+        # oldest preinstalled runtime (26.2), then download 26.1.
         if: always()
         working-directory: native/ios
         run: |
-          status=0
-          for below in "" 26.5; do
-            # Prints "Using iPhone … (iOS x.y)" so the log says which runtime.
-            SIM=$(IOS_BELOW=$below ./scripts/simulator-id.sh)
+          store_tests() {
             ./scripts/xcodebuild-ci.sh test \
               -project PullUp.xcodeproj \
               -scheme PullUp \
-              -destination "id=$SIM" \
-              -resultBundlePath "$RUNNER_TEMP/PullUpStore${below:+-below-$below}.xcresult" \
+              -destination "id=$1" \
+              -resultBundlePath "$RUNNER_TEMP/PullUpStore-$2.xcresult" \
               -only-testing:PullUpStoreTests \
               -skipPackagePluginValidation \
-              CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM= PROVISIONING_PROFILE_SPECIFIER= \
-              || status=1
-          done
-          exit $status
+              CODE_SIGNING_ALLOWED=NO
+          }
+          if store_tests "$(IOS_BELOW=26.4 ./scripts/simulator-id.sh)" older; then exit 0; fi
+          echo "::warning::StoreKit tests failed on the oldest preinstalled runtime; trying iOS 26.1"
+          xcodebuild -downloadPlatform iOS -buildVersion 26.1
+          RUNTIME=$(xcrun simctl list runtimes -j | python3 -c 'import json,sys; print(next(r["identifier"] for r in json.load(sys.stdin)["runtimes"] if r["version"].startswith("26.1") and r["isAvailable"]))')
+          SIM=$(xcrun simctl create "StoreKit iPhone" "iPhone 17 Pro" "$RUNTIME")
+          echo "Using iPhone 17 Pro ($RUNTIME)"
+          store_tests "$SIM" 26.1
       - name: Upload screenshots
         if: always()
         uses: actions/upload-artifact@v4
