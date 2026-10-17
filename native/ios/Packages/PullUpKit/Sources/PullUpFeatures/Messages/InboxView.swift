@@ -19,6 +19,8 @@ struct InboxView: View {
     @State private var hasMore = false
     @State private var error: String?
     @State private var confirmDelete: InboxEntry?
+    /// Opened from a tapped push rather than a row.
+    @State private var opened: ConversationTarget?
 
     var body: some View {
         List {
@@ -90,8 +92,15 @@ struct InboxView: View {
         .canvasBackground()
         .clusterNavigation("Messages")
         .navigationDestination(for: ConversationTarget.self) { ThreadView(target: $0) }
+        .navigationDestination(item: $opened) { ThreadView(target: $0) }
         .refreshable { await load() }
-        .task(id: folder) { await load() }
+        .task(id: folder) {
+            await load()
+            openPendingPush()
+        }
+        .onChange(of: app.pendingPush) {
+            if isLoaded { Task { await load(); openPendingPush() } }
+        }
         .onChange(of: app.messagingPulse) { Task { await load() } }
         .confirmationDialog(
             "Delete this conversation?", isPresented: Binding(get: { confirmDelete != nil }, set: { if !$0 { confirmDelete = nil } }),
@@ -102,6 +111,21 @@ struct InboxView: View {
             Text("Your copy of the conversation with @\(entry.peer.username) is deleted. They keep theirs.")
         }
         .accessibilityIdentifier("inbox")
+    }
+
+    /// Opens the conversation a tapped push is about, once its folder has
+    /// loaded. If it's gone (deleted, blocked) the inbox stays open.
+    private func openPendingPush() {
+        guard case let .conversation(id, isRequest) = app.pendingPush else { return }
+        let wanted: Folder = isRequest ? .requests : .messages
+        if folder != wanted, !entries.contains(where: { $0.conversationID == id }) {
+            folder = wanted
+            return
+        }
+        app.pendingPush = nil
+        if let entry = entries.first(where: { $0.conversationID == id }) {
+            opened = ConversationTarget(entry)
+        }
     }
 
     private func folderLabel(_ folder: Folder) -> String {

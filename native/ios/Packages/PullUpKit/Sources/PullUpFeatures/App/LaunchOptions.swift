@@ -18,6 +18,8 @@ public struct LaunchOptions: Sendable, Equatable {
     public var appearance: AppearancePreference?
     /// Tab to open at launch.
     public var initialTab: MainTab?
+    /// Acts as if a push was tapped after sign-in: "kind" or "kind:conversation-id".
+    public var openPush: String?
 
     public init() {}
 
@@ -35,6 +37,7 @@ public struct LaunchOptions: Sendable, Equatable {
         options.resetDefaults = args.contains("-PullUpResetDefaults")
         options.appearance = value(after: "-PullUpAppearance").flatMap(AppearancePreference.init(rawValue:))
         options.initialTab = value(after: "-PullUpTab").flatMap(MainTab.init(rawValue:))
+        options.openPush = value(after: "-PullUpOpenPush")
         return options
     }
 }

@@ -15,11 +15,12 @@ public struct FeedView: View {
     @State private var composing = false
     @State private var commentsFor: Post?
     @State private var sharing: Post?
+    @State private var path = NavigationPath()
 
     public init() {}
 
     public var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: Space.xl) {
                     header
@@ -47,6 +48,12 @@ public struct FeedView: View {
             .navigationDestination(for: SettingsRoute.self) { _ in SettingsView() }
             .navigationDestination(for: MessagesRoute.self) { _ in InboxView() }
             .task(id: scope) { await load() }
+            .onChange(of: app.pendingPush, initial: true) { _, route in
+                // A tapped message push: open Messages, which then opens the conversation.
+                guard case .conversation = route else { return }
+                path = NavigationPath()
+                path.append(MessagesRoute())
+            }
             .sheet(isPresented: $composing, onDismiss: { Task { await load() } }) { PostComposerView() }
             .sheet(item: $commentsFor) { post in
                 CommentsView(post: post).presentationDetents([.medium, .large])

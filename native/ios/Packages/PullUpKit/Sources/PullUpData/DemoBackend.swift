@@ -36,6 +36,9 @@ public final class DemoBackend: BackendService, Sendable {
         var blocks: Set<UserID> = []
         var reports = 0
         var entitlement = Entitlement.none
+        var notificationPreferences = NotificationPreferences()
+        /// Tokens registered per account, as the server would hold them.
+        var pushTokens: [String: UserID] = [:]
     }
 
     /// The demo driver's side of a conversation, plus what the server would
@@ -756,7 +759,31 @@ public final class DemoBackend: BackendService, Sendable {
         state.withLock { s in for i in s.notifications.indices where s.notifications[i].readAt == nil { s.notifications[i].readAt = .now } }
     }
 
-    public func registerPushToken(_ token: String, sandbox: Bool) async throws {}
+    public func registerPushToken(_ token: String, sandbox: Bool) async throws {
+        try state.withLock { s in
+            guard let me = s.me else { throw BackendError.notSignedIn }
+            s.pushTokens[token.lowercased()] = me
+        }
+    }
+
+    public func unregisterPushToken(_ token: String) async throws {
+        state.withLock { s in
+            if s.pushTokens[token.lowercased()] == s.me { s.pushTokens[token.lowercased()] = nil }
+        }
+    }
+
+    /// Test hook: which account each phone's pushes go to.
+    func registeredPushTokens() -> [String: UserID] {
+        state.withLock { $0.pushTokens }
+    }
+
+    public func notificationPreferences() async throws -> NotificationPreferences {
+        state.withLock { $0.notificationPreferences }
+    }
+
+    public func updateNotificationPreferences(_ preferences: NotificationPreferences) async throws {
+        state.withLock { $0.notificationPreferences = preferences }
+    }
 
     // MARK: Media
 

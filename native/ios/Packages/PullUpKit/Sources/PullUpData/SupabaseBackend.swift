@@ -669,10 +669,34 @@ public final class SupabaseBackend: BackendService, @unchecked Sendable {
     }
 
     public func registerPushToken(_ token: String, sandbox: Bool) async throws {
-        let me = try await uid()
-        try await client.from("device_tokens").upsert([
-            "token": token, "user_id": me.uuidString, "platform": "ios", "environment": sandbox ? "sandbox" : "production",
-        ]).execute()
+        try await client.rpc("register_device_token", params: ["p_token": token, "p_environment": sandbox ? "sandbox" : "production"]).execute()
+    }
+
+    public func unregisterPushToken(_ token: String) async throws {
+        try await client.rpc("unregister_device_token", params: ["p_token": token]).execute()
+    }
+
+    public func notificationPreferences() async throws -> NotificationPreferences {
+        let id = try await uid()
+        let rows: [NotificationPreferences] = try await client.from("notification_preferences")
+            .select("messages, message_requests, likes_comments, followers, meets, drives, message_previews")
+            .eq("user_id", value: id).execute().value
+        return rows.first ?? NotificationPreferences()
+    }
+
+    public func updateNotificationPreferences(_ preferences: NotificationPreferences) async throws {
+        let id = try await uid()
+        struct Row: Encodable {
+            let user_id: UserID
+            let messages, message_requests, likes_comments, followers, meets, drives, message_previews: Bool
+        }
+        let row = Row(
+            user_id: id, messages: preferences.messages, message_requests: preferences.messageRequests,
+            likes_comments: preferences.likesComments, followers: preferences.followers, meets: preferences.meets,
+            drives: preferences.drives, message_previews: preferences.messagePreviews
+        )
+        try await client.from("notification_preferences")
+            .upsert(row, onConflict: "user_id").execute()
     }
 
     // MARK: Media

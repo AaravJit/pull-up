@@ -129,7 +129,13 @@ public protocol BackendService: AnyObject, Sendable {
     // Notifications
     func notifications() async throws -> [AppNotification]
     func markNotificationsRead() async throws
+    /// Registers this phone's APNs token for the signed-in account. The
+    /// server moves a token to whoever registered it last.
     func registerPushToken(_ token: String, sandbox: Bool) async throws
+    /// Stops pushes to this phone for the signed-in account (sign-out).
+    func unregisterPushToken(_ token: String) async throws
+    func notificationPreferences() async throws -> NotificationPreferences
+    func updateNotificationPreferences(_ preferences: NotificationPreferences) async throws
 
     // Media
     func mediaURL(_ bucket: MediaBucket, path: String) async -> URL?

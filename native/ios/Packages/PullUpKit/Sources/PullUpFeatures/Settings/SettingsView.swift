@@ -181,6 +181,26 @@ struct SettingsView: View {
         }
     }
 
+    private var notificationsLink: some View {
+        NavigationLink {
+            NotificationPreferencesView()
+        } label: {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Notifications").font(ClusterFont.headline(.subheadline)).foregroundStyle(ClusterColor.ink)
+                    Text("Which pushes you get, and whether they show message text.")
+                        .font(ClusterFont.body(.caption)).foregroundStyle(ClusterColor.inkSecondary)
+                }
+                Spacer()
+                Image(systemName: "chevron.right").foregroundStyle(ClusterColor.inkTertiary)
+            }
+            .padding(Space.m)
+            .plate()
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("open-notifications")
+    }
+
     private var zonesLink: some View {
         NavigationLink {
             PrivacyZonesView()
@@ -228,7 +248,7 @@ struct SettingsView: View {
                 Text("Your email is never shown on your profile or to other people.")
                     .font(ClusterFont.body(.caption)).foregroundStyle(ClusterColor.inkTertiary)
             }
-            NotificationSettingsRow()
+            notificationsLink
             Button("Sign out") { Task { await app.signOut() } }
                 .buttonStyle(.clusterSecondary)
             Button("Delete account") { deleting = true }

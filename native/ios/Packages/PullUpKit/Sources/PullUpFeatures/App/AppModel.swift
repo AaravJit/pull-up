@@ -41,6 +41,11 @@ public final class AppModel {
     /// Shown once on the sign-in screen after the app signed someone out on
     /// its own (Apple credential revoked, account deleted).
     public var signedOutNotice: String?
+    /// A tapped push waiting for its screen to open it.
+    var pendingPush: PushRoute?
+    /// This phone's APNs token, once iOS has issued one.
+    @ObservationIgnored private var pushToken: PushToken?
+    @ObservationIgnored private var openedLaunchPush = false
     /// Name Apple shared on first sign-in, offered as the display name.
     var appleSuggestedName: String?
     let appleCredentials: any AppleCredentialChecking
@@ -183,7 +188,38 @@ public final class AppModel {
         await refreshNotifications()
         await refreshMessages()
         startMessagingUpdates()
+        await registerPushTokenIfPossible()
+        if let push = options.openPush, !openedLaunchPush {
+            openedLaunchPush = true
+            let parts = push.split(separator: ":", maxSplits: 1).map(String.init)
+            openPush(kind: parts.first, conversationID: parts.count > 1 ? parts[1] : nil)
+        }
         await pro.start(account: user)
+    }
+
+    // MARK: Push
+
+    /// Called by the app delegate whenever iOS issues the APNs token. It's
+    /// registered for the signed-in account now, or at the next sign-in.
+    public func didReceivePushToken(_ token: String, sandbox: Bool) async {
+        pushToken = PushToken(token: token, sandbox: sandbox)
+        await registerPushTokenIfPossible()
+    }
+
+    private func registerPushTokenIfPossible() async {
+        guard let pushToken, case .signedIn = phase else { return }
+        try? await backend.registerPushToken(pushToken.token, sandbox: pushToken.sandbox)
+    }
+
+    /// Opens what a tapped push is about: the conversation for messages,
+    /// the activity list for everything else.
+    public func openPush(kind: String?, conversationID: String?) {
+        guard let route = PushRoute(kind: kind, conversationID: conversationID) else { return }
+        switch route {
+        case .conversation: selectedTab = .feed
+        case .activity: selectedTab = .drive
+        }
+        pendingPush = route
     }
 
     private func startMessagingUpdates() {
@@ -247,6 +283,9 @@ public final class AppModel {
     }
 
     public func signOut() async {
+        // While still signed in, so the server lets this account drop the
+        // phone: a shared phone stops getting this account's pushes.
+        if let pushToken { try? await backend.unregisterPushToken(pushToken.token) }
         try? await backend.signOut()
         appleCredentials.store(userID: nil)
         await apply(nil)
@@ -266,6 +305,11 @@ public final class AppModel {
             signedOutNotice = "Your account and everything in it have been deleted. To also remove Pull Up from your Apple Account, open Settings ▸ your name ▸ Sign in with Apple ▸ Pull Up ▸ Stop Using."
         }
     }
+}
+
+private struct PushToken: Sendable {
+    let token: String
+    let sandbox: Bool
 }
 
 /// A realtime nudge as seen by screens: `count` changes on every event.
@@ -349,5 +393,8 @@ final class UnconfiguredBackend: BackendService, Sendable {
     func notifications() async throws -> [AppNotification] { throw BackendError.notConfigured }
     func markNotificationsRead() async throws { throw BackendError.notConfigured }
     func registerPushToken(_ token: String, sandbox: Bool) async throws {}
+    func unregisterPushToken(_ token: String) async throws {}
+    func notificationPreferences() async throws -> NotificationPreferences { throw BackendError.notConfigured }
+    func updateNotificationPreferences(_ preferences: NotificationPreferences) async throws { throw BackendError.notConfigured }
     func mediaURL(_ bucket: MediaBucket, path: String) async -> URL? { nil }
 }
