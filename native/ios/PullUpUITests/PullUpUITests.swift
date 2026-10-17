@@ -228,7 +228,53 @@ final class PullUpUITests: XCTestCase {
     func testSignedOutShowsAuth() throws {
         let app = launch(["-PullUpSignedOut"])
         XCTAssertTrue(element(app, "auth").waitForExistence(timeout: 10))
+        XCTAssertTrue(element(app, "continue-with-apple").exists, "Sign in with Apple is the primary way in")
+        XCTAssertFalse(app.secureTextFields.firstMatch.exists, "Email sign-in stays tucked away")
         settle()
         snap("28-sign-in")
+        app.buttons["other-sign-in"].tap()
+        settle()
+        XCTAssertTrue(app.secureTextFields.firstMatch.waitForExistence(timeout: 3))
+        XCTAssertFalse(app.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] 'create account'")).firstMatch.exists,
+                       "There is no email sign-up")
+        snap("29-sign-in-other-options")
+        app.buttons["demo-sign-in"].tap()
+        XCTAssertTrue(app.buttons["start-drive"].waitForExistence(timeout: 10))
+    }
+
+    /// A new Sign in with Apple account picks a username (taken names are
+    /// refused live), may skip the photo, sets privacy, then lands on Drive.
+    func testNewAccountOnboarding() throws {
+        let app = launch(["-PullUpOnboarding"])
+        XCTAssertTrue(element(app, "onboarding").waitForExistence(timeout: 10))
+        XCTAssertFalse(app.tabBars.firstMatch.exists, "Onboarding comes before the app")
+        let field = app.textFields["onboarding-username"]
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.tap()
+        field.typeText("maya.s15")
+        let status = element(app, "username-status")
+        expectation(for: NSPredicate(format: "label CONTAINS[c] 'already'"), evaluatedWith: status)
+        waitForExpectations(timeout: 5)
+        XCTAssertFalse(app.buttons["onboarding-continue"].isEnabled)
+        snap("30-onboarding-username-taken")
+
+        field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 8) + "rx7_kenji")
+        expectation(for: NSPredicate(format: "label CONTAINS[c] 'available'"), evaluatedWith: status)
+        waitForExpectations(timeout: 5)
+        snap("31-onboarding-username")
+        app.buttons["onboarding-continue"].tap()
+
+        let photoNext = app.buttons["onboarding-photo-next"]
+        XCTAssertTrue(photoNext.waitForExistence(timeout: 5))
+        settle()
+        snap("32-onboarding-photo")
+        photoNext.tap()
+
+        let finish = app.buttons["onboarding-finish"]
+        XCTAssertTrue(finish.waitForExistence(timeout: 5))
+        settle()
+        snap("33-onboarding-privacy")
+        finish.tap()
+        XCTAssertTrue(app.buttons["start-drive"].waitForExistence(timeout: 10), "Finishing onboarding opens the app")
     }
 }

@@ -16,13 +16,25 @@ public protocol BackendService: AnyObject, Sendable {
     // Auth
     func currentUserID() async -> UserID?
     func authChanges() -> AsyncStream<UserID?>
+    /// Email sign-in exists only for accounts created by Pull Up support (the
+    /// App Review demo account). New accounts use Sign in with Apple.
     func signIn(email: String, password: String) async throws
-    func signUp(email: String, password: String, username: String) async throws -> SignUpOutcome
     func signInWithApple(idToken: String, nonce: String) async throws
     func signOut() async throws
-    /// Completes sign-in from an email confirmation link (pullup://auth-callback).
+    /// Completes sign-in from an auth link (pullup://auth-callback).
     func handleAuthCallback(_ url: URL) async throws
-    func deleteAccount() async throws
+    /// Deletes the account on the server. For Sign in with Apple accounts the
+    /// server also revokes Apple's tokens when given a fresh authorization code.
+    func deleteAccount(appleAuthorizationCode: String?) async throws -> AccountDeletion
+
+    // Account and onboarding
+    func account() async throws -> AccountState
+    func usernameStatus(_ username: String) async throws -> UsernameStatus
+    /// Claims a username (and display name). Throws when it's taken or not allowed.
+    func claimUsername(_ username: String, displayName: String) async throws
+    /// Uploads an already EXIF-stripped JPEG as the profile photo.
+    func uploadAvatar(jpegData: Data) async throws
+    func completeOnboarding() async throws
 
     // Profiles and graph
     func profilePage(_ id: UserID) async throws -> ProfilePage
@@ -92,9 +104,23 @@ public enum BackendMode: Sendable, Equatable {
     case unconfigured
 }
 
-public enum SignUpOutcome: Sendable {
-    case signedIn
-    case confirmEmail
+/// What the server reported after deleting an account.
+public struct AccountDeletion: Sendable, Equatable {
+    public enum AppleRevocation: Sendable, Equatable {
+        /// Not a Sign in with Apple account.
+        case notApplicable
+        case revoked
+        /// The account is gone, but Apple's link wasn't revoked (server not
+        /// configured, prompt cancelled, or Apple refused). The person can
+        /// remove Pull Up under Settings ▸ Apple Account ▸ Sign in with Apple.
+        case notRevoked(reason: String)
+    }
+
+    public var apple: AppleRevocation
+
+    public init(apple: AppleRevocation) {
+        self.apple = apple
+    }
 }
 
 public enum FeedScope: String, Sendable, CaseIterable, Identifiable {

@@ -42,6 +42,8 @@
 		<key>DriveTelemetry</key>
 		<string>Precise location is needed to measure speed and distance accurately during this drive.</string>
 	</dict>
+	<key>PullUpEmailSignIn</key>
+	<true/>
 	<key>PullUpSupabaseHost</key>
 	<string>$(PULLUP_SUPABASE_HOST)</string>
 	<key>PullUpSupabaseAnonKey</key>

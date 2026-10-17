@@ -9,9 +9,7 @@ struct SettingsView: View {
     @State private var privacy: PrivacySettings?
     @State private var savedPrivacy: PrivacySettings?
     @State private var privacyError: String?
-    @State private var confirmingDelete = false
-    @State private var deleteText = ""
-    @State private var accountError: String?
+    @State private var deleting = false
 
     var body: some View {
         @Bindable var store = app.themeStore
@@ -37,18 +35,8 @@ struct SettingsView: View {
             guard let value, value != savedPrivacy else { return }
             Task { await savePrivacy(value) }
         }
-        .alert("Delete your account?", isPresented: $confirmingDelete) {
-            TextField("Type DELETE", text: $deleteText)
-            Button("Delete account", role: .destructive) {
-                guard deleteText == "DELETE" else { return }
-                Task {
-                    do { try await app.deleteAccount() } catch { accountError = error.localizedDescription }
-                }
-            }
-            Button("Cancel", role: .cancel) { deleteText = "" }
-        } message: {
-            Text("This permanently deletes your profile, garage, drives, routes, posts and photos from the server. It can't be undone.")
-        }
+        .sheet(isPresented: $deleting) { DeleteAccountView() }
+        .task { await app.refreshAccount() }
         .accessibilityIdentifier("settings")
     }
 
@@ -175,15 +163,23 @@ struct SettingsView: View {
     private var account: some View {
         VStack(alignment: .leading, spacing: Space.m) {
             SectionHeader("Account")
+            if let account = app.account {
+                VStack(alignment: .leading, spacing: 0) {
+                    SpecRow(label: "Username", value: "@\(account.username)")
+                    SpecRow(label: "Signs in with", value: account.signInMethods.isEmpty ? "–" : account.signInMethods.map(\.label).joined(separator: ", "))
+                    if account.usesPrivateRelayEmail {
+                        SpecRow(label: "Email", value: "Hidden by Apple")
+                    }
+                }
+                Text("Your email is never shown on your profile or to other people.")
+                    .font(ClusterFont.body(.caption)).foregroundStyle(ClusterColor.inkTertiary)
+            }
             NotificationSettingsRow()
-            if let accountError { ErrorLine(message: accountError) }
             Button("Sign out") { Task { await app.signOut() } }
                 .buttonStyle(.clusterSecondary)
-            Button("Delete account") {
-                deleteText = ""
-                confirmingDelete = true
-            }
-            .buttonStyle(.clusterDestructive)
+            Button("Delete account") { deleting = true }
+                .buttonStyle(.clusterDestructive)
+                .accessibilityIdentifier("open-delete-account")
         }
     }
 

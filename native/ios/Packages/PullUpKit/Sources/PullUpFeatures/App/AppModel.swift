@@ -1,3 +1,4 @@
+import AuthenticationServices
 import Foundation
 import Observation
 import PullUpData
@@ -15,6 +16,8 @@ public final class AppModel {
         /// The build has no server configuration.
         case setupRequired
         case signedOut
+        /// Signed in, but the account still has the placeholder username.
+        case onboarding(UserID)
         case signedIn(UserID)
     }
 
@@ -26,21 +29,36 @@ public final class AppModel {
     public let options: LaunchOptions
     public var selectedTab: MainTab = .drive
     public private(set) var unreadNotifications = 0
+    /// The signed-in person's own account (username, sign-in methods).
+    public private(set) var account: AccountState?
+    /// Shown once on the sign-in screen after the app signed someone out on
+    /// its own (Apple credential revoked, account deleted).
+    public var signedOutNotice: String?
+    /// Name Apple shared on first sign-in, offered as the display name.
+    var appleSuggestedName: String?
+    let appleCredentials: any AppleCredentialChecking
 
     /// The CarPlay scene and the phone UI must drive the same recorder.
     public private(set) static var shared: AppModel?
 
     public var userID: UserID? {
-        if case let .signedIn(id) = phase { return id }
-        return nil
+        switch phase {
+        case let .signedIn(id), let .onboarding(id): id
+        default: nil
+        }
     }
 
     public var isDemo: Bool { backend.mode == .demo }
 
     private var authTask: Task<Void, Never>?
 
-    public init(options: LaunchOptions = .fromProcess()) {
+    public convenience init(options: LaunchOptions = .fromProcess()) {
+        self.init(options: options, appleCredentials: SystemAppleCredentials())
+    }
+
+    init(options: LaunchOptions, appleCredentials: any AppleCredentialChecking) {
         self.options = options
+        self.appleCredentials = appleCredentials
         let defaults = UserDefaults.standard
         if options.resetDefaults, let domain = Bundle.main.bundleIdentifier {
             defaults.removePersistentDomain(forName: domain)
@@ -56,7 +74,7 @@ public final class AppModel {
 
     private static func makeBackend(_ options: LaunchOptions) -> any BackendService {
         if options.demo {
-            return DemoBackend(signedIn: !options.signedOut, emptyGarage: options.emptyGarage)
+            return DemoBackend(signedIn: !options.signedOut, emptyGarage: options.emptyGarage, onboarded: !options.onboarding)
         }
         if let configuration = BackendConfiguration.fromBundle() {
             return SupabaseBackend(configuration: configuration)
@@ -96,7 +114,18 @@ public final class AppModel {
                 await self.apply(user)
             }
         }
+        await verifyAppleCredential()
+        if revocationObserver == nil {
+            revocationObserver = NotificationCenter.default.addObserver(
+                forName: ASAuthorizationAppleIDProvider.credentialRevokedNotification, object: nil, queue: .main
+            ) { [weak self] _ in
+                guard let self else { return }
+                Task { @MainActor in await self.verifyAppleCredential() }
+            }
+        }
     }
+
+    private var revocationObserver: (any NSObjectProtocol)?
 
     /// Switches a build without server configuration into labelled demo mode.
     public func enterDemo() async {
@@ -110,18 +139,64 @@ public final class AppModel {
 
     private func apply(_ user: UserID?) async {
         if let user {
-            if case let .signedIn(current) = phase, current == user { return }
-            phase = .signedIn(user)
-            recorder.ownerID = user
-            await garage.setOwner(user)
-            await recorder.recoverInterrupted()
-            await recorder.syncPending()
-            await refreshNotifications()
+            if userID == user { return }
+            // A failed lookup (offline) lets the person in rather than locking
+            // them out; onboarding is shown whenever the server says it's due.
+            account = try? await backend.account()
+            if let account, !account.isOnboarded {
+                phase = .onboarding(user)
+                return
+            }
+            await enterApp(user)
         } else {
             guard !recorder.isRecording else { return }
             phase = .signedOut
+            account = nil
             recorder.ownerID = nil
             await garage.setOwner(nil)
+        }
+    }
+
+    private func enterApp(_ user: UserID) async {
+        phase = .signedIn(user)
+        recorder.ownerID = user
+        await garage.setOwner(user)
+        await recorder.recoverInterrupted()
+        await recorder.syncPending()
+        await refreshNotifications()
+    }
+
+    /// Called by onboarding once the server has marked it complete.
+    func finishOnboarding() async {
+        guard case let .onboarding(user) = phase else { return }
+        account = try? await backend.account()
+        appleSuggestedName = nil
+        await enterApp(user)
+    }
+
+    public func refreshAccount() async {
+        if let fresh = try? await backend.account() { account = fresh }
+    }
+
+    // MARK: Sign in with Apple
+
+    /// Records the Apple user behind a successful sign-in, for revocation checks.
+    func didSignInWithApple(userIdentifier: String, suggestedName: String?) {
+        appleCredentials.store(userID: userIdentifier)
+        if let suggestedName, !suggestedName.isEmpty { appleSuggestedName = suggestedName }
+    }
+
+    /// Signs out locally when the person has stopped using Sign in with Apple
+    /// for Pull Up. Runs at launch, on return to the foreground, and when
+    /// Apple posts a revocation notice.
+    public func verifyAppleCredential() async {
+        guard userID != nil, let appleUser = appleCredentials.storedUserID() else { return }
+        guard await appleCredentials.state(for: appleUser) == .revoked else { return }
+        appleCredentials.store(userID: nil)
+        try? await backend.signOut()
+        await apply(nil)
+        if phase == .signedOut {
+            signedOutNotice = "Sign in with Apple was turned off for Pull Up in your Apple Account settings, so you've been signed out. Sign in again to keep using your account."
         }
     }
 
@@ -137,12 +212,23 @@ public final class AppModel {
 
     public func signOut() async {
         try? await backend.signOut()
+        appleCredentials.store(userID: nil)
         await apply(nil)
     }
 
-    public func deleteAccount() async throws {
-        try await backend.deleteAccount()
+    /// Deletes the account on the server. `appleAuthorizationCode` comes from
+    /// a fresh Sign in with Apple prompt so the server can revoke Apple's
+    /// tokens; without it the account is still deleted.
+    public func deleteAccount(appleAuthorizationCode: String?) async throws {
+        let result = try await backend.deleteAccount(appleAuthorizationCode: appleAuthorizationCode)
+        appleCredentials.store(userID: nil)
         await apply(nil)
+        switch result.apple {
+        case .notApplicable, .revoked:
+            signedOutNotice = "Your account and everything in it have been deleted."
+        case .notRevoked:
+            signedOutNotice = "Your account and everything in it have been deleted. To also remove Pull Up from your Apple Account, open Settings ▸ your name ▸ Sign in with Apple ▸ Pull Up ▸ Stop Using."
+        }
     }
 }
 
@@ -154,10 +240,14 @@ final class UnconfiguredBackend: BackendService, Sendable {
     func currentUserID() async -> UserID? { nil }
     func authChanges() -> AsyncStream<UserID?> { AsyncStream { $0.finish() } }
     func signIn(email: String, password: String) async throws { throw BackendError.notConfigured }
-    func signUp(email: String, password: String, username: String) async throws -> SignUpOutcome { throw BackendError.notConfigured }
     func signInWithApple(idToken: String, nonce: String) async throws { throw BackendError.notConfigured }
     func signOut() async throws {}
-    func deleteAccount() async throws { throw BackendError.notConfigured }
+    func deleteAccount(appleAuthorizationCode: String?) async throws -> AccountDeletion { throw BackendError.notConfigured }
+    func account() async throws -> AccountState { throw BackendError.notConfigured }
+    func usernameStatus(_ username: String) async throws -> UsernameStatus { throw BackendError.notConfigured }
+    func claimUsername(_ username: String, displayName: String) async throws { throw BackendError.notConfigured }
+    func uploadAvatar(jpegData: Data) async throws { throw BackendError.notConfigured }
+    func completeOnboarding() async throws { throw BackendError.notConfigured }
     func profilePage(_ id: UserID) async throws -> ProfilePage { throw BackendError.notConfigured }
     func updateProfile(_ update: ProfileUpdate) async throws { throw BackendError.notConfigured }
     func follow(_ id: UserID) async throws { throw BackendError.notConfigured }

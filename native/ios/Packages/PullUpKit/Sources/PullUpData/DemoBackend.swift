@@ -30,13 +30,22 @@ public final class DemoBackend: BackendService, Sendable {
         var privacy = PrivacySettings()
         var zones: [PrivacyZone] = []
         var follows: Set<[UserID]> = []
+        var onboarded = true
     }
 
     private let state: Mutex<State>
     private let authContinuations = Mutex<[UUID: AsyncStream<UserID?>.Continuation]>([:])
 
-    public init(signedIn: Bool = true, emptyGarage: Bool = false, now: Date = .now) {
-        state = Mutex(DemoSeed.make(signedIn: signedIn, emptyGarage: emptyGarage, now: now))
+    /// `onboarded: false` starts as a brand-new Sign in with Apple account:
+    /// placeholder username, no display name, onboarding not finished.
+    public init(signedIn: Bool = true, emptyGarage: Bool = false, onboarded: Bool = true, now: Date = .now) {
+        var seed = DemoSeed.make(signedIn: signedIn, emptyGarage: emptyGarage, now: now)
+        if !onboarded {
+            seed.onboarded = false
+            seed.profiles[DemoSeed.meID]?.profile.username = "driver_3f9a1c22e0"
+            seed.profiles[DemoSeed.meID]?.profile.displayName = ""
+        }
+        state = Mutex(seed)
     }
 
     private func me() throws -> UserID {
@@ -73,11 +82,6 @@ public final class DemoBackend: BackendService, Sendable {
         broadcast(DemoSeed.meID)
     }
 
-    public func signUp(email: String, password: String, username: String) async throws -> SignUpOutcome {
-        try await signIn(email: email, password: password)
-        return .signedIn
-    }
-
     public func signInWithApple(idToken: String, nonce: String) async throws {
         state.withLock { $0.me = DemoSeed.meID }
         broadcast(DemoSeed.meID)
@@ -88,8 +92,59 @@ public final class DemoBackend: BackendService, Sendable {
         broadcast(nil)
     }
 
-    public func deleteAccount() async throws {
+    public func deleteAccount(appleAuthorizationCode: String?) async throws -> AccountDeletion {
         try await signOut()
+        return AccountDeletion(apple: .notApplicable)
+    }
+
+    // MARK: Account
+
+    public func account() async throws -> AccountState {
+        let me = try me()
+        return try state.withLock { s in
+            guard let profile = s.profiles[me]?.profile else { throw BackendError.notSignedIn }
+            return AccountState(
+                id: me, username: profile.username, displayName: profile.displayName, avatarPath: profile.avatarPath,
+                isOnboarded: s.onboarded, signInMethods: [.apple], usesPrivateRelayEmail: true
+            )
+        }
+    }
+
+    public func usernameStatus(_ username: String) async throws -> UsernameStatus {
+        let me = try me()
+        let name = UsernameRules.normalize(username)
+        if let problem = UsernameRules.localProblem(name) { return problem }
+        return state.withLock { s in
+            s.profiles.values.contains { $0.profile.username == name && $0.profile.id != me } ? .taken : .available
+        }
+    }
+
+    public func claimUsername(_ username: String, displayName: String) async throws {
+        let me = try me()
+        let status = try await usernameStatus(username)
+        guard status == .available else { throw BackendError.server(status.message) }
+        state.withLock { s in
+            s.profiles[me]?.profile.username = UsernameRules.normalize(username)
+            s.profiles[me]?.profile.displayName = String(displayName.trimmingCharacters(in: .whitespaces).prefix(60))
+        }
+    }
+
+    public func uploadAvatar(jpegData: Data) async throws {
+        let me = try me()
+        let path = "\(me)/avatar-\(UUID()).jpg"
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(path.replacingOccurrences(of: "/", with: "_"))
+        try jpegData.write(to: url)
+        state.withLock { $0.profiles[me]?.profile.avatarPath = path }
+    }
+
+    public func completeOnboarding() async throws {
+        let me = try me()
+        try state.withLock { s in
+            if let name = s.profiles[me]?.profile.username, UsernameRules.isPlaceholder(name) {
+                throw BackendError.server("Choose a username first.")
+            }
+            s.onboarded = true
+        }
     }
 
     // MARK: Profiles

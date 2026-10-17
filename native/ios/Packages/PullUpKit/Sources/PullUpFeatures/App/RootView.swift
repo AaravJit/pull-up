@@ -5,6 +5,7 @@ import PullUpDomain
 /// Entry point used by the app target.
 public struct RootView: View {
     @State private var app: AppModel
+    @Environment(\.scenePhase) private var scenePhase
 
     public init(app: AppModel) {
         _app = State(initialValue: app)
@@ -22,6 +23,8 @@ public struct RootView: View {
                     SetupRequiredView()
                 case .signedOut:
                     AuthView()
+                case .onboarding:
+                    OnboardingView()
                 case .signedIn:
                     MainTabView()
                 }
@@ -32,6 +35,9 @@ public struct RootView: View {
         .environment(app)
         .clusterTheme(theme)
         .task { await app.start() }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { Task { await app.verifyAppleCredential() } }
+        }
     }
 }
 

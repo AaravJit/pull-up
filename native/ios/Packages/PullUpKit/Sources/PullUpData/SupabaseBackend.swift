@@ -62,15 +62,6 @@ public final class SupabaseBackend: BackendService, @unchecked Sendable {
         try await client.auth.signIn(email: email, password: password)
     }
 
-    public func signUp(email: String, password: String, username: String) async throws -> SignUpOutcome {
-        let response = try await client.auth.signUp(
-            email: email, password: password,
-            data: ["username": .string(username.lowercased())],
-            redirectTo: URL(string: "pullup://auth-callback")
-        )
-        return response.session == nil ? .confirmEmail : .signedIn
-    }
-
     public func signInWithApple(idToken: String, nonce: String) async throws {
         try await client.auth.signInWithIdToken(credentials: OpenIDConnectCredentials(provider: .apple, idToken: idToken, nonce: nonce))
     }
@@ -83,9 +74,63 @@ public final class SupabaseBackend: BackendService, @unchecked Sendable {
         try await client.auth.signOut()
     }
 
-    public func deleteAccount() async throws {
-        try await client.functions.invoke("delete-account", options: FunctionInvokeOptions(method: .post))
+    public func deleteAccount(appleAuthorizationCode: String?) async throws -> AccountDeletion {
+        struct Body: Encodable { let apple_authorization_code: String? }
+        struct Result: Decodable { let deleted: Bool; let apple_revoked: Bool?; let apple_reason: String? }
+        let result: Result = try await client.functions.invoke(
+            "delete-account",
+            options: FunctionInvokeOptions(method: .post, body: Body(apple_authorization_code: appleAuthorizationCode))
+        )
         try? await client.auth.signOut()
+        switch result.apple_revoked {
+        case nil: return AccountDeletion(apple: .notApplicable)
+        case true?: return AccountDeletion(apple: .revoked)
+        case false?: return AccountDeletion(apple: .notRevoked(reason: result.apple_reason ?? "unknown"))
+        }
+    }
+
+    // MARK: Account
+
+    public func account() async throws -> AccountState {
+        let user = try await client.auth.session.user
+        struct Row: Decodable { let username: String; let display_name: String; let avatar_path: String?; let onboarded_at: Date? }
+        let row: Row = try await client.from("profiles").select("username, display_name, avatar_path, onboarded_at")
+            .eq("id", value: user.id).single().execute().value
+        let methods = (user.identities ?? []).compactMap { AccountState.SignInMethod(rawValue: $0.provider) }
+        return AccountState(
+            id: user.id, username: row.username, displayName: row.display_name, avatarPath: row.avatar_path,
+            isOnboarded: row.onboarded_at != nil, signInMethods: methods,
+            usesPrivateRelayEmail: AccountState.isPrivateRelay(user.email)
+        )
+    }
+
+    public func usernameStatus(_ username: String) async throws -> UsernameStatus {
+        let raw: String = try await client.rpc("username_status", params: ["p_username": username]).execute().value
+        return UsernameStatus(rawValue: raw) ?? .format
+    }
+
+    public func claimUsername(_ username: String, displayName: String) async throws {
+        do {
+            try await client.rpc("claim_username", params: ["p_username": username, "p_display_name": displayName]).execute()
+        } catch let error as PostgrestError {
+            switch error.code {
+            case "23505": throw BackendError.server(UsernameStatus.taken.message)
+            case "22023": throw BackendError.server(error.message.contains("reserved") ? UsernameStatus.reserved.message : UsernameStatus.format.message)
+            default: throw error
+            }
+        }
+    }
+
+    public func uploadAvatar(jpegData: Data) async throws {
+        let id = try await uid()
+        let path = "\(id.uuidString.lowercased())/avatar-\(UUID().uuidString.lowercased()).jpg"
+        try await client.storage.from(MediaBucket.avatars.rawValue)
+            .upload(path, data: jpegData, options: FileOptions(cacheControl: "31536000", contentType: "image/jpeg"))
+        try await client.from("profiles").update(["avatar_path": path]).eq("id", value: id).execute()
+    }
+
+    public func completeOnboarding() async throws {
+        try await client.rpc("complete_onboarding").execute()
     }
 
     // MARK: Profiles
