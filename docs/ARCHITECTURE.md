@@ -238,3 +238,15 @@ live dashboard says it is replaying a recorded track.
   the pgTAP suite, lints, rolls every migration back and re-applies it,
   type-checks the edge functions and runs their Deno unit tests (Apple and
   APNs stubbed, no network).
+  A second job starts the full local stack (auth, REST, realtime, storage,
+  edge functions) and runs `supabase/tests/api/`: three throwaway accounts
+  exercise every feature through the same HTTP and realtime APIs the app
+  uses, including what each account must be refused.
+* `.github/workflows/supabase-deploy.yml` (run by hand): applies the
+  migrations and functions to the hosted `staging` or `production` project
+  through a GitHub environment of the same name. It lists pending
+  migrations first and refuses any that drop, truncate or retype data
+  unless the file carries a named approval line
+  (`supabase/scripts/check-pending-migrations.sh`). Staging runs then repeat
+  the pgTAP and API tests against the project; production runs none that
+  write. Setup: `SUPABASE_SETUP.md`.

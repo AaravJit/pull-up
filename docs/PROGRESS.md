@@ -4,6 +4,18 @@ Native iOS rebuild of Pull Up. Phase 1 is on branch `claude/native-ios-85igsc`
 (PR #2); Phase 2 is on `claude/pull-up-phase-2` (PR #3, stacked on PR #2).
 The Expo app at the repository root is unchanged.
 
+## Phase 3
+
+Plan and milestone order: `PHASE3_PLAN.md`. As in Phase 2, nothing has run
+on a real device, a hosted Supabase project, Apple's servers or eBay unless
+a row says so.
+
+| Milestone | Work | Status | Evidence / remaining action |
+| --- | --- | --- | --- |
+| M1 | Two-account API tests over the full local stack (auth, REST, realtime, storage, edge functions) | Working (local stack in CI) | `supabase/tests/api/two_accounts_test.ts`, 13 areas, green in backend CI on `f3d9d18` |
+| M1 | Staging and production deploy workflow with a destructive-migration guard | Written, not run | Needs the hosted projects and GitHub environments (`SUPABASE_SETUP.md` steps 1–3); hand-run workflows appear once on `main` |
+| M1 | Build label for the staging backend | Working | Settings ▸ About shows "Pull Up server (staging)" when `PULLUP_BACKEND_ENVIRONMENT = staging` |
+
 ## Phase 2
 
 Plan: `PHASE2_PLAN.md`. Status uses the legend below. Nothing in Phase 2 has
