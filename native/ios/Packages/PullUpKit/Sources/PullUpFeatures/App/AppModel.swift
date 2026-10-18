@@ -288,6 +288,7 @@ public final class AppModel {
         if let pushToken { try? await backend.unregisterPushToken(pushToken.token) }
         try? await backend.signOut()
         appleCredentials.store(userID: nil)
+        DriveProSection.removeExports()
         await apply(nil)
     }
 
@@ -295,7 +296,12 @@ public final class AppModel {
     /// a fresh Sign in with Apple prompt so the server can revoke Apple's
     /// tokens; without it the account is still deleted.
     public func deleteAccount(appleAuthorizationCode: String?) async throws {
+        let owner = userID
         let result = try await backend.deleteAccount(appleAuthorizationCode: appleAuthorizationCode)
+        // The server copy is gone; nothing of the account should stay here
+        // either. Before apply(nil), which keeps a drive that's recording.
+        if let owner { await recorder.eraseLocalData(for: owner) }
+        DriveProSection.removeExports()
         appleCredentials.store(userID: nil)
         await apply(nil)
         switch result.apple {

@@ -31,7 +31,10 @@ public final class SupabaseBackend: BackendService, @unchecked Sendable {
     private let urlCache = SignedURLCache()
 
     public init(configuration: BackendConfiguration) {
-        client = SupabaseClient(supabaseURL: configuration.url, supabaseKey: configuration.anonKey)
+        client = SupabaseClient(
+            supabaseURL: configuration.url, supabaseKey: configuration.anonKey,
+            options: SupabaseClientOptions(auth: .init(storage: SessionKeychain()))
+        )
     }
 
     private func uid() async throws -> UserID {

@@ -302,6 +302,18 @@ public final class DriveRecorder {
         interruption = nil
     }
 
+    /// After `owner`'s account is deleted: stops a drive in progress and
+    /// removes every drive of theirs still on this phone (raw GPS, including
+    /// protected places) and the vehicle remembered for them.
+    public func eraseLocalData(for owner: UserID) async {
+        if draft?.ownerID == owner { await discard() }
+        await store.deleteAll(owner: owner)
+        defaults.removeObject(forKey: "pullup.lastVehicle.\(owner.uuidString)")
+        if lastResult?.drive.ownerID == owner { clearResult() }
+        recoveredDrive = nil
+        await refreshPendingCount()
+    }
+
     static func isWorthKeeping(_ summary: DriveSummary) -> Bool {
         summary.acceptedSamples >= minimumSamples && summary.distanceMeters >= minimumDistance
     }

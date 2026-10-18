@@ -1,7 +1,50 @@
-# Security report (Phase 2)
+# Security report
 
-Assessment of the Pull Up native iOS app and its Supabase backend on branch
-`claude/pull-up-phase-2` (PR #3, stacked on PR #2), 2026-10-17.
+Assessment of the Pull Up native iOS app and its Supabase backend: first on
+branch `claude/pull-up-phase-2` (PR #3, stacked on PR #2), 2026-10-17, then a
+Phase 3 re-check of `main` after PR #2 merged (`515ec98`), 2026-10-18.
+
+**Passing tests don't make the app secure.** They show that the specific
+weaknesses below are closed on the local stack. Nothing here has been run
+against a hosted Supabase project or on a phone.
+
+## Phase 3 re-check (Milestone 10)
+
+Same method as below, on `main` at `515ec98`: every migration, policy,
+function and edge function re-read, plus the client's storage, sharing and
+account-deletion paths. Each fixed finding has a test that fails without
+the fix. Tests: `supabase/tests/009_drive_privacy.sql` (12),
+`010_notification_limits.sql` (6), `011_storage_moves.sql` (2), and Swift
+tests in `PullUpFeaturesTests` and `PullUpDataTests`.
+
+| ID | Severity | Finding | Status |
+| --- | --- | --- | --- |
+| G1 | Medium | Anyone allowed to see a drive could read `drives.explored_cells`, the ~1 km grid cells it passed through, which traces the route even when it was never shared and through privacy zones | Fixed, `20261018000400`: cells moved to `private.drive_cells`, read only by the leaderboard. Tests `009` 1–6, 11–12 |
+| G2 | Medium | Shared routes are trimmed at both ends by a random extra 0–250 m, re-drawn every time the route is rebuilt (privacy zone change, share again). Comparing rebuilds narrows down where the drive really started and ended | **Open.** Fix: draw the extra trim once per drive and store it |
+| G3 | Medium | Videos were uploaded exactly as picked, so a clip's GPS location (and device details) went to everyone who could see the post | Fixed (client): rewrapped as MP4 with `AVMetadataItemFilter.forSharing()` before upload. Test `Video sharing` (synthetic clip with a location). Not checked on a real Camera clip |
+| G4 | Low | Unlike/like or unfollow/follow repeatedly sent a new notification and push each time; comments had no cap | Fixed, `20261018000500`: repeats within 24 h are skipped, and one person can send another at most 30 notifications an hour. Tests `010` |
+| G5 | Low | No per-user storage quota: per-file limits only (5–100 MB), so one account can fill the project's storage | **Open.** Fix: a quota check in the upload path or a scheduled report; needs the staging project to size |
+| G6 | Low | `drive_history_ceiling(owner)` told any signed-in user anyone's drive-history setting | Fixed, `20261018000400`: answers only for the caller; the drives policy uses a yes/no helper. Tests `009` 7–10, `006` 17 |
+| G7 | Low | A DM photo uploaded but never sent (the send failed or was abandoned) stays in `dm-media` forever | **Open.** Fix: a scheduled job deleting `dm-media` objects older than a day that no message references, alongside `dm-retention` |
+| G8 | Low | `app-store-notifications` reads the notification without checking Apple's signature (see R-3); a forged one can only make the server re-read the subscription from Apple, but each adds a row | **Open**, mitigated as R-3 describes |
+| G9 | Low | Deleting the account left that person's unsent drives (raw GPS, protected places included), the remembered vehicle and route exports on the phone | Fixed (client): erased on deletion, exports also on sign-out. Tests `deletedAccountLeavesNoDrivesOnThePhone`, `deletionDuringADriveStopsItAndRemovesExports` |
+| G10 | Low | The Supabase session (refresh token) used supabase-swift's default keychain item, `AfterFirstUnlock`, which moves to a new phone in an encrypted backup | Fixed (client): stored `AfterFirstUnlockThisDeviceOnly`, existing sessions moved over on first read. Test `Session keychain` checks the attributes; the keychain itself is not exercised in CI |
+| G11 | Low | The storage update policy didn't check the new bucket, so someone could move their own file into a bucket with stricter upload rules (for example a 100 MB video into `avatars`, or anything into `dm-media`) | Fixed, `20261018000600`. Tests `011`. Moves between the three owner-folder buckets are still possible |
+
+Also re-checked:
+
+* **SEC-01 to SEC-06** are still fixed on `main`; their tests in `006` pass.
+* **SEC-07** (exports on disk) has no automated test; G9's test now covers
+  their removal, not their file protection.
+* **R-4** (no `verify-subscription` rate limit) is fixed on the M5 branch
+  (PR #7), not on `main` yet.
+* **Suspected, not confirmed:** `like_count`, `comment_count` and
+  `going_count` take a whole row and run with owner rights. If PostgREST
+  lets a client call them with a made-up row, they would return the counts
+  for a post or meet the caller can't see (given its id, which can't be
+  listed). Check against the hosted API; fix by re-checking visibility
+  inside them.
+
 
 ## Scope and method
 
@@ -170,13 +213,18 @@ and each new export replaces the previous one. Not verified on a device.
 * Client: no secrets in the repository (the anon key and service-role key
   are configured outside git), no logging of tokens or message content,
   location history excluded from backups and file-protected, no App
-  Transport Security exceptions. Sessions use supabase-swift's default
-  storage, which is the Keychain on iOS (not inspected on a device).
+  Transport Security exceptions. Sessions are in the Keychain, device-only
+  since the Phase 3 re-check (G10; not inspected on a device).
 
 ## Still to do (needs people or systems outside CI)
 
 * Run `supabase test db` against the staging project once it exists.
 * On a device: confirm the session is in the Keychain, exported files are
   protected while locked, and pushes show no message text by default.
-* Add the `verify-subscription` rate limit (R-4).
+* Merge the `verify-subscription` rate limit (R-4, PR #7).
+* Fix G2, G5, G7 and G8, and confirm or rule out the suspected count
+  functions against the hosted API.
+* On a device: post a video filmed with location on and check the uploaded
+  file has none (G3); restore a backup to another phone and check Pull Up
+  asks to sign in again (G10).
 * Re-run this checklist before the App Store submission.
