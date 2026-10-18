@@ -21,6 +21,8 @@ jobs:
       - uses: supabase/setup-cli@v1
         with:
           version: latest
+      - name: Migrations already on staging are unchanged
+        run: bash supabase/scripts/check-applied-migrations.sh
       - name: Start local Supabase (applies every migration)
         run: supabase db start
       - name: Row-level security and validation tests (pgTAP)
