@@ -124,7 +124,6 @@ select throws_ok(format($$ insert into storage.objects (bucket_id, name) values 
 
 -- 17–21: G7 orphaned DM photos ----------------------------------------------------------
 select pg_temp.as_admin();
-delete from storage.objects where name like 'ec000000-0000-0000-0000-00000000000c/%';
 insert into storage.objects (bucket_id, name, created_at)
 select 'dm-media', c.id || '/ec000000-0000-0000-0000-00000000000c/' || f, now() - age
 from convs c, (values ('sent.jpg', interval '2 days'), ('abandoned.jpg', interval '2 days'), ('fresh.jpg', interval '1 hour')) v(f, age);
