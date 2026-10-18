@@ -43,12 +43,13 @@ jobs:
             -skipPackagePluginValidation \
             CODE_SIGNING_ALLOWED=NO
       - name: Telemetry replay report
-        # The replay scenario tests print one line each with their measured
+        # The replay scenario tests attach one line each with their measured
         # error (docs/TELEMETRY_VALIDATION.md). Synthetic tracks, not a phone.
         if: always()
         run: |
-          xcrun xcresulttool get log --type console --path "$RUNNER_TEMP/PullUpKit.xcresult" > "$RUNNER_TEMP/console.txt" 2>&1 || true
-          grep -ho "SCENARIO .*" "$RUNNER_TEMP/console.txt" | sort -u > "$RUNNER_TEMP/scenarios.txt" || true
+          mkdir -p "$RUNNER_TEMP/attachments"
+          xcrun xcresulttool export attachments --path "$RUNNER_TEMP/PullUpKit.xcresult" --output-path "$RUNNER_TEMP/attachments" || true
+          grep -rhoE "SCENARIO [^:]+: .*" "$RUNNER_TEMP/attachments" | sort -u > "$RUNNER_TEMP/scenarios.txt" || true
           cat "$RUNNER_TEMP/scenarios.txt"
           {
             echo "### Telemetry replay scenarios (synthetic tracks)"

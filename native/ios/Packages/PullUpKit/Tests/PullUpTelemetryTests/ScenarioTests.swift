@@ -155,7 +155,7 @@ struct ScenarioBuilder {
     }
 }
 
-/// End-to-end drives replayed through the engine. Each prints one line with
+/// End-to-end drives replayed through the engine. Each reports one line with
 /// its measured error; `docs/TELEMETRY_VALIDATION.md` records them.
 @Suite("Replay scenarios")
 struct ScenarioTests {
@@ -163,11 +163,15 @@ struct ScenarioTests {
     private func report(_ name: String, _ builder: ScenarioBuilder, _ engine: TelemetryEngine) -> (summary: DriveSummary, error: Double) {
         let summary = engine.summary(endedAt: builder.date)
         let error = (summary.distanceMeters - builder.trueDistance) / builder.trueDistance * 100
-        print(String(
+        let line = String(
             format: "SCENARIO %@: true %.0f m, measured %.0f m (%+.2f%%), bridged %.0f m, longest gap %.0f s, top %.1f/%.1f m/s, moving %.0f s, accepted %d, rejected %d, relocks %d",
             name, builder.trueDistance, summary.distanceMeters, error, summary.gapDistanceMeters, summary.longestSignalGap,
             summary.topSpeed ?? 0, builder.trueTopSpeed, summary.movingSeconds, summary.acceptedSamples, summary.rejectedSamples, engine.relocks
-        ))
+        )
+        print(line)
+        // Test output printed in the simulator doesn't reach the result
+        // bundle's console log, so CI reads the line from this attachment.
+        Attachment.record(line, named: "scenario-\(name).txt")
         return (summary, error)
     }
 
