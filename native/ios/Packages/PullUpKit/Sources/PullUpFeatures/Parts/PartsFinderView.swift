@@ -55,13 +55,13 @@ struct PartsFinderView: View {
                 if !garage.isEmpty { vehiclePicker }
             }
             HStack(spacing: Space.m) {
-                field("Year", text: $query.vehicle.year, prompt: "2019", id: "parts-year")
+                field("Year", text: $query.vehicle.year, prompt: "e.g. 2019", id: "parts-year")
                     .keyboardType(.numberPad)
                     .frame(maxWidth: 90)
-                field("Make", text: $query.vehicle.make, prompt: "BMW", id: "parts-make")
+                field("Make", text: $query.vehicle.make, prompt: "e.g. BMW", id: "parts-make")
             }
             HStack(spacing: Space.m) {
-                field("Model", text: $query.vehicle.model, prompt: "M340i", id: "parts-model")
+                field("Model", text: $query.vehicle.model, prompt: "e.g. M340i", id: "parts-model")
                 field("Trim", text: $query.vehicle.trim, prompt: "Optional", id: "parts-trim")
             }
             field("Engine", text: $query.vehicle.engine, prompt: "Optional, for example B58 3.0 or 750cc", id: "parts-engine")
