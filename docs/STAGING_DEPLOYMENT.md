@@ -134,48 +134,58 @@ Performance (not blocking): 55 policies call `auth.uid()` per row instead of
 `(select auth.uid())`, 18 foreign keys without an index, 2 tables with two
 permissive SELECT policies.
 
-## Security findings still open
+## Security findings
 
-From the Milestone 10 re-check (`SECURITY_REPORT.md`, PR #14): G2 route trim
-re-randomised on rebuild, G5 no storage quota per account, G7 photos of
-unsent DMs never deleted, G8 App Store notification signature not checked
-(the stored state still comes from Apple's API), and the suspected row
-argument count functions (`like_count`, `comment_count`, `going_count`,
-`interested_count`, `liked_by_me`, `my_rsvp`).
+Superseded by the second deployment below: everything listed here as open
+on the first day is fixed in `20261018000800` (PR #14) and on staging.
 
-New from the staging advisor:
+One correction. The first version of this record listed **G12**,
+`is_friend(a, b)` and `is_blocked_between(a, b)` answering for any two
+people. That was wrong: both already answer only when the caller is one of
+the two (SEC-02, `20261016000800`), and staging's copies do the same. The
+advisor flags every owner-rights function callable by signed-in users; it
+doesn't read what they check.
 
-* **G12. Relationship lookups for any two people.** `public.is_friend(a, b)`
-  and `public.is_blocked_between(a, b)` are callable by any signed-in user
-  for any two user ids, so someone could learn who has blocked whom, or that
-  two private accounts are friends. RLS policies call them, so they can't
-  simply be revoked; the fix is to answer only when one of the two is the
-  caller.
-* **G13. Supabase's own `public.rls_auto_enable()`** is callable through
-  `/rest/v1/rpc`. Calling an event-trigger function directly fails, so it
-  does nothing, but execute should be revoked from `anon` and
-  `authenticated`.
+## Temporary items
 
-## Temporary items still on staging
+All removed. Aarav ran the clean-up SQL on 2026-10-18; afterwards staging
+had no `http` or `pgtap` extension, no `selftest` schema, no
+`private.selftest_accounts`, and 0 auth users, identities, sessions,
+refresh tokens, stored files, profiles, device tokens, entitlements, rate
+limit rows and Vault secrets.
 
-The connector stopped running write statements after the tests finished, so
-these are still there. Nothing on them is readable through the API:
+The later test runs below created nothing that outlived them: each ran in
+one transaction that always rolled back, the test extensions included.
 
-* the `http` extension, used to fetch the reviewed migration and test files
-  from GitHub and to call the API during the tests. Its functions are
-  executable by every role but live in the unexposed `extensions` schema;
-* schema `selftest` (test helpers and results) and table
-  `private.selftest_accounts` (the three deleted accounts' emails, passwords
-  and tokens; the accounts no longer exist and the tokens expire within the
-  hour).
+## Second deployment, 2026-10-18
 
-Remove them in the SQL editor:
+* Migration `20261018000800_security_open_findings` (PR #14, commit
+  `ae96329`), checksum-verified before it ran and recorded under its own
+  version. It closes the row-argument counts, G2, G5, G7 and G13.
+* Edge Functions `dm-retention` (version 2, deletes orphaned DM photos) and
+  `app-store-notifications` (version 2, checks Apple's JWS signature, G8).
+  Neither could be called from here; both answer 503 until their secrets
+  exist, so their new code paths haven't run on staging.
+* Every migration on staging now matches the repository byte for byte
+  (MD5 of all 21 compared with the merged branches).
+  `supabase/applied/staging.sha256` records them, and backend CI refuses a
+  change to any of them or a new migration numbered below the newest one
+  applied (`supabase/scripts/check-applied-migrations.sh`).
 
-```sql
-drop extension if exists http;
-drop schema if exists selftest cascade;
-drop table if exists private.selftest_accounts;
-```
+**Database tests on staging: 190 of 190 passed** (rolled back): files 001,
+002, 003, 005, 006, 007, 008, 011 and 012 (21 of its 22 checks).
+
+Not run on staging this time, and why: the Supabase connector holds back
+any SQL containing a delete or drop for a confirmation that can't be given
+from this session. Files 004, 009 and 010, check 22 of 012, and the
+two-account API suite (which has to remove its accounts afterwards) need
+that. All of them pass locally on a copy with staging's default privileges,
+and they ran on staging in the first deployment except 012. They run in full
+from the `Supabase deploy` workflow once the repository's `staging`
+environment has `SUPABASE_ACCESS_TOKEN` and `SUPABASE_DB_PASSWORD` and the
+workflow is on `main`.
+
+Advisors after: no security errors; `rls_auto_enable` no longer listed.
 
 ## Dashboard steps still needed (`SUPABASE_SETUP.md` §5)
 
