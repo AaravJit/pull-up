@@ -13,23 +13,24 @@ against a hosted Supabase project or on a phone.
 Same method as below, on `main` at `515ec98`: every migration, policy,
 function and edge function re-read, plus the client's storage, sharing and
 account-deletion paths. Each fixed finding has a test that fails without
-the fix. Tests: `supabase/tests/009_drive_privacy.sql` (12),
+the fix. Tests: `supabase/tests/009_drive_privacy.sql` (12), `012_open_findings.sql` (22),
 `010_notification_limits.sql` (6), `011_storage_moves.sql` (2), and Swift
 tests in `PullUpFeaturesTests` and `PullUpDataTests`.
 
 | ID | Severity | Finding | Status |
 | --- | --- | --- | --- |
 | G1 | Medium | Anyone allowed to see a drive could read `drives.explored_cells`, the ~1 km grid cells it passed through, which traces the route even when it was never shared and through privacy zones | Fixed, `20261018000400`: cells moved to `private.drive_cells`, read only by the leaderboard. Tests `009` 1–6, 11–12 |
-| G2 | Medium | Shared routes are trimmed at both ends by a random extra 0–250 m, re-drawn every time the route is rebuilt (privacy zone change, share again). Comparing rebuilds narrows down where the drive really started and ended | **Open.** Fix: draw the extra trim once per drive and store it |
+| G2 | Medium | Shared routes are trimmed at both ends by a random extra 0–250 m, re-drawn every time the route is rebuilt (privacy zone change, share again). Comparing rebuilds narrows down where the drive really started and ended | Fixed, `20261018000800`: the extra is drawn once per drive and kept in `private.route_trim_extra`. Tests `012` 7–11 |
 | G3 | Medium | Videos were uploaded exactly as picked, so a clip's GPS location (and device details) went to everyone who could see the post | Fixed (client): rewrapped as MP4 with `AVMetadataItemFilter.forSharing()` before upload. Test `Video sharing` (synthetic clip with a location). Not checked on a real Camera clip |
 | G4 | Low | Unlike/like or unfollow/follow repeatedly sent a new notification and push each time; comments had no cap | Fixed, `20261018000500`: repeats within 24 h are skipped, and one person can send another at most 30 notifications an hour. Tests `010` |
-| G5 | Low | No per-user storage quota: per-file limits only (5–100 MB), so one account can fill the project's storage | **Open.** Fix: a quota check in the upload path or a scheduled report; needs the staging project to size |
+| G5 | Low | No per-user storage quota: per-file limits only (5–100 MB), so one account can fill the project's storage | Fixed, `20261018000800`: uploads stop at 2 GB or 5,000 files per account, all buckets together (one upload can overshoot by its bucket's file limit). Tests `012` 12–16 |
 | G6 | Low | `drive_history_ceiling(owner)` told any signed-in user anyone's drive-history setting | Fixed, `20261018000400`: answers only for the caller; the drives policy uses a yes/no helper. Tests `009` 7–10, `006` 17 |
-| G7 | Low | A DM photo uploaded but never sent (the send failed or was abandoned) stays in `dm-media` forever | **Open.** Fix: a scheduled job deleting `dm-media` objects older than a day that no message references, alongside `dm-retention` |
-| G8 | Low | `app-store-notifications` reads the notification without checking Apple's signature (see R-3); a forged one can only make the server re-read the subscription from Apple, but each adds a row | **Open**, mitigated as R-3 describes |
+| G7 | Low | A DM photo uploaded but never sent (the send failed or was abandoned) stays in `dm-media` forever | Fixed, `20261018000800` + `dm-retention`: photos no message refers to are deleted a day after upload, which also covers unsent messages' photos. Tests `012` 17–21 |
+| G8 | Low | `app-store-notifications` reads the notification without checking Apple's signature (see R-3); a forged one can only make the server re-read the subscription from Apple, but each adds a row | Fixed: the function checks the JWS certificate chain up to Apple Root CA - G3 (pinned), Apple's marker extensions and the signature before using a notification. Tests `_shared/jws_test.ts` (14, generated test chain). Not yet checked against a real Apple notification |
 | G9 | Low | Deleting the account left that person's unsent drives (raw GPS, protected places included), the remembered vehicle and route exports on the phone | Fixed (client): erased on deletion, exports also on sign-out. Tests `deletedAccountLeavesNoDrivesOnThePhone`, `deletionDuringADriveStopsItAndRemovesExports` |
 | G10 | Low | The Supabase session (refresh token) used supabase-swift's default keychain item, `AfterFirstUnlock`, which moves to a new phone in an encrypted backup | Fixed (client): stored `AfterFirstUnlockThisDeviceOnly`, existing sessions moved over on first read. Test `Session keychain` checks the attributes; the keychain itself is not exercised in CI |
 | G11 | Low | The storage update policy didn't check the new bucket, so someone could move their own file into a bucket with stricter upload rules (for example a 100 MB video into `avatars`, or anything into `dm-media`) | Fixed, `20261018000600`. Tests `011`. Moves between the three owner-folder buckets are still possible |
+| G13 | Low | Supabase's own `public.rls_auto_enable()`, created with the project, was callable by signed-in users through `/rest/v1/rpc` (found by the staging advisor). Calling it does nothing | Fixed, `20261018000800`: execute revoked. Test `012` 22 |
 
 Also re-checked:
 
@@ -38,12 +39,18 @@ Also re-checked:
   their removal, not their file protection.
 * **R-4** (no `verify-subscription` rate limit) is fixed on the M5 branch
   (PR #7), not on `main` yet.
-* **Suspected, not confirmed:** `like_count`, `comment_count` and
-  `going_count` take a whole row and run with owner rights. If PostgREST
-  lets a client call them with a made-up row, they would return the counts
-  for a post or meet the caller can't see (given its id, which can't be
-  listed). Check against the hosted API; fix by re-checking visibility
-  inside them.
+* **Row-argument counts, confirmed and fixed.** `like_count`,
+  `comment_count`, `going_count` and `interested_count` returned the counts
+  of a post or meet the caller can't see when given a made-up row with its
+  id (confirmed in the database the way an RPC passes a row; tests `012`
+  2–5 failed before the fix). Fixed in `20261018000800`: they count only
+  what the caller can see. `liked_by_me` and `my_rsvp` describe only the
+  caller and were fine.
+* **G12 withdrawn.** The staging advisor's list made `is_friend` and
+  `is_blocked_between` look open; both already answer only when the caller
+  is one of the two (SEC-02), on staging too.
+* **Staging.** All of the above is applied to `pull-up-staging`; 190
+  database checks passed there (docs/STAGING_DEPLOYMENT.md).
 
 
 ## Scope and method
@@ -185,9 +192,9 @@ and each new export replaces the previous one. Not verified on a device.
 * **R-3 Public notification endpoint.** App Store Server Notifications must
   reach a public URL. The function checks the bundle id, notification id
   and signing date, deduplicates, and re-fetches the subscription from Apple
-  rather than trusting the payload. A flood could still spend App Store
-  Server API quota. Mitigation if needed: verify the JWS certificate chain
-  before calling Apple.
+  rather than trusting the payload. Since the Phase 3 re-check (G8) it
+  also verifies the JWS certificate chain and signature first, so only
+  Apple-signed notifications reach the App Store Server API.
 * **R-4 Rate limits on edge functions.** `verify-subscription` has no
   per-user limit. Add one (for example 10 calls per user per hour, in a
   table) before launch.
@@ -218,12 +225,14 @@ and each new export replaces the previous one. Not verified on a device.
 
 ## Still to do (needs people or systems outside CI)
 
-* Run `supabase test db` against the staging project once it exists.
+* Run the full suites against staging from the `Supabase deploy` workflow
+  (004, 009, 010 and the two-account API tests haven't run there since the
+  fixes, see docs/STAGING_DEPLOYMENT.md).
 * On a device: confirm the session is in the Keychain, exported files are
   protected while locked, and pushes show no message text by default.
 * Merge the `verify-subscription` rate limit (R-4, PR #7).
-* Fix G2, G5, G7 and G8, and confirm or rule out the suspected count
-  functions against the hosted API.
+* Check G8 against a real App Store Server Notification (Apple's TEST
+  notification once the App Store secrets are on staging).
 * On a device: post a video filmed with location on and check the uploaded
   file has none (G3); restore a backup to another phone and check Pull Up
   asks to sign in again (G10).
