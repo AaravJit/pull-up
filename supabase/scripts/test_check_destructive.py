@@ -80,6 +80,20 @@ REFUSED = {
         "create trigger c after update on s for each row execute function cleanup();\n"
         "create function touch() returns void language plpgsql as $$ begin update s set a = 1; end $$;\nselect touch();"
     ),
+    "write under IF in a called function fires a destructive trigger": (
+        "create function cleanup() returns trigger language plpgsql as $$ begin delete from t; return new; end $$;\n"
+        "create trigger c after insert on s for each row execute function cleanup();\n"
+        "create function touch() returns void language plpgsql as $$ begin if true then insert into s values (1); end if; end $$;\n"
+        "select touch();"
+    ),
+    "destructive overload called after a harmless one is created": (
+        "create function f(integer) returns void language sql as $$ delete from t $$;\n"
+        "create function f(text) returns void language sql as $$ select 1 $$;\nselect f(1);"
+    ),
+    "same name in another schema": (
+        "create function private.f() returns void language sql as $$ truncate t $$;\n"
+        "create function public.f() returns void language sql as $$ select 1 $$;\nselect private.f();"
+    ),
     "quoted BEGIN in an SQL-standard body": (
         'create function f() returns int language sql begin atomic select 1 as "begin"; end;\ndelete from profiles;'
     ),

@@ -134,7 +134,9 @@ def lex(sql, line_comments=None):
 FUNCTION = re.compile(r"^create (or replace )?(function|procedure) ((\"[^\"]+\"|\w+)\.)?(\"[^\"]+\"|\w+)")
 NAME = r"(?:(?:\"[^\"]+\"|\w+)\.)?(\"[^\"]+\"|\w+)"
 TRIGGER = re.compile(rf"^create (or replace )?(constraint )?trigger .*? on (only )?{NAME} .*\bexecute (function|procedure) {NAME} ?\(")
-DML = re.compile(rf"^(with .*?\)\s*)?(insert into|update|delete from|merge into|copy)( only)? {NAME}")
+# Anywhere in a statement (after WITH, IF ... THEN, a label...): a stray
+# match such as "before update on" only names a table nothing writes.
+DML = re.compile(rf"\b(insert into|update|delete from|merge into|copy)( only)? {NAME}")
 # Statements that name a function without running it.
 NOT_A_CALL = re.compile(
     r"^(grant|revoke|comment|alter (function|procedure|policy)|drop (function|procedure|trigger|policy)"
@@ -143,6 +145,10 @@ NOT_A_CALL = re.compile(
 
 def bare(name):
     return name.strip('"')
+
+
+def written(st):
+    return {bare(m.group(3)) for m in DML.finditer(st.code)}
 
 
 def hits_in(code):
@@ -196,7 +202,11 @@ def check(sql):
     if approved(sql):
         return []
     statements = list(walk(lex(sql)))
-    created = {bare(FUNCTION.match(st.code).group(5)): st for st in statements if FUNCTION.match(st.code)}
+    # By bare name, keeping every overload and schema: a call counts all of them.
+    created = {}
+    for st in statements:
+        if FUNCTION.match(st.code):
+            created.setdefault(bare(FUNCTION.match(st.code).group(5)), []).append(st)
 
     def direct(st):
         reasons = hits_in(st.code)
@@ -222,15 +232,14 @@ def check(sql):
     # What each function created here does when run, following calls between
     # them and the triggers their writes fire (a fixed point, so the order
     # they're created in doesn't matter).
-    does = {name: [r for b in body_statements(st) for r in direct(b)] for name, st in created.items()}
+    does = {name: [r for st in sts for b in body_statements(st) for r in direct(b)] for name, sts in created.items()}
     changed = True
     while changed:
         changed = False
-        for name, st in created.items():
-            for b in body_statements(st):
-                m = DML.match(b.code)
+        for name, sts in created.items():
+            for b in (b for st in sts for b in body_statements(st)):
                 runs = [("calls", other) for other in calls(b)]
-                runs += [("fires", fn) for fn in all_triggers.get(bare(m.group(4)), [])] if m else []
+                runs += [("fires", fn) for table in written(b) for fn in all_triggers.get(table, [])]
                 for how, other in runs:
                     if other != name and other in does:
                         extra = [f"{how} {other}(), which {r}" for r in does[other] if f" {name}()" not in r]
@@ -257,9 +266,8 @@ def check(sql):
         reasons = direct(st)
         for name in calls(st):
             reasons += [f"calls {name}(), which {r}" for r in does[name]]
-        m = DML.match(st.code)
-        if m:
-            reasons += triggers.get(bare(m.group(4)), [])
+        for table in written(st):
+            reasons += triggers.get(table, [])
         if reasons:
             problems.append(f"{st.code[:200]}: {', '.join(dict.fromkeys(reasons))}")
     return problems
