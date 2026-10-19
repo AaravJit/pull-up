@@ -36,7 +36,7 @@ DESTRUCTIVE = [
     # "alter table t drop c" drops a column (COLUMN is optional); dropping a
     # constraint, default, NOT NULL, identity or expression removes no data.
     (re.compile(r"\balter (foreign )?table\b.*\bdrop (?!constraint\b|default\b|not null\b|identity\b|expression\b)"), "drops a column"),
-    (re.compile(r"\balter (foreign )?table\b.*\balter (column )?(\"[^\"]+\"|\w+) (set data )?type\b"), "rewrites a column's type"),
+    (re.compile(r"\balter (foreign )?table\b.*\balter (column )?(\"(?:[^\"]|\"\")+\"|\w+) (set data )?type\b"), "rewrites a column's type"),
     (re.compile(r"\balter type\b.*\bdrop attribute\b"), "drops a type attribute"),
     (re.compile(r"\balter type\b.*\balter attribute\b.*\btype\b"), "rewrites a type attribute"),
 ]
@@ -136,8 +136,8 @@ def lex(sql, line_comments=None):
     return statements
 
 
-FUNCTION = re.compile(r"^create (or replace )?(function|procedure) ((\"[^\"]+\"|\w+)\.)?(\"[^\"]+\"|\w+)")
-NAME = r"(?:(?:\"[^\"]+\"|\w+)\.)?(\"[^\"]+\"|\w+)"
+FUNCTION = re.compile(r"^create (or replace )?(function|procedure) ((\"(?:[^\"]|\"\")+\"|\w+)\.)?(\"(?:[^\"]|\"\")+\"|\w+)")
+NAME = r"(?:(?:\"(?:[^\"]|\"\")+\"|\w+)\.)?(\"(?:[^\"]|\"\")+\"|\w+)"
 TRIGGER = re.compile(rf"^create (or replace )?(constraint )?trigger .*? on (only )?{NAME} .*\bexecute (function|procedure) {NAME} ?\(")
 # Anywhere in a statement (after WITH, IF ... THEN, a label...): a stray
 # match such as "before update on" only names a table nothing writes.

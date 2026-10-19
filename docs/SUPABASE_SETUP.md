@@ -66,7 +66,10 @@ workflow only once it is on `main`, so this appears after PR #2 is merged.)
 
 1. `staging`, **apply unticked**. This is a dry run: it lists the migrations
    staging doesn't have yet and refuses any that could drop data or that
-   run dynamic SQL (`supabase/scripts/check-pending-migrations.sh`). It also refuses any
+   run dynamic SQL (`supabase/scripts/check-pending-migrations.sh`). It stops
+   first if the project has migrations the checkout lacks (staging carries
+   the Phase 3 migrations from their pull requests, so run it from `main`
+   once those are merged). It also refuses any
    migration not recorded in `supabase/applied/staging.sha256`: record new
    ones there in their pull request, so CI guards them once deployed.
 2. `staging`, **apply ticked**. Applies the migrations, copies the function

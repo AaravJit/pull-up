@@ -66,6 +66,19 @@ jobs:
       - name: Link the project
         run: supabase link --project-ref "$PROJECT_REF" --password "$SUPABASE_DB_PASSWORD"
 
+      # db push refuses to run when the project has migrations this checkout
+      # lacks (for example ones deployed to staging from a pull request that
+      # isn't merged yet). Name them instead of failing on the CLI's error.
+      - name: The checkout has every migration the project has applied
+        run: |
+          set -o pipefail
+          supabase migration list --password "$SUPABASE_DB_PASSWORD" | tee "$RUNNER_TEMP/migrations.txt"
+          missing=$(awk -F'|' '{ l=$1; r=$2; gsub(/ /, "", l); gsub(/ /, "", r) } l == "" && r ~ /^[0-9]+$/ && length(r) == 14 { print r }' "$RUNNER_TEMP/migrations.txt")
+          if [ -n "$missing" ]; then
+            echo "::error::${{ inputs.environment }} has migrations this checkout doesn't: $(echo $missing | tr '\n' ' '). Merge the pull requests that add them, then run from main."
+            exit 1
+          fi
+
       - name: List migrations the project doesn't have yet
         id: pending
         run: |

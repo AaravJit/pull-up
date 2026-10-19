@@ -17,6 +17,7 @@ REFUSED = {
     "retype": "alter table t alter column name\n type text;",
     "retype without COLUMN": "alter table t alter value type text;",
     "retype with digits": "alter table t alter column value2 type text;",
+    "retype quoted with a doubled quote": 'alter table t alter column "old""value" type text;',
     "retype quoted": 'ALTER TABLE public.t ALTER "Odd Name" SET DATA TYPE bigint;',
     "comment marker in a string": "select '--'; delete from profiles;",
     "block comment marker in a string": "select '/*'; drop table t; select '*/';",
