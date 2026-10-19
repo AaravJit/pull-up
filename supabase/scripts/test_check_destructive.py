@@ -202,6 +202,9 @@ class Refused(unittest.TestCase):
         earlier = ("create function purge() returns void language sql as $$ delete from t $$;\n"
                    "alter function purge() rename to wipe;")
         self.assertTrue(check("select wipe();", earlier))
+        quoted = ('create function "purge"() returns void language sql as $$ delete from t $$;\n'
+                  'alter function "purge"() rename to wipe;')
+        self.assertTrue(check("select wipe();", quoted))
 
     def test_quoted_call(self):
         earlier = "create function purge() returns void language sql as $$ delete from t $$;"

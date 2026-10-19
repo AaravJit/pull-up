@@ -156,7 +156,7 @@ NAME = r"(?:(?:\"(?:[^\"]|\"\")+\"|\w+)\.)?(\"(?:[^\"]|\"\")+\"|\w+)"
 TRIGGER = re.compile(rf"^create (or replace )?(constraint )?trigger .*? on (only )?{NAME} .*\bexecute (function|procedure) {NAME} ?\(")
 # Anywhere in a statement (after WITH, IF ... THEN, a label...): a stray
 # match such as "before update on" only names a table nothing writes.
-RENAME = re.compile(rf"^alter (function|procedure|routine) {NAME}\b.*\brename to (\"(?:[^\"]|\"\")+\"|\w+)")
+RENAME = re.compile(rf"^alter (function|procedure|routine) {NAME}.*\brename to (\"(?:[^\"]|\"\")+\"|\w+)")
 EVENT_TRIGGER = re.compile(rf"^create event trigger .*\bexecute (?:function|procedure) {NAME} ?\(")
 DML = re.compile(rf"\b(insert into|update|delete from|merge into|copy)( only)? {NAME}")
 # Statements that name a function without running it.
