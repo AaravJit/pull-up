@@ -158,7 +158,6 @@ TRIGGER = re.compile(rf"^create (or replace )?(constraint )?trigger .*? on (only
 # match such as "before update on" only names a table nothing writes.
 RENAME = re.compile(rf"^alter (function|procedure|routine) {NAME}.*\brename to (\"(?:[^\"]|\"\")+\"|\w+)")
 EVENT_TRIGGER = re.compile(rf"^create event trigger .*\bexecute (?:function|procedure) {NAME} ?\(")
-DDL = re.compile(r"^(create|alter|drop|comment|grant|revoke|security label)\b")
 DML = re.compile(rf"\b(insert into|update|delete from|merge into|copy)( only)? {NAME}")
 # Statements that name a function without running it.
 NOT_A_CALL = re.compile(
@@ -288,6 +287,7 @@ def check(sql, context=""):
     # Triggers installed so far, by table: a write fires those created before it.
     triggers = {}
     on_ddl = []  # what destructive event triggers installed so far do on DDL
+    ddl_reported = False
     problems = []
     earlier_ids = {id(st) for st in earlier}
     for st in earlier + statements:
@@ -310,9 +310,12 @@ def check(sql, context=""):
             # Its END wasn't found, so the statements after it may be inside.
             problems.append(f"{st.code[:200]}: BEGIN ATOMIC body doesn't close, so the rest of the file can't be checked")
             continue
-        if on_ddl and DDL.match(st.code):
-            problems.append(f"{st.code[:200]}: {', '.join(dict.fromkeys(on_ddl))}")
-            continue
+        if on_ddl and not ddl_reported:
+            # Any statement may be or contain DDL (nested in a DO block, in a
+            # routine...), so the whole file needs a person's review.
+            problems.append(f"an earlier migration installed a destructive event trigger, which this one's DDL fires: "
+                            f"{', '.join(dict.fromkeys(on_ddl))}")
+            ddl_reported = True
         if FUNCTION.match(st.code):
             continue  # creating it runs nothing; calls are checked
         reasons = direct(st)

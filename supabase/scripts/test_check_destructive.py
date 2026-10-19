@@ -215,6 +215,7 @@ class Refused(unittest.TestCase):
         earlier = ("create function wipe() returns event_trigger language plpgsql as $$ begin delete from profiles; end $$;\n"
                    "create event trigger w on ddl_command_end execute function wipe();")
         self.assertTrue(check("create table y (id int);", earlier))
+        self.assertTrue(check("do $$ begin if true then create table x (a int); end if; end $$;", earlier))
 
     def test_main_reads_earlier_files(self):
         import os, tempfile
