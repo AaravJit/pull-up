@@ -27,6 +27,10 @@ REFUSED = {
         "create function purge() returns void language sql as $$ delete from profiles $$;\n"
         "select purge();"
     ),
+    "spaces around the dot in a routine name": (
+        "CREATE FUNCTION public . purge() RETURNS void LANGUAGE plpgsql AS $$ BEGIN DELETE FROM profiles; END $$;\n"
+        "SELECT public.purge();"
+    ),
     "procedure called later": (
         "create procedure public.wipe() language plpgsql as $p$ begin truncate t; end $p$;\ncall public.wipe();"
     ),

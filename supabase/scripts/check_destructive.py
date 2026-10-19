@@ -90,6 +90,7 @@ def lex(sql, line_comments=None):
 
     def finish():
         text = re.sub(r"\s+", " ", "".join(code)).strip().lower()
+        text = re.sub(r" ?\. ?", ".", text)  # "public . purge" is "public.purge"
         if text:
             statements.append(Statement(text, list(bodies), list(literals)))
         code.clear(); bodies.clear(); literals.clear()
