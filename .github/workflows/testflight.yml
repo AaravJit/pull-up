@@ -173,13 +173,13 @@ jobs:
         with:
           subject-path: ${{ runner.temp }}/export/*.ipa
 
-      - name: Keep the build and its symbols
+      # Only the symbols: this repository is public, so anyone signed in to
+      # GitHub can download a run's artifacts, and the .ipa is the app.
+      - name: Keep the debug symbols
         uses: actions/upload-artifact@v4
         with:
-          name: PullUp-${{ steps.version.outputs.version }}-${{ steps.version.outputs.build }}
-          path: |
-            ${{ runner.temp }}/export/*.ipa
-            ${{ runner.temp }}/PullUp.xcarchive/dSYMs
+          name: PullUp-${{ steps.version.outputs.version }}-${{ steps.version.outputs.build }}-dSYMs
+          path: ${{ runner.temp }}/PullUp.xcarchive/dSYMs
           retention-days: 90
 
       - name: Upload to App Store Connect

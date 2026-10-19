@@ -19,8 +19,9 @@ account steps below haven't been done.
    Apple to sign using your App Store Connect API key, so there is no
    certificate or provisioning profile to export, store or renew.
 3. Exports the `.ipa`, records a build provenance attestation for it, keeps
-   the `.ipa` and debug symbols as a run artifact for 90 days, and uploads
-   the same `.ipa` to App Store Connect.
+   the debug symbols as a run artifact for 90 days, and uploads the `.ipa`
+   to App Store Connect. The `.ipa` itself isn't kept: the repository is
+   public, so anyone signed in to GitHub could download a run's artifacts.
 
 The build number is the workflow's run number plus 100, so every upload is
 higher than the last. The version (`MARKETING_VERSION` in
@@ -113,13 +114,12 @@ data processor in the privacy answers, so it's left for you to decide.
 
 ## Checking a build's provenance
 
-Each `.ipa` the workflow uploads has a GitHub attestation tying it to the
-commit and workflow run that built it. Download the artifact from the run
-and check it with the GitHub CLI:
-
-```
-gh attestation verify PullUp.ipa -R AaravJit/pull-up
-```
+Each `.ipa` the workflow uploads has a GitHub attestation tying its SHA-256
+to the commit and workflow run that built it (the repository's Attestations
+page lists them). It records which commit and run produced the build Apple
+received. The `.ipa` isn't kept as an artifact, so checking a file against
+it (`gh attestation verify PullUp.ipa -R AaravJit/pull-up`) needs a copy
+you saved yourself.
 
 ## If a run fails
 
