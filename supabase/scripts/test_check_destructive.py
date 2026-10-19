@@ -66,6 +66,10 @@ REFUSED = {
         "create function f() returns int language sql begin atomic select case when true then 1 end; "
         "delete from t; end;\nselect f();"
     ),
+    "quoted BEGIN in an SQL-standard body": (
+        'create function f() returns int language sql begin atomic select 1 as "begin"; end;\ndelete from profiles;'
+    ),
+    "SQL-standard body that never closes": "create function f() returns int language sql begin atomic select 1;\ndelete from t;",
     "dynamic SQL split across literals": "DO $$ BEGIN EXECUTE 'DROP ' || 'TABLE profiles'; END $$;",
     "dynamic SQL built with format": "do $$ begin execute format('%s %s x', 'drop', 'table'); end $$;",
 }
@@ -111,6 +115,9 @@ ALLOWED = {
     ),
     "SQL-standard body only created": (
         "create function wipe() returns void language sql begin atomic delete from t; end;\ncreate table y (id int);"
+    ),
+    "quoted END in an SQL-standard body": (
+        'create function f() returns int language sql begin atomic select 1 as "end"; end;\ncreate table y (id int);'
     ),
     "trigger and grant mention EXECUTE": (
         "create function stamp() returns trigger language plpgsql as $$ begin new.at = now(); return new; end $$;\n"

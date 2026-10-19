@@ -51,8 +51,12 @@ def inside_atomic_body(code):
     m = ATOMIC.match("".join(code).lower())
     if not m:
         return False
-    depth = 1 + sum(1 if w in ("begin", "case") else -1 for w in re.findall(r"\b(begin|case|end)\b", m.group(3)))
-    return depth > 0
+    return atomic_depth(m.group(3)) > 0
+
+
+def atomic_depth(body):
+    words = re.findall(r"\b(begin|case|end)\b", re.sub(r'"[^"]*"', " ", body))  # not "quoted" names
+    return 1 + sum(1 if w in ("begin", "case") else -1 for w in words)
 
 
 def lex(sql, line_comments=None):
@@ -229,6 +233,11 @@ def check(sql):
         if m and does.get(bare(m.group(6))):
             triggers.setdefault(bare(m.group(4)), []).extend(
                 f"fires {bare(m.group(6))}(), which {r}" for r in does[bare(m.group(6))])
+        atomic = ATOMIC.match(st.code)
+        if atomic and atomic_depth(atomic.group(3)) != 0:
+            # Its END wasn't found, so the statements after it may be inside.
+            problems.append(f"{st.code[:200]}: BEGIN ATOMIC body doesn't close, so the rest of the file can't be checked")
+            continue
         if FUNCTION.match(st.code):
             continue  # creating it runs nothing; calls are checked
         reasons = direct(st)
