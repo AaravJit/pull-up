@@ -55,6 +55,8 @@ REFUSED = {
         "/* To approve, add:\n-- pullup: destructive change approved by <name> on <date>\n*/\ndrop table t;"
     ),
     "approval line inside a string": "select '\n-- pullup: destructive change approved by x'; drop table t;",
+    "approval template left unfilled": "-- pullup: destructive change approved by <name> on <date>\ndrop table t;",
+    "approval without a date": "-- pullup: destructive change approved by Aarav\ndrop table t;",
     "approval after code on the same line": "select 1; -- pullup: destructive change approved by x\ndrop table t;",
     "single-quoted function body called later": (
         "create function purge() returns void language sql as 'delete from profiles';\nselect purge();"
@@ -181,11 +183,44 @@ ALLOWED = {
 
 
 class Refused(unittest.TestCase):
-    pass
+    def test_routine_created_in_an_earlier_migration(self):
+        earlier = "create function purge() returns void language sql as $$ delete from profiles $$;"
+        self.assertTrue(check("select purge();", earlier))
+
+    def test_trigger_installed_in_an_earlier_migration(self):
+        earlier = (
+            "create function cleanup() returns trigger language plpgsql as $$ begin delete from t; return new; end $$;\n"
+            "create trigger c after insert on s for each row execute function cleanup();")
+        self.assertTrue(check("insert into s values (1);", earlier))
+
+    def test_redefined_revoke_helper(self):
+        earlier = ("create function private.revoke_anon_execute(p text) returns integer language plpgsql as $$ "
+                   "begin execute 'drop table ' || p; return 1; end $$;")
+        self.assertTrue(check("select private.revoke_anon_execute('x');", earlier))
+
+    def test_main_reads_earlier_files(self):
+        import os, tempfile
+        from check_destructive import main
+        with tempfile.TemporaryDirectory() as d:
+            with open(os.path.join(d, "20260101000100_a.sql"), "w") as f:
+                f.write("create function purge() returns void language sql as $$ delete from t $$;")
+            with open(os.path.join(d, "20260101000200_b.sql"), "w") as f:
+                f.write("select purge();")
+            self.assertEqual(main([os.path.join(d, "20260101000100_a.sql")]), 0)
+            self.assertEqual(main([os.path.join(d, "20260101000200_b.sql")]), 1)
 
 
 class Allowed(unittest.TestCase):
-    pass
+    def test_reviewed_revoke_helper(self):
+        import os
+        here = os.path.dirname(os.path.abspath(__file__))
+        with open(os.path.join(here, "../migrations/20261016000800_security_hardening.sql"), encoding="utf-8") as f:
+            earlier = f.read()
+        self.assertEqual(check("select private.revoke_anon_execute('20270101000100');", earlier), [])
+
+    def test_earlier_routine_only_defined(self):
+        earlier = "create function purge() returns void language sql as $$ delete from profiles $$;"
+        self.assertEqual(check("create table y (id int);", earlier), [])
 
 
 for label, sql in REFUSED.items():

@@ -5,6 +5,7 @@
 # A migration that drops a table, column or schema, truncates, deletes rows or
 # rewrites a column's type is refused unless the file carries the line
 #   -- pullup: destructive change approved by <name> on <date>
+#   (a real name and a YYYY-MM-DD date)
 # which a person adds after reviewing what data the change removes.
 # check_destructive.py has the details; its tests run in backend CI.
 set -euo pipefail

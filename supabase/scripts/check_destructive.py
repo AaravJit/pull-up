@@ -7,24 +7,36 @@ Pull Up's migrations only add things. A migration that drops a table, column
 or schema, truncates, deletes rows or rewrites a column's type is refused
 unless the file carries the line
     -- pullup: destructive change approved by <name> on <date>
-which a person adds after reviewing what data the change removes.
+(a real name and an ISO date, e.g. "by Aarav on 2026-10-19"), which a person
+adds after reviewing what data the change removes.
 
 The SQL is lexed, not grepped: comments, string literals, quoted names and
 dollar-quoted bodies are recognised, so neither a keyword split across lines
 nor a comment marker inside a string hides a statement. What runs is checked:
-top-level statements, DO blocks, the bodies of functions or procedures the
-same file calls, and triggers it installs when it (or a routine it calls)
-then writes to their table.
+top-level statements, DO blocks, the bodies of functions or procedures it
+calls, and triggers it fires by writing to their table, where the routine or
+trigger may come from this file or any migration before it in the folder.
 Bodies that are only created are not, since creating one runs none of it.
 Dynamic SQL (EXECUTE) that runs is refused, since its text is built at run
 time. Row updates (backfills) aren't checked; review those in the pull request.
 """
+import hashlib
+import os
 import re
 import sys
 
-APPROVAL = re.compile(r"-- pullup: destructive change approved by \S+", re.I)
+# A real name and date, not the template's <name> on <date>.
+APPROVAL = re.compile(r"-- pullup: destructive change approved by (?!<)[^\s<>]+ on \d{4}-\d{2}-\d{2}\b", re.I)
 IDENT_CHAR = re.compile(r"[A-Za-z0-9_$]")
 DOLLAR_TAG = re.compile(r"\$([A-Za-z_][A-Za-z0-9_]*)?\$")
+
+# Routines whose dynamic SQL was reviewed and only grants or revokes, by the
+# SHA-256 of their body as created. A redefinition with any other body loses this.
+REVIEWED_DYNAMIC = {
+    # private.revoke_anon_execute, 20261016000800_security_hardening.sql:
+    # migrations call it to take EXECUTE away from anon (docs/ARCHITECTURE.md).
+    "45dc71a7b7f4979cff0d308cf7490c4df12cda07031e628c1803522cf5b31fae",
+}
 
 DESTRUCTIVE = [
     (re.compile(r"\bdrop (table|foreign table|schema|column|materialized view|database|owned)\b"), "drops {0}"),
@@ -203,14 +215,19 @@ def approved(sql):
     return any(APPROVAL.match(c) for c in comments)
 
 
-def check(sql):
-    """Reasons the migration needs approval; empty when it only adds things."""
+def check(sql, context=""):
+    """Reasons the migration needs approval; empty when it only adds things.
+
+    context is the migrations that run before it (applied or pending): the
+    routines and triggers they define can be called or fired from this one.
+    """
     if approved(sql):
         return []
+    earlier = list(walk(lex(context))) if context else []
     statements = list(walk(lex(sql)))
     # By bare name, keeping every overload and schema: a call counts all of them.
     created = {}
-    for st in statements:
+    for st in earlier + statements:
         if FUNCTION.match(st.code):
             created.setdefault(bare(FUNCTION.match(st.code).group(5)), []).append(st)
 
@@ -230,7 +247,7 @@ def check(sql):
     # Every trigger the file installs, by table. Inside a routine the order
     # isn't known (it may run after the trigger exists), so all of them count.
     all_triggers = {}
-    for st in statements:
+    for st in earlier + statements:
         m = TRIGGER.match(st.code)
         if m:
             all_triggers.setdefault(bare(m.group(4)), []).append(bare(m.group(6)))
@@ -238,7 +255,12 @@ def check(sql):
     # What each function created here does when run, following calls between
     # them and the triggers their writes fire (a fixed point, so the order
     # they're created in doesn't matter).
-    does = {name: [r for st in sts for b in body_statements(st) for r in direct(b)] for name, sts in created.items()}
+    def reviewed(st):
+        return len(st.bodies) == 1 and hashlib.sha256(st.bodies[0].encode()).hexdigest() in REVIEWED_DYNAMIC
+
+    does = {name: [r for st in sts for b in body_statements(st) for r in direct(b)
+                   if not (r.startswith("runs dynamic SQL") and reviewed(st))]
+            for name, sts in created.items()}
     changed = True
     while changed:
         changed = False
@@ -257,11 +279,14 @@ def check(sql):
     # Triggers installed so far, by table: a write fires those created before it.
     triggers = {}
     problems = []
-    for st in statements:
+    earlier_ids = {id(st) for st in earlier}
+    for st in earlier + statements:
         m = TRIGGER.match(st.code)
         if m and does.get(bare(m.group(6))):
             triggers.setdefault(bare(m.group(4)), []).extend(
                 f"fires {bare(m.group(6))}(), which {r}" for r in does[bare(m.group(6))])
+        if id(st) in earlier_ids:
+            continue  # only defines what this file can call or fire
         atomic = ATOMIC.match(st.code)
         if atomic and atomic_depth(atomic.group(3)) != 0:
             # Its END wasn't found, so the statements after it may be inside.
@@ -290,10 +315,18 @@ def main(paths):
     for path in paths:
         with open(path, encoding="utf-8") as f:
             sql = f.read()
+        # Every migration that runs before this one, so a routine created in an
+        # earlier file (pending or already applied) is known when this one calls it.
+        folder = os.path.dirname(path) or "."
+        context = ""
+        for name in sorted(os.listdir(folder)):
+            if name.endswith(".sql") and name < os.path.basename(path):
+                with open(os.path.join(folder, name), encoding="utf-8") as f:
+                    context += f.read() + "\n;\n"
         if approved(sql):
             print(f"{path}: destructive changes approved in the file, skipping the check")
             continue
-        problems = check(sql)
+        problems = check(sql, context)
         if problems:
             print(f"::error file={path}::Possibly destructive statement(s); review and approve in the file first:")
             for p in problems:
