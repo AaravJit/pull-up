@@ -84,7 +84,7 @@ jobs:
         run: |
           set -o pipefail
           supabase db push --dry-run --password "$SUPABASE_DB_PASSWORD" 2>&1 | tee "$RUNNER_TEMP/dry-run.txt"
-          pending=$(grep -oE '[0-9]{14}_[a-z0-9_]+\.sql' "$RUNNER_TEMP/dry-run.txt" | sort -u | sed 's|^|supabase/migrations/|' | tr '\n' ' ')
+          pending=$({ grep -oE '[0-9]{14}_[a-z0-9_]+\.sql' "$RUNNER_TEMP/dry-run.txt" || true; } | sort -u | sed 's|^|supabase/migrations/|' | tr '\n' ' ')
           echo "files=$pending" >> "$GITHUB_OUTPUT"
           {
             echo "### ${{ inputs.environment }}: pending migrations"

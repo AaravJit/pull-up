@@ -158,6 +158,7 @@ TRIGGER = re.compile(rf"^create (or replace )?(constraint )?trigger .*? on (only
 # match such as "before update on" only names a table nothing writes.
 RENAME = re.compile(rf"^alter (function|procedure|routine) {NAME}.*\brename to (\"(?:[^\"]|\"\")+\"|\w+)")
 EVENT_TRIGGER = re.compile(rf"^create event trigger .*\bexecute (?:function|procedure) {NAME} ?\(")
+DDL = re.compile(r"^(create|alter|drop|comment|grant|revoke|security label)\b")
 DML = re.compile(rf"\b(insert into|update|delete from|merge into|copy)( only)? {NAME}")
 # Statements that name a function without running it.
 NOT_A_CALL = re.compile(
@@ -286,6 +287,7 @@ def check(sql, context=""):
 
     # Triggers installed so far, by table: a write fires those created before it.
     triggers = {}
+    on_ddl = []  # what destructive event triggers installed so far do on DDL
     problems = []
     earlier_ids = {id(st) for st in earlier}
     for st in earlier + statements:
@@ -293,6 +295,14 @@ def check(sql, context=""):
         if m and does.get(bare(m.group(6))):
             triggers.setdefault(bare(m.group(4)), []).extend(
                 f"fires {bare(m.group(6))}(), which {r}" for r in does[bare(m.group(6))])
+        m = EVENT_TRIGGER.match(st.code)
+        if m and does.get(bare(m.group(1))):
+            on_ddl += [f"fires event trigger {bare(m.group(1))}(), which {r}" for r in does[bare(m.group(1))]]
+            if id(st) not in earlier_ids:
+                # It runs on the file's later DDL (and every migration after it).
+                problems.append(f"{st.code[:200]}: installs an event trigger whose {bare(m.group(1))}() "
+                                + ", ".join(does[bare(m.group(1))]))
+            continue
         if id(st) in earlier_ids:
             continue  # only defines what this file can call or fire
         atomic = ATOMIC.match(st.code)
@@ -300,14 +310,11 @@ def check(sql, context=""):
             # Its END wasn't found, so the statements after it may be inside.
             problems.append(f"{st.code[:200]}: BEGIN ATOMIC body doesn't close, so the rest of the file can't be checked")
             continue
+        if on_ddl and DDL.match(st.code):
+            problems.append(f"{st.code[:200]}: {', '.join(dict.fromkeys(on_ddl))}")
+            continue
         if FUNCTION.match(st.code):
             continue  # creating it runs nothing; calls are checked
-        m = EVENT_TRIGGER.match(st.code)
-        if m and does.get(bare(m.group(1))):
-            # It runs on the file's later DDL (and every migration after it).
-            problems.append(f"{st.code[:200]}: installs an event trigger whose {bare(m.group(1))}() "
-                            + ", ".join(does[bare(m.group(1))]))
-            continue
         reasons = direct(st)
         for name in calls(st):
             reasons += [f"calls {name}(), which {r}" for r in does[name]]

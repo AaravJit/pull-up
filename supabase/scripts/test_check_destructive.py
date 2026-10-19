@@ -211,6 +211,11 @@ class Refused(unittest.TestCase):
         self.assertTrue(check('select "purge"();', earlier))
         self.assertTrue(check('select public."purge"();', earlier))
 
+    def test_event_trigger_installed_in_an_earlier_migration(self):
+        earlier = ("create function wipe() returns event_trigger language plpgsql as $$ begin delete from profiles; end $$;\n"
+                   "create event trigger w on ddl_command_end execute function wipe();")
+        self.assertTrue(check("create table y (id int);", earlier))
+
     def test_main_reads_earlier_files(self):
         import os, tempfile
         from check_destructive import main
