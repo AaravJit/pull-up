@@ -19,6 +19,9 @@ trigger may come from this file or any migration before it in the folder.
 Bodies that are only created are not, since creating one runs none of it.
 Dynamic SQL (EXECUTE) that runs is refused, since its text is built at run
 time. Row updates (backfills) aren't checked; review those in the pull request.
+
+This guards against accidents, not against a migration written to slip past
+it: a pull request can change this script too, so review stays the control.
 """
 import hashlib
 import os
@@ -153,6 +156,7 @@ NAME = r"(?:(?:\"(?:[^\"]|\"\")+\"|\w+)\.)?(\"(?:[^\"]|\"\")+\"|\w+)"
 TRIGGER = re.compile(rf"^create (or replace )?(constraint )?trigger .*? on (only )?{NAME} .*\bexecute (function|procedure) {NAME} ?\(")
 # Anywhere in a statement (after WITH, IF ... THEN, a label...): a stray
 # match such as "before update on" only names a table nothing writes.
+RENAME = re.compile(rf"^alter (function|procedure|routine) {NAME}\b.*\brename to (\"(?:[^\"]|\"\")+\"|\w+)")
 EVENT_TRIGGER = re.compile(rf"^create event trigger .*\bexecute (?:function|procedure) {NAME} ?\(")
 DML = re.compile(rf"\b(insert into|update|delete from|merge into|copy)( only)? {NAME}")
 # Statements that name a function without running it.
@@ -230,6 +234,10 @@ def check(sql, context=""):
     for st in earlier + statements:
         if FUNCTION.match(st.code):
             created.setdefault(bare(FUNCTION.match(st.code).group(5)), []).append(st)
+        m = RENAME.match(st.code)
+        if m and bare(m.group(2)) in created:
+            # The definitions go by the new name too.
+            created.setdefault(bare(m.group(3)), []).extend(created[bare(m.group(2))])
 
     def direct(st):
         reasons = hits_in(st.code)
@@ -242,7 +250,7 @@ def check(sql, context=""):
     def calls(st):
         if NOT_A_CALL.match(st.code) or FUNCTION.match(st.code):
             return []
-        return [name for name in created if re.search(rf"(^|[^\w.]|\.){re.escape(name)} ?\(", st.code)]
+        return [name for name in created if re.search(rf'(^|[^\w.]|\.)"?{re.escape(name)}"? ?\(', st.code)]
 
     # Every trigger the file installs, by table. Inside a routine the order
     # isn't known (it may run after the trigger exists), so all of them count.

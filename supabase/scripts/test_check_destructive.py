@@ -198,6 +198,16 @@ class Refused(unittest.TestCase):
                    "begin execute 'drop table ' || p; return 1; end $$;")
         self.assertTrue(check("select private.revoke_anon_execute('x');", earlier))
 
+    def test_routine_renamed_in_an_earlier_migration(self):
+        earlier = ("create function purge() returns void language sql as $$ delete from t $$;\n"
+                   "alter function purge() rename to wipe;")
+        self.assertTrue(check("select wipe();", earlier))
+
+    def test_quoted_call(self):
+        earlier = "create function purge() returns void language sql as $$ delete from t $$;"
+        self.assertTrue(check('select "purge"();', earlier))
+        self.assertTrue(check('select public."purge"();', earlier))
+
     def test_main_reads_earlier_files(self):
         import os, tempfile
         from check_destructive import main
