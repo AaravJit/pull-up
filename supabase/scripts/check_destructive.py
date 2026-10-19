@@ -21,7 +21,7 @@ pull request.
 import re
 import sys
 
-APPROVAL = re.compile(r"^-- pullup: destructive change approved by \S+", re.I | re.M)
+APPROVAL = re.compile(r"-- pullup: destructive change approved by \S+", re.I)
 IDENT_CHAR = re.compile(r"[A-Za-z0-9_$]")
 DOLLAR_TAG = re.compile(r"\$([A-Za-z_][A-Za-z0-9_]*)?\$")
 
@@ -43,8 +43,11 @@ class Statement:
         self.literals = literals  # string literal contents
 
 
-def lex(sql):
-    """Splits SQL into statements at top-level semicolons."""
+def lex(sql, line_comments=None):
+    """Splits SQL into statements at top-level semicolons.
+
+    line_comments, if given, collects the -- comments that start a line.
+    """
     statements, code, bodies, literals = [], [], [], []
     i, n = 0, len(sql)
 
@@ -58,7 +61,10 @@ def lex(sql):
         c = sql[i]
         if sql.startswith("--", i):
             j = sql.find("\n", i)
-            i = n if j < 0 else j
+            j = n if j < 0 else j
+            if line_comments is not None and sql[sql.rfind("\n", 0, i) + 1:i].strip() == "":
+                line_comments.append(sql[i:j])
+            i = j
             code.append(" ")
         elif sql.startswith("/*", i):
             depth, i = 1, i + 2
@@ -144,17 +150,25 @@ def walk(statements, depth=0):
         st.code = BLOCK_WORDS.sub("", st.code)
         yield st
         if st.code.startswith("do ") and depth < 5:
-            for body in st.bodies:
+            for body in st.bodies + st.literals:
                 yield from walk(lex(body), depth + 1)
 
 
 def body_statements(st):
-    return [b for body in st.bodies for b in walk(lex(body))]
+    # A body can be dollar-quoted or an ordinary string literal (AS '...').
+    return [b for body in st.bodies + st.literals for b in walk(lex(body))]
+
+
+def approved(sql):
+    """The approval line, only as a real comment at the start of a line."""
+    comments = []
+    lex(sql, comments)
+    return any(APPROVAL.match(c) for c in comments)
 
 
 def check(sql):
     """Reasons the migration needs approval; empty when it only adds things."""
-    if APPROVAL.search(sql):
+    if approved(sql):
         return []
     statements = list(walk(lex(sql)))
     created = {bare(FUNCTION.match(st.code).group(5)): st for st in statements if FUNCTION.match(st.code)}
@@ -213,7 +227,7 @@ def main(paths):
     for path in paths:
         with open(path, encoding="utf-8") as f:
             sql = f.read()
-        if APPROVAL.search(sql):
+        if approved(sql):
             print(f"{path}: destructive changes approved in the file, skipping the check")
             continue
         problems = check(sql)

@@ -50,6 +50,15 @@ REFUSED = {
     ),
     "dynamic SQL": "do $$ begin execute 'drop table ' || 'x'; end $$;",
     "drop schema": "drop schema old cascade;",
+    "approval line inside a block comment": (
+        "/* To approve, add:\n-- pullup: destructive change approved by <name> on <date>\n*/\ndrop table t;"
+    ),
+    "approval line inside a string": "select '\n-- pullup: destructive change approved by x'; drop table t;",
+    "approval after code on the same line": "select 1; -- pullup: destructive change approved by x\ndrop table t;",
+    "single-quoted function body called later": (
+        "create function purge() returns void language sql as 'delete from profiles';\nselect purge();"
+    ),
+    "single-quoted DO body": "do 'begin delete from t; end';",
 }
 
 ALLOWED = {
@@ -72,6 +81,7 @@ ALLOWED = {
     "on delete cascade": "alter table x add constraint fk foreign key (a) references y on delete cascade;",
     "enum value": "alter type mood add value 'meh';",
     "approved": "-- pullup: destructive change approved by Aarav on 2026-10-19\ndrop table t;",
+    "approved, indented": "  -- pullup: destructive change approved by Aarav on 2026-10-19\ndrop table t;",
     "destructive trigger only installed": (
         "create function cleanup() returns trigger language plpgsql as $$ begin delete from t; return new; end $$;\n"
         "create trigger c after insert on s for each row execute function cleanup();"

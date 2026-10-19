@@ -32,6 +32,18 @@ if ! git rev-parse --verify -q "$base^{commit}" >/dev/null; then
   exit 1
 fi
 
+# Lines main already records stay, unchanged: dropping one (with its file, or
+# by regenerating the manifest) would hide a migration the project has.
+if git cat-file -e "$base:$manifest" 2>/dev/null; then
+  while read -r line; do
+    [ -n "$line" ] && [ "${line:0:1}" != "#" ] || continue
+    if ! grep -qxF -- "$line" "$manifest"; then
+      echo "::error file=$manifest::$base records \"$line\", which this branch removes or changes. A recorded migration stays recorded; undo it with a new migration."
+      status=1
+    fi
+  done < <(git show "$base:$manifest")
+fi
+
 while read -r sum file; do
   [ -n "$sum" ] && [ "${sum:0:1}" != "#" ] || continue
   version=${file%%_*}
