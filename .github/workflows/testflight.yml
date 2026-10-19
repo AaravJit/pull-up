@@ -26,10 +26,10 @@ on:
         type: string
         default: ""
   pull_request:
-    paths: [".github/workflows/testflight.yml", "native/ios/project.yml", "native/ios/Config/**", "native/ios/PullUp/**"]
+    paths: [".github/workflows/testflight.yml", "native/ios/**"]
   push:
     branches: ["claude/**"]
-    paths: [".github/workflows/testflight.yml", "native/ios/project.yml", "native/ios/Config/**", "native/ios/PullUp/**"]
+    paths: [".github/workflows/testflight.yml", "native/ios/**"]
 
 permissions:
   contents: read
