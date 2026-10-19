@@ -78,6 +78,11 @@ jobs:
             if [ -n "$pending" ]; then for f in $pending; do echo "- \`$f\`"; done; else echo "None"; fi
           } >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Every migration is recorded in the staging manifest
+        run: |
+          git fetch --no-tags --depth=1 origin main:refs/remotes/origin/main
+          bash supabase/scripts/check-applied-migrations.sh --complete
+
       - name: Refuse migrations that could destroy data
         if: steps.pending.outputs.files != ''
         run: supabase/scripts/check-pending-migrations.sh ${{ steps.pending.outputs.files }}

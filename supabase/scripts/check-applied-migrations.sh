@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Keeps the repository and an already-deployed project from drifting apart.
-# Usage: check-applied-migrations.sh [manifest]  (default supabase/applied/staging.sha256)
+# Usage: check-applied-migrations.sh [--complete] [manifest]
+#   (default supabase/applied/staging.sha256)
 #
-# The manifest lists every migration the project has applied, with its
+# The manifest lists every migration deployed (or about to be) to the project, with its
 # SHA-256. `supabase db push` only compares versions, so an applied file
 # edited afterwards would never reach the project. This refuses:
 #   * an applied migration whose file has changed (add a new migration instead);
@@ -13,8 +14,13 @@
 # Applied files that neither this branch nor main has yet are skipped: they
 # arrive with the pull request that adds them. Set PULLUP_MIGRATIONS_BASE to
 # compare with another ref than origin/main.
+#
+# --complete (the deploy workflow): every migration must already be recorded,
+# so nothing reaches a project without its checksum being guarded afterwards.
 set -euo pipefail
 
+complete=0
+if [ "${1:-}" = "--complete" ]; then complete=1; shift; fi
 manifest=${1:-supabase/applied/staging.sha256}
 dir=supabase/migrations
 base=${PULLUP_MIGRATIONS_BASE:-origin/main}
@@ -46,6 +52,11 @@ done < "$manifest"
 for path in "$dir"/*.sql; do
   file=$(basename "$path")
   grep -q " $file\$" "$manifest" && continue
+  if [ $complete -eq 1 ]; then
+    echo "::error file=$path::$file isn't recorded in $manifest. Record it there in a pull request before deploying (see the comment at the top of the file)."
+    status=1
+    continue
+  fi
   version=${file%%_*}
   if [[ ! "$version" > "$newest" ]]; then
     echo "::error file=$path::$file isn't applied yet but is numbered at or below $newest, the newest migration the project has. Renumber it after $newest."
