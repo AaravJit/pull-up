@@ -27,13 +27,18 @@ IDENT_CHAR = re.compile(r"[A-Za-z0-9_$]")
 DOLLAR_TAG = re.compile(r"\$([A-Za-z_][A-Za-z0-9_]*)?\$")
 
 DESTRUCTIVE = [
-    (re.compile(r"\bdrop (table|schema|column|materialized view|database|owned)\b"), "drops {0}"),
+    (re.compile(r"\bdrop (table|foreign table|schema|column|materialized view|database|owned)\b"), "drops {0}"),
+    # CASCADE also drops whatever depends on the object, columns and tables included.
+    (re.compile(r"^drop\b.*\bcascade\b"), "drops with cascade"),
     (re.compile(r"\btruncate\b"), "truncates"),
     (re.compile(r"\bdelete from\b"), "deletes rows"),
+    (re.compile(r"\bthen delete\b"), "deletes rows (merge)"),
     # "alter table t drop c" drops a column (COLUMN is optional); dropping a
     # constraint, default, NOT NULL, identity or expression removes no data.
-    (re.compile(r"\balter table\b.*\bdrop (?!constraint\b|default\b|not null\b|identity\b|expression\b)"), "drops a column"),
-    (re.compile(r"\balter table\b.*\balter (column )?(\"[^\"]+\"|\w+) (set data )?type\b"), "rewrites a column's type"),
+    (re.compile(r"\balter (foreign )?table\b.*\bdrop (?!constraint\b|default\b|not null\b|identity\b|expression\b)"), "drops a column"),
+    (re.compile(r"\balter (foreign )?table\b.*\balter (column )?(\"[^\"]+\"|\w+) (set data )?type\b"), "rewrites a column's type"),
+    (re.compile(r"\balter type\b.*\bdrop attribute\b"), "drops a type attribute"),
+    (re.compile(r"\balter type\b.*\balter attribute\b.*\btype\b"), "rewrites a type attribute"),
 ]
 
 
@@ -136,6 +141,7 @@ NAME = r"(?:(?:\"[^\"]+\"|\w+)\.)?(\"[^\"]+\"|\w+)"
 TRIGGER = re.compile(rf"^create (or replace )?(constraint )?trigger .*? on (only )?{NAME} .*\bexecute (function|procedure) {NAME} ?\(")
 # Anywhere in a statement (after WITH, IF ... THEN, a label...): a stray
 # match such as "before update on" only names a table nothing writes.
+EVENT_TRIGGER = re.compile(rf"^create event trigger .*\bexecute (?:function|procedure) {NAME} ?\(")
 DML = re.compile(rf"\b(insert into|update|delete from|merge into|copy)( only)? {NAME}")
 # Statements that name a function without running it.
 NOT_A_CALL = re.compile(
@@ -263,6 +269,12 @@ def check(sql):
             continue
         if FUNCTION.match(st.code):
             continue  # creating it runs nothing; calls are checked
+        m = EVENT_TRIGGER.match(st.code)
+        if m and does.get(bare(m.group(1))):
+            # It runs on the file's later DDL (and every migration after it).
+            problems.append(f"{st.code[:200]}: installs an event trigger whose {bare(m.group(1))}() "
+                            + ", ".join(does[bare(m.group(1))]))
+            continue
         reasons = direct(st)
         for name in calls(st):
             reasons += [f"calls {name}(), which {r}" for r in does[name]]

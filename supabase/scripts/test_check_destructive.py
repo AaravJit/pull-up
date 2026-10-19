@@ -94,6 +94,16 @@ REFUSED = {
         "create function private.f() returns void language sql as $$ truncate t $$;\n"
         "create function public.f() returns void language sql as $$ select 1 $$;\nselect private.f();"
     ),
+    "drop foreign table": "drop foreign table remote_rows;",
+    "drop type cascade": "drop type mood cascade;",
+    "drop function cascade": "drop function f() cascade;",
+    "merge with delete": "merge into t using s on t.id = s.id when matched then delete;",
+    "alter foreign table drop column": "alter foreign table r drop column c;",
+    "alter type drop attribute": "alter type addr drop attribute zip;",
+    "destructive event trigger": (
+        "create function wipe() returns event_trigger language plpgsql as $$ begin delete from t; end $$;\n"
+        "create event trigger w on ddl_command_end execute function wipe();"
+    ),
     "quoted BEGIN in an SQL-standard body": (
         'create function f() returns int language sql begin atomic select 1 as "begin"; end;\ndelete from profiles;'
     ),
@@ -147,6 +157,12 @@ ALLOWED = {
     "SQL-standard RETURN body only created": (
         "create function purge() returns void language sql as $$ delete from t $$;\n"
         "create function wrapper() returns void language sql return purge();"
+    ),
+    "drop function without cascade": "drop function if exists f(int);",
+    "drop policy": "drop policy if exists p on t;",
+    "harmless event trigger": (
+        "create function note() returns event_trigger language plpgsql as $$ begin raise notice 'ddl'; end $$;\n"
+        "create event trigger n on ddl_command_end execute function note();"
     ),
     "quoted END in an SQL-standard body": (
         'create function f() returns int language sql begin atomic select 1 as "end"; end;\ncreate table y (id int);'
