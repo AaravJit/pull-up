@@ -66,6 +66,20 @@ REFUSED = {
         "create function f() returns int language sql begin atomic select case when true then 1 end; "
         "delete from t; end;\nselect f();"
     ),
+    "SQL-standard RETURN body calling a destructive function": (
+        "create function purge() returns void language sql as $$ delete from t $$;\n"
+        "create function wrapper() returns void language sql return purge();\nselect wrapper();"
+    ),
+    "write in an SQL-standard body that fires a destructive trigger": (
+        "create function cleanup() returns trigger language plpgsql as $$ begin delete from t; return new; end $$;\n"
+        "create trigger c after insert on s for each row execute function cleanup();\n"
+        "create procedure p() language sql begin atomic insert into s values (1); end;\ncall p();"
+    ),
+    "called function whose write fires a destructive trigger": (
+        "create function cleanup() returns trigger language plpgsql as $$ begin truncate t; return new; end $$;\n"
+        "create trigger c after update on s for each row execute function cleanup();\n"
+        "create function touch() returns void language plpgsql as $$ begin update s set a = 1; end $$;\nselect touch();"
+    ),
     "quoted BEGIN in an SQL-standard body": (
         'create function f() returns int language sql begin atomic select 1 as "begin"; end;\ndelete from profiles;'
     ),
@@ -115,6 +129,10 @@ ALLOWED = {
     ),
     "SQL-standard body only created": (
         "create function wipe() returns void language sql begin atomic delete from t; end;\ncreate table y (id int);"
+    ),
+    "SQL-standard RETURN body only created": (
+        "create function purge() returns void language sql as $$ delete from t $$;\n"
+        "create function wrapper() returns void language sql return purge();"
     ),
     "quoted END in an SQL-standard body": (
         'create function f() returns int language sql begin atomic select 1 as "end"; end;\ncreate table y (id int);'

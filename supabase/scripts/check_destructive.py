@@ -13,7 +13,8 @@ The SQL is lexed, not grepped: comments, string literals, quoted names and
 dollar-quoted bodies are recognised, so neither a keyword split across lines
 nor a comment marker inside a string hides a statement. What runs is checked:
 top-level statements, DO blocks, the bodies of functions or procedures the
-same file calls, and triggers it installs when it then writes to their table.
+same file calls, and triggers it installs when it (or a routine it calls)
+then writes to their table.
 Bodies that are only created are not, since creating one runs none of it.
 Dynamic SQL (EXECUTE) that runs is refused, since its text is built at run
 time. Row updates (backfills) aren't checked; review those in the pull request.
@@ -158,7 +159,7 @@ def hits_in(code):
 
 # EXECUTE runs a string as SQL; EXECUTE FUNCTION (triggers) and GRANT EXECUTE ON don't.
 DYNAMIC = re.compile(r"\bexecute\b(?! (function|procedure|on)\b)")
-BLOCK_WORDS = re.compile(r"^((begin|then|else|loop|exception when [\w ]+? then)\b ?)+")
+BLOCK_WORDS = re.compile(r"^((begin( atomic)?|then|else|loop|exception when [\w ]+? then)\b ?)+")
 
 
 def walk(statements, depth=0):
@@ -174,11 +175,12 @@ def walk(statements, depth=0):
 
 def body_statements(st):
     # A body can be dollar-quoted, an ordinary string literal (AS '...') or
-    # SQL-standard (BEGIN ATOMIC ... END), which is part of the statement.
-    bodies = st.bodies + st.literals
-    m = ATOMIC.match(st.code)
-    if m:
-        bodies.append(re.sub(r"\bend$", "", m.group(3).strip()))
+    # SQL-standard (RETURN expr, BEGIN ATOMIC ... END), which is part of the
+    # statement itself; so everything after the routine's name is checked.
+    bodies = st.bodies + st.literals + [st.code[FUNCTION.match(st.code).end():]]
+    atomic = ATOMIC.match(st.code)
+    if atomic:
+        bodies.append(atomic.group(3))  # its statements, so writes are seen as writes
     return [b for body in bodies for b in walk(lex(body))]
 
 
@@ -209,17 +211,29 @@ def check(sql):
             return []
         return [name for name in created if re.search(rf"(^|[^\w.]|\.){re.escape(name)} ?\(", st.code)]
 
+    # Every trigger the file installs, by table. Inside a routine the order
+    # isn't known (it may run after the trigger exists), so all of them count.
+    all_triggers = {}
+    for st in statements:
+        m = TRIGGER.match(st.code)
+        if m:
+            all_triggers.setdefault(bare(m.group(4)), []).append(bare(m.group(6)))
+
     # What each function created here does when run, following calls between
-    # them (a fixed point, so the order they're created in doesn't matter).
+    # them and the triggers their writes fire (a fixed point, so the order
+    # they're created in doesn't matter).
     does = {name: [r for b in body_statements(st) for r in direct(b)] for name, st in created.items()}
     changed = True
     while changed:
         changed = False
         for name, st in created.items():
             for b in body_statements(st):
-                for other in calls(b):
-                    if other != name:
-                        extra = [f"calls {other}(), which {r}" for r in does[other] if not r.startswith(f"calls {name}()")]
+                m = DML.match(b.code)
+                runs = [("calls", other) for other in calls(b)]
+                runs += [("fires", fn) for fn in all_triggers.get(bare(m.group(4)), [])] if m else []
+                for how, other in runs:
+                    if other != name and other in does:
+                        extra = [f"{how} {other}(), which {r}" for r in does[other] if f" {name}()" not in r]
                         new = [r for r in extra if r not in does[name]]
                         if new:
                             does[name] += new
