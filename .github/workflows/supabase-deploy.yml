@@ -86,7 +86,7 @@ jobs:
         if: inputs.apply
         run: supabase db push --password "$SUPABASE_DB_PASSWORD"
 
-      - name: Copy function secrets that are set in this environment
+      - name: Copy function secrets from this environment
         if: inputs.apply
         env:
           PUSH_WEBHOOK_SECRET: ${{ secrets.PUSH_WEBHOOK_SECRET }}
@@ -108,14 +108,27 @@ jobs:
           file="$RUNNER_TEMP/function-secrets.env"
           : > "$file"
           names=""
+          absent=""
           for name in PUSH_WEBHOOK_SECRET CRON_SECRET APNS_KEY_ID APNS_PRIVATE_KEY APNS_TEAM_ID APNS_TOPIC \
                       APPLE_CLIENT_ID APPLE_KEY_ID APPLE_PRIVATE_KEY APPLE_TEAM_ID \
                       APPSTORE_ISSUER_ID APPSTORE_KEY_ID APPSTORE_PRIVATE_KEY APPSTORE_BUNDLE_ID; do
             value="${!name}"
-            [ -n "$value" ] || continue
+            if [ -z "$value" ]; then absent="$absent $name"; continue; fi
             printf '%s="%s"\n' "$name" "$value" >> "$file"
             names="$names $name"
           done
+          # This environment is the source of truth: a secret deleted here
+          # (say, a revoked key) is removed from the project too.
+          existing=$(curl -fsS -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+            "https://api.supabase.com/v1/projects/$PROJECT_REF/secrets" | jq -r '.[].name')
+          stale=""
+          for name in $absent; do
+            grep -qx "$name" <<<"$existing" && stale="$stale $name"
+          done
+          if [ -n "$stale" ]; then
+            supabase secrets unset --project-ref "$PROJECT_REF" $stale
+            echo "Removed (no longer in this environment):$stale"
+          fi
           if [ -n "$names" ]; then
             supabase secrets set --project-ref "$PROJECT_REF" --env-file "$file"
             echo "Set:$names"

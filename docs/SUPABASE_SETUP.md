@@ -13,7 +13,7 @@ functions and tests have only run on the local Supabase stack in CI.
 | --- | --- | --- |
 | Tables, policies, functions, triggers, storage buckets and their policies, realtime publication | `supabase/migrations/` | `supabase db push` in the deploy workflow |
 | Edge functions | `supabase/functions/` | `supabase functions deploy` in the deploy workflow |
-| Function secrets (push, Apple, App Store) | GitHub environment secrets | copied by the deploy workflow when present |
+| Function secrets (push, Apple, App Store) | GitHub environment secrets | copied by the deploy workflow; one deleted here is removed from the project on the next deploy |
 | Auth providers, sign-up switches, redirect URLs, database webhook, cron | Supabase dashboard | **You**, once per project (step 5) |
 | App's project URL and anon key | GitHub environment secrets, or your local `Config/Secrets.xcconfig` | the iOS build |
 
@@ -48,7 +48,8 @@ Repository ▸ Settings ▸ Environments ▸ New environment:
 | `production` | `SUPABASE_PROJECT_REF` = production ref | `SUPABASE_ACCESS_TOKEN`, `SUPABASE_DB_PASSWORD` (production's) | **Required reviewers: you**; deployment branches: `main` only |
 
 Optional secrets, per environment, copied to the project's function
-secrets on each deploy. Functions answer "not configured" without them.
+secrets on each deploy, and removed from them once deleted here. Functions
+answer "not configured" without them.
 
 | Secret | Used by | Where it comes from |
 | --- | --- | --- |

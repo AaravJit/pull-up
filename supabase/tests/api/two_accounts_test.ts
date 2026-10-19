@@ -88,6 +88,9 @@ async function removeAccount(id: string): Promise<string[]> {
     const problem = await removeTree(bucket, id);
     if (problem) problems.push(problem);
   }
+  // Deleting the account cascades its conversations away, and with them the
+  // only way to find its message photos, so it stays until its files are gone.
+  if (problems.length > 0) return [...problems, `kept auth user ${id} so a retry can find its files`];
   const deleted = await admin.auth.admin.deleteUser(id);
   if (deleted.error) problems.push(`deleting auth user ${id}: ${deleted.error.message}`);
   return problems;
