@@ -59,6 +59,15 @@ REFUSED = {
         "create function purge() returns void language sql as 'delete from profiles';\nselect purge();"
     ),
     "single-quoted DO body": "do 'begin delete from t; end';",
+    "SQL-standard body called later": (
+        "CREATE PROCEDURE wipe() LANGUAGE SQL BEGIN ATOMIC DELETE FROM profiles; END;\nCALL wipe();"
+    ),
+    "SQL-standard body with CASE called later": (
+        "create function f() returns int language sql begin atomic select case when true then 1 end; "
+        "delete from t; end;\nselect f();"
+    ),
+    "dynamic SQL split across literals": "DO $$ BEGIN EXECUTE 'DROP ' || 'TABLE profiles'; END $$;",
+    "dynamic SQL built with format": "do $$ begin execute format('%s %s x', 'drop', 'table'); end $$;",
 }
 
 ALLOWED = {
@@ -99,6 +108,17 @@ ALLOWED = {
     "write to a table whose trigger is harmless": (
         "create function stamp() returns trigger language plpgsql as $$ begin new.at = now(); return new; end $$;\n"
         "create trigger s before insert on t for each row execute function stamp();\ninsert into t values (1);"
+    ),
+    "SQL-standard body only created": (
+        "create function wipe() returns void language sql begin atomic delete from t; end;\ncreate table y (id int);"
+    ),
+    "trigger and grant mention EXECUTE": (
+        "create function stamp() returns trigger language plpgsql as $$ begin new.at = now(); return new; end $$;\n"
+        "create trigger s before insert on t for each row execute function stamp();\n"
+        "grant execute on function stamp() to authenticated;\ninsert into t values (1);"
+    ),
+    "dynamic SQL only in a created function": (
+        "create function f() returns void language plpgsql as $$ begin execute 'drop table x'; end $$;"
     ),
     "positional parameter": "create function f(int) returns int language sql as $$ select $1 $$; select f(1);",
 }

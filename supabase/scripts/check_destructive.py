@@ -14,9 +14,9 @@ dollar-quoted bodies are recognised, so neither a keyword split across lines
 nor a comment marker inside a string hides a statement. What runs is checked:
 top-level statements, DO blocks, the bodies of functions or procedures the
 same file calls, and triggers it installs when it then writes to their table.
-Bodies that are only created are not, since creating one runs none of it. Dynamic SQL (EXECUTE '...') is
-checked as text. Row updates (backfills) aren't checked; review those in the
-pull request.
+Bodies that are only created are not, since creating one runs none of it.
+Dynamic SQL (EXECUTE) that runs is refused, since its text is built at run
+time. Row updates (backfills) aren't checked; review those in the pull request.
 """
 import re
 import sys
@@ -41,6 +41,18 @@ class Statement:
         self.code = code          # lowercased, comments removed, literals as '', bodies as $n$
         self.bodies = bodies      # dollar-quoted bodies, raw text
         self.literals = literals  # string literal contents
+
+
+ATOMIC = re.compile(r"^\s*create (or replace )?(function|procedure)\b.*?\bbegin atomic\b(.*)$", re.S)
+
+
+def inside_atomic_body(code):
+    """True inside a SQL-standard body (BEGIN ATOMIC ... END), whose statements end in ; too."""
+    m = ATOMIC.match("".join(code).lower())
+    if not m:
+        return False
+    depth = 1 + sum(1 if w in ("begin", "case") else -1 for w in re.findall(r"\b(begin|case|end)\b", m.group(3)))
+    return depth > 0
 
 
 def lex(sql, line_comments=None):
@@ -104,7 +116,7 @@ def lex(sql, line_comments=None):
             code.append(f" ${len(bodies)}$ ")
             bodies.append(sql[i + len(tag):end])
             i = end + len(tag)
-        elif c == ";":
+        elif c == ";" and not inside_atomic_body(code):
             finish()
             i += 1
         else:
@@ -140,6 +152,8 @@ def hits_in(code):
     return found
 
 
+# EXECUTE runs a string as SQL; EXECUTE FUNCTION (triggers) and GRANT EXECUTE ON don't.
+DYNAMIC = re.compile(r"\bexecute\b(?! (function|procedure|on)\b)")
 BLOCK_WORDS = re.compile(r"^((begin|then|else|loop|exception when [\w ]+? then)\b ?)+")
 
 
@@ -155,8 +169,13 @@ def walk(statements, depth=0):
 
 
 def body_statements(st):
-    # A body can be dollar-quoted or an ordinary string literal (AS '...').
-    return [b for body in st.bodies + st.literals for b in walk(lex(body))]
+    # A body can be dollar-quoted, an ordinary string literal (AS '...') or
+    # SQL-standard (BEGIN ATOMIC ... END), which is part of the statement.
+    bodies = st.bodies + st.literals
+    m = ATOMIC.match(st.code)
+    if m:
+        bodies.append(re.sub(r"\bend$", "", m.group(3).strip()))
+    return [b for body in bodies for b in walk(lex(body))]
 
 
 def approved(sql):
@@ -175,9 +194,10 @@ def check(sql):
 
     def direct(st):
         reasons = hits_in(st.code)
-        if re.search(r"\bexecute\b", st.code):
-            for lit in st.literals:
-                reasons += [f"{r} (dynamic SQL)" for r in hits_in(re.sub(r"\s+", " ", lit.lower()))]
+        # Dynamic SQL is text built at run time ('drop ' || 'table x',
+        # format(...)), so what it does can't be read from the file.
+        if DYNAMIC.search(st.code):
+            reasons.append("runs dynamic SQL (EXECUTE), which can't be checked")
         return reasons
 
     def calls(st):
