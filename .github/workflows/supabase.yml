@@ -22,7 +22,9 @@ jobs:
         with:
           version: latest
       - name: Migrations already on staging are unchanged
-        run: bash supabase/scripts/check-applied-migrations.sh
+        run: |
+          git fetch --no-tags --depth=1 origin main:refs/remotes/origin/main
+          bash supabase/scripts/check-applied-migrations.sh
       - name: Start local Supabase (applies every migration)
         run: supabase db start
       - name: Row-level security and validation tests (pgTAP)

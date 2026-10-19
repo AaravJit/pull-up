@@ -141,11 +141,17 @@ jobs:
         if: inputs.apply && inputs.environment == 'staging'
         run: |
           # Legacy anon/service_role keys if the project has them, else the
-          # newer publishable/secret keys.
-          keys=$(supabase projects api-keys --project-ref "$PROJECT_REF" --reveal -o json)
-          anon=$(jq -r 'first(.[] | select(.name == "anon" or .type == "publishable") | .api_key)' <<<"$keys")
-          service=$(jq -r 'first(.[] | select(.name == "service_role" or .type == "secret") | .api_key)' <<<"$keys")
-          echo "::add-mask::$service"
+          # newer publishable/secret keys. Straight from the Management API:
+          # the CLI this job installs has no way to reveal secret keys.
+          keys=$(curl -fsS -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+            "https://api.supabase.com/v1/projects/$PROJECT_REF/api-keys?reveal=true")
+          service=$(jq -r 'first(.[] | select(.name == "service_role" or .type == "secret") | .api_key) // empty' <<<"$keys")
+          [ -n "$service" ] && echo "::add-mask::$service"
+          anon=$(jq -r 'first(.[] | select(.name == "anon" or .type == "publishable") | .api_key) // empty' <<<"$keys")
+          if [ -z "$anon" ] || [ -z "$service" ]; then
+            echo "::error::Couldn't read the project's API keys with SUPABASE_ACCESS_TOKEN."
+            exit 1
+          fi
           PULLUP_API_TARGET=staging PULLUP_API_URL="https://$PROJECT_REF.supabase.co" \
           PULLUP_API_ANON_KEY="$anon" PULLUP_API_SERVICE_ROLE_KEY="$service" \
             deno test --config supabase/functions/deno.json --allow-env --allow-net supabase/tests/api/
