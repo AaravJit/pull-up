@@ -16,6 +16,7 @@
 // returns message text only if they turned previews on.
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { classify, ProviderTokens, responseReason } from "../_shared/apns.ts";
 import { type PushContent, pushAlert } from "../_shared/push.ts";
 
 function sameSecret(a: string, b: string): boolean {
@@ -27,21 +28,8 @@ function sameSecret(a: string, b: string): boolean {
   return diff === 0;
 }
 
-function base64UrlEncode(bytes: Uint8Array): string {
-  let binary = "";
-  for (const b of bytes) binary += String.fromCharCode(b);
-  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-}
-
-async function providerToken(keyId: string, teamId: string, pem: string): Promise<string> {
-  const der = Uint8Array.from(atob(pem.replace(/-----[^-]+-----/g, "").replace(/\s+/g, "")), (c) => c.charCodeAt(0));
-  const key = await crypto.subtle.importKey("pkcs8", der, { name: "ECDSA", namedCurve: "P-256" }, false, ["sign"]);
-  const enc = new TextEncoder();
-  const header = base64UrlEncode(enc.encode(JSON.stringify({ alg: "ES256", kid: keyId })));
-  const claims = base64UrlEncode(enc.encode(JSON.stringify({ iss: teamId, iat: Math.floor(Date.now() / 1000) })));
-  const signature = await crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, key, enc.encode(`${header}.${claims}`));
-  return `${header}.${claims}.${base64UrlEncode(new Uint8Array(signature))}`;
-}
+// Reused across requests while this worker stays warm (see apns.ts).
+const providerTokens = new ProviderTokens();
 
 Deno.serve(async (req: Request): Promise<Response> => {
   const webhookSecret = Deno.env.get("PUSH_WEBHOOK_SECRET");
@@ -70,7 +58,9 @@ Deno.serve(async (req: Request): Promise<Response> => {
   if (error) return Response.json({ error: "lookup failed" }, { status: 500 });
   const row = (rows as PushContent[] | null)?.[0];
   if (!row) return Response.json({ error: "unknown notification" }, { status: 404 });
-  // Each notification is pushed at most once, so replaying a request does nothing.
+  // Each notification is pushed at most once, so replaying a request does
+  // nothing. A push APNs refuses is logged and not retried; the notification
+  // is still in the app's bell.
   if (row.already_pushed) return Response.json({ sent: 0, duplicate: true });
   const markPushed = () => admin.from("notifications").update({ pushed_at: new Date().toISOString() }).eq("id", id);
   if (!row.allowed) {
@@ -82,9 +72,10 @@ Deno.serve(async (req: Request): Promise<Response> => {
   if (!tokens || tokens.length === 0) return Response.json({ sent: 0 });
 
   const alert = pushAlert(row);
-  const jwt = await providerToken(keyId, teamId, privateKey);
+  const jwt = await providerTokens.token(keyId, teamId, privateKey);
 
   let sent = 0;
+  let failed = 0;
   for (const t of tokens) {
     const host = t.environment === "sandbox" ? "api.sandbox.push.apple.com" : "api.push.apple.com";
     const res = await fetch(`https://${host}/3/device/${t.token}`, {
@@ -99,12 +90,23 @@ Deno.serve(async (req: Request): Promise<Response> => {
         notification_id: id, kind: row.kind, conversation_id: row.conversation_id ?? undefined,
       }),
     });
-    if (res.status === 410) {
-      await admin.from("device_tokens").delete().eq("token", t.token);
-    } else if (res.ok) {
-      sent++;
+    const reason = await responseReason(res);
+    switch (classify(res.status, reason)) {
+      case "sent":
+        sent++;
+        break;
+      case "drop-token":
+        await admin.from("device_tokens").delete().eq("token", t.token);
+        break;
+      case "failed":
+        failed++;
+        // Never the token or the alert text: the reason and environment are
+        // enough to tell a wrong key from an outage.
+        console.error(`APNs ${t.environment} refused a push: ${res.status} ${reason ?? ""}`);
+        if (reason === "ExpiredProviderToken" || reason === "InvalidProviderToken") providerTokens.forget();
+        break;
     }
   }
   await markPushed();
-  return Response.json({ sent });
+  return Response.json({ sent, failed });
 });
