@@ -121,7 +121,7 @@ Pull Up should quote; none have been measured yet.
 
 | ID | Steps | Expected |
 | --- | --- | --- |
-| D3.18 | Pull Up Settings ▸ Protected places ▸ Add a protected place, centred where the drive will start ▸ Save. Pull Up Settings ▸ Privacy: Allow route sharing on, trim at 200 m. Record a keepable drive that starts inside the protected place and ends at least 1 km away. On its summary set "Who can see this drive" to Friends or Public ▸ Save changes ▸ Share trimmed route | The map shows a dashed route (with "Dashed: the trimmed route others can see…") that starts outside the protected place and its 150 m margin, and stops at least 200 m short of where the drive ended. Note the drive's date and time in the result. See [Known gaps](#known-gaps): the other account can't view it in the app |
+| D3.18 | Pull Up Settings ▸ Protected places ▸ Add a protected place, centred where the drive will start ▸ Save. Pull Up Settings ▸ Privacy: Allow route sharing on, trim at 200 m. Record a drive of at least 3 km that starts inside the protected place and ends at least 1 km from it (the server trims the protected place, its margin and up to 450 m at each end, and refuses to share what's left if it's under 200 m). On its summary set "Who can see this drive" to Friends or Public ▸ Save changes ▸ Share trimmed route | The map shows a dashed route (with "Dashed: the trimmed route others can see…") that starts outside the protected place and its 150 m margin, and stops at least 200 m short of where the drive ended. Note the drive's date and time in the result. See [Known gaps](#known-gaps): the other account can't view it in the app |
 
 ## 4. Social and messages (2 accounts)
 
