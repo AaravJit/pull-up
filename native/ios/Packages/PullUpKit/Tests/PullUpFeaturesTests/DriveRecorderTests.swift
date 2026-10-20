@@ -10,6 +10,9 @@ import PullUpLocation
 final class InstantProvider: LocationProvider {
     var permission: LocationPermission
     var grantOnRequest: LocationPermission
+    /// What the temporary Precise Location prompt returns.
+    var fullAccuracyOnRequest: LocationPermission = .reducedAccuracy
+    private(set) var fullAccuracyRequests = 0
     private(set) var startCount = 0
     private(set) var stopCount = 0
     let speeds: [Double]
@@ -29,6 +32,12 @@ final class InstantProvider: LocationProvider {
 
     func requestPermission() async -> LocationPermission {
         permission = grantOnRequest
+        return permission
+    }
+
+    func requestFullAccuracy() async -> LocationPermission {
+        fullAccuracyRequests += 1
+        permission = fullAccuracyOnRequest
         return permission
     }
 
@@ -204,7 +213,19 @@ struct DriveRecorderTests {
         let provider = InstantProvider(permission: .reducedAccuracy, speeds: RecorderHarness.drive)
         let h = await RecorderHarness(provider: provider)
         #expect(await h.recorder.start(with: nil) == .reducedAccuracy)
+        #expect(provider.fullAccuracyRequests == 1)
         #expect(provider.startCount == 0)
+    }
+
+    /// Precise Location off, then allowed for this drive at the prompt.
+    @Test func preciseLocationCanBeAllowedForTheDrive() async throws {
+        let provider = InstantProvider(permission: .reducedAccuracy, speeds: RecorderHarness.drive)
+        provider.fullAccuracyOnRequest = .authorized
+        let h = await RecorderHarness(provider: provider)
+        #expect(await h.recorder.start(with: nil) == nil)
+        #expect(provider.fullAccuracyRequests == 1)
+        #expect(provider.startCount == 1)
+        await h.recorder.discard()
     }
 
     @Test func tooShortDrivesAreNotSaved() async throws {

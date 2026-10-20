@@ -57,10 +57,17 @@ public protocol LocationProvider: AnyObject {
     var permission: LocationPermission { get }
     /// Asks for When-In-Use permission if undecided. Returns the outcome.
     func requestPermission() async -> LocationPermission
+    /// With Precise Location off, asks iOS for precise location for this
+    /// drive (the temporary full-accuracy prompt). Returns the outcome.
+    func requestFullAccuracy() async -> LocationPermission
     /// Starts updates. Background continuation is requested only here, i.e.
     /// only while the user is actively recording a drive.
     func start() -> AsyncStream<LocationEvent>
     func stop()
+}
+
+public extension LocationProvider {
+    func requestFullAccuracy() async -> LocationPermission { permission }
 }
 
 /// Replays a stored track in real time with timestamps re-based to "now".
