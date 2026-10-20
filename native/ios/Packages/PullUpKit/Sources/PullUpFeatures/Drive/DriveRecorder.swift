@@ -257,7 +257,12 @@ public final class DriveRecorder {
         case let .stationary(still):
             engine.noteStationary(still)
             self.engine = engine
-            if still { draft?.stationaryPauses = (draft?.stationaryPauses ?? []) + [Date()] }
+            if still {
+                // Read before writing: `draft?.x = …draft…` would read the
+                // property while the write's access is open, and crash.
+                let pauses = (draft?.stationaryPauses ?? []) + [Date()]
+                draft?.stationaryPauses = pauses
+            }
             isStationary = still
             refreshLive()
         case .unavailable:
