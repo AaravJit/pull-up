@@ -157,6 +157,7 @@ public final class DriveRecorder {
         let provider = makeProvider()
         var permission = provider.permission
         if permission == .notDetermined { permission = await provider.requestPermission() }
+        if permission == .reducedAccuracy { permission = await provider.requestFullAccuracy() }
         switch permission {
         case .authorized: break
         case .notDetermined, .denied:

@@ -80,8 +80,10 @@ Hold to stop ──► DriveRecorder.finish()
 * `CLLocationUpdate.liveUpdates(.automotiveNavigation)` provides fixes. A
   `CLBackgroundActivitySession` exists only while recording, so recording
   continues in the background with When-In-Use permission (the blue pill
-  shows) and Always is never requested. `CLServiceSession` with a temporary
-  full-accuracy purpose key asks for Precise Location if it was turned off.
+  shows) and Always is never requested. If Precise Location is off, Start
+  Drive first shows iOS's temporary full-accuracy prompt and refuses to
+  record only if it is declined; `CLServiceSession` holds the same purpose
+  key while recording.
 * `.stationary` events (iOS pausing updates at a light) are rendered as a
   known zero speed, not as signal loss.
 * Drives under 30 clean fixes or 200 m are discarded with an explanation;
