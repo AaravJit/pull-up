@@ -218,7 +218,7 @@ public final class DriveRecorder {
         isLowPowerMode = ProcessInfo.processInfo.isLowPowerModeEnabled
         if now.timeIntervalSince(draft.startedAt) >= Self.maximumDuration {
             interruption = "Recording stopped on its own after almost 24 hours, the longest drive Pull Up keeps. Start a new drive to keep going."
-            Task { await self.finish() }
+            Task { await self.finish(now: now) }
             return
         }
         if flush, unsavedSamples > 0 { Task { await self.persistDraft() } }
@@ -294,7 +294,7 @@ public final class DriveRecorder {
     /// Stops recording and produces the summary. Uploads when worth keeping;
     /// otherwise discards the local copy.
     @discardableResult
-    public func finish() async -> FinishedDrive? {
+    public func finish(now: Date = .now) async -> FinishedDrive? {
         guard phase == .recording, let engine, var draft else { return nil }
         phase = .finishing
         streamTask?.cancel()
@@ -302,7 +302,9 @@ public final class DriveRecorder {
         provider?.stop()
         provider = nil
 
-        let end = Date()
+        // iOS can suspend the app past the limit before the tick that stops
+        // it runs; the server would then refuse the drive outright.
+        let end = min(now, draft.startedAt.addingTimeInterval(Self.maximumDuration))
         draft.endedAt = end
         let summary = engine.summary(endedAt: end)
         var result = FinishedDrive(

@@ -36,6 +36,7 @@ declare
   anchor_lon double precision;
   anchor_hacc double precision;
   from_anchor double precision;
+  err double precision;
   seg double precision;
   dt double precision;
   max_doppler double precision := 0;
@@ -89,25 +90,28 @@ begin
         end if;
         -- Lower bound: hop from fix to fix once they are well apart, and
         -- credit each hop less both fixes' accuracy radii, which is the
-        -- least the car can have moved between them. A step the app's own
-        -- jump check rejects (faster than 120 m/s, or further than the
-        -- Doppler speeds allow) is where it relocked and added nothing, so
-        -- the bound restarts from there instead of spanning it.
+        -- least the car can have moved between them. Radii are clamped to
+        -- 0–35 m, the most the app accepts, so an inflated accuracy in the
+        -- upload can't wipe the bound out. A step the app's own jump check
+        -- rejects (faster than 120 m/s, or further than the Doppler speeds
+        -- allow) is where it relocked and added nothing, so the bound
+        -- restarts from there instead of spanning it.
+        err := least(greatest(coalesce(rec.hacc, 0), 0), 35);
         if seg / dt > 120
            or (coalesce(prev_spd, -1) >= 0 and coalesce(prev_sacc, -1) >= 0
                and coalesce(rec.spd, -1) >= 0 and coalesce(rec.sacc, -1) >= 0 and dt <= 5
                and seg > (greatest(prev_spd + prev_sacc, rec.spd + rec.sacc) + 2) * dt
-                         + coalesce(prev_hacc, 0) + coalesce(rec.hacc, 0)) then
+                         + prev_hacc + err) then
           anchor_lat := rec.lat;
           anchor_lon := rec.lon;
-          anchor_hacc := rec.hacc;
+          anchor_hacc := err;
         else
           from_anchor := public.haversine_m(anchor_lat, anchor_lon, rec.lat, rec.lon);
-          if from_anchor > greatest(5, 2 * (coalesce(anchor_hacc, 0) + coalesce(rec.hacc, 0))) then
-            low_dist := low_dist + from_anchor - coalesce(anchor_hacc, 0) - coalesce(rec.hacc, 0);
+          if from_anchor > greatest(5, 2 * (anchor_hacc + err)) then
+            low_dist := low_dist + from_anchor - anchor_hacc - err;
             anchor_lat := rec.lat;
             anchor_lon := rec.lon;
-            anchor_hacc := rec.hacc;
+            anchor_hacc := err;
           end if;
         end if;
       end if;
@@ -115,14 +119,14 @@ begin
     if prev_t is null then
       anchor_lat := rec.lat;
       anchor_lon := rec.lon;
-      anchor_hacc := rec.hacc;
+      anchor_hacc := least(greatest(coalesce(rec.hacc, 0), 0), 35);
     end if;
     prev_t := rec.t;
     prev_lat := rec.lat;
     prev_lon := rec.lon;
     prev_spd := rec.spd;
     prev_sacc := rec.sacc;
-    prev_hacc := rec.hacc;
+    prev_hacc := least(greatest(coalesce(rec.hacc, 0), 0), 35);
   end loop;
 
   duration := coalesce(prev_t, 0);

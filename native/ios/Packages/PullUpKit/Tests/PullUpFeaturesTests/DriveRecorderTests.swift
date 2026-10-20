@@ -298,6 +298,19 @@ struct DriveRecorderTests {
         #expect(h.recorder.interruption != nil)
         #expect(h.recorder.lastResult?.upload == .uploaded)
     }
+
+    /// The app was suspended past the limit, so the stopping tick runs late.
+    @Test func lateStopEndsTheDriveWithinTheLimit() async throws {
+        let h = await RecorderHarness()
+        _ = await h.recorder.start(with: nil)
+        try await h.drain(expecting: RecorderHarness.drive.count)
+        let started = try #require(h.recorder.startedAt)
+        h.recorder.tick(flush: false, now: started.addingTimeInterval(25 * 3600))
+        for _ in 0..<200 where h.recorder.phase != .idle { try await Task.sleep(for: .milliseconds(10)) }
+        let result = try #require(h.recorder.lastResult)
+        #expect(result.summary.endedAt.timeIntervalSince(started) <= DriveRecorder.maximumDuration)
+        #expect(result.upload == .uploaded)
+    }
 }
 
 @MainActor

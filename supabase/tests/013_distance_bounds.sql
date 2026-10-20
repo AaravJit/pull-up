@@ -3,7 +3,7 @@
 
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(8);
+select plan(10);
 
 insert into auth.users (id, email, raw_user_meta_data) values
   ('db000000-0000-0000-0000-00000000000a', 'bounds-ann@example.com', '{"username":"bounds_ann"}');
@@ -18,22 +18,25 @@ end $$;
 -- 300 fixes crawling north at 3 m/s (~898 m) with ±6 m sideways GPS
 -- jitter and 8–10 m accuracy. The raw sum of segments is ~3750 m. With a
 -- jump, fixes from #150 on are 556 m further north and `jump_s` later:
--- where the app relocked and added no distance.
-create or replace function pg_temp.crawl(jump boolean default false, jump_s int default 0) returns jsonb language sql as $$
+-- where the app relocked and added no distance. `wide` claims ~5 km
+-- accuracy on every fix.
+create or replace function pg_temp.crawl(jump boolean default false, jump_s int default 0, wide boolean default false)
+returns jsonb language sql as $$
   select jsonb_agg(jsonb_build_array(
     i + case when jump and i >= 150 then jump_s else 0 end,
     38.58 + i * 0.000027 + case when jump and i >= 150 then 0.005 else 0 end,
     -121.49 + case when i % 2 = 1 then 0.00007 else -0.00007 end,
-    20 + sin(i), 3, 8 + (i % 3), 4, 0.5) order by i)
+    20 + sin(i), 3, case when wide then 5000 else 8 end + (i % 3), 4, 0.5) order by i)
   from generate_series(0, 299) as i;
 $$;
 
 create or replace function pg_temp.drive(p_id uuid, hours_ago int, distance double precision,
-                                         jump boolean default false, jump_s int default 0) returns void language sql as $$
+                                         jump boolean default false, jump_s int default 0, wide boolean default false)
+returns void language sql as $$
   insert into public.drives (id, owner_id, started_at, ended_at, distance_m, moving_s, stopped_s, elapsed_s, top_speed_mps)
   values (p_id, auth.uid(), now() - make_interval(hours => hours_ago),
           now() - make_interval(hours => hours_ago) + interval '299 seconds', distance, 299, 0, 299, 3);
-  insert into public.drive_tracks (drive_id, owner_id, points) values (p_id, auth.uid(), pg_temp.crawl(jump, jump_s));
+  insert into public.drive_tracks (drive_id, owner_id, points) values (p_id, auth.uid(), pg_temp.crawl(jump, jump_s, wide));
 $$;
 
 select pg_temp.act_as('db000000-0000-0000-0000-00000000000a');
@@ -68,6 +71,13 @@ select is((select validation_status from public.drives where id = 'db100000-0000
 select pg_temp.drive('db100000-0000-0000-0000-000000000005', 10, 898, true, 4);
 select is((select validation_status from public.drives where id = 'db100000-0000-0000-0000-000000000005'), 'validated',
   'a Doppler-implausible jump the app relocked across does not raise the lower bound');
+
+-- 9–10: inflated accuracy in the upload can't erase the lower bound.
+select pg_temp.drive('db100000-0000-0000-0000-000000000006', 12, 0, false, 0, true);
+select is((select validation_status from public.drives where id = 'db100000-0000-0000-0000-000000000006'), 'rejected',
+  'a zero distance with ~5 km claimed accuracy is still rejected');
+select ok((select validation_notes @> array['distance_mismatch'] from public.drives where id = 'db100000-0000-0000-0000-000000000006'),
+  'accuracy is capped at the app''s 35 m limit for the bound');
 
 select * from finish();
 rollback;
