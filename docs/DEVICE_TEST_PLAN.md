@@ -80,7 +80,7 @@ compared. Write down trip-meter distance at start and end.
 | D3.10 | Answer a phone call mid-drive, then return | Recording continued |
 | D3.11 | Open another app (Maps, music) for 5 minutes mid-drive | Recording continued; blue indicator stayed |
 | D3.12 | Force-quit Pull Up mid-drive (swipe up in the app switcher), reopen within 15 minutes | iOS stops recording when the user force-quits; Apple doesn't allow an app to prevent that. On reopening, the drive resumes with a "picked it up again" notice, and the summary shows the closed time as a gap |
-| D3.13 | Force-quit mid-drive and reopen after more than 15 minutes | The drive is finished at its last fix and uploaded; a "recovered" notice explains it |
+| D3.13 | Drive at least 200 m and 30 seconds, force-quit, and reopen after more than 15 minutes | The drive is finished at its last fix and uploaded; a "recovered" notice explains it |
 | D3.14 | Restart the phone mid-drive, reopen | Same as D3.12 or D3.13, depending on the time |
 | D3.15 | Airplane mode for the whole drive | Drive saved on the phone ("saved offline"); uploads by itself when the connection is back and the app is opened |
 | D3.16 | Drive while the phone has no signal at the end, then reconnect | Same as D3.15 |
@@ -103,7 +103,11 @@ quote; none have been measured yet.
 | D4.4 | B leaves the app in the background for 10 minutes while A sends | On return to the foreground the chat and unread count are up to date |
 | D4.5 | A shares a vehicle, drive and post with B; A then makes them private | B's chat shows them as unavailable |
 | D4.6 | Someone A doesn't follow messages A | Lands in Requests; sender can send at most three messages until accepted |
-| D4.7 | Block, report, unsend, reactions, read receipts | As in the app's help text; blocked user can't message or see the profile |
+| D4.7a | A reacts 🔥 to B's message, then taps 🔥 again | The reaction appears for both, then disappears for both |
+| D4.7b | A unsends one of A's own messages | Both see a placeholder saying it was unsent; the text is gone |
+| D4.7c | B turns off read receipts in Privacy | A no longer sees when B read messages, and B no longer sees when A read them |
+| D4.7d | A reports B from the chat | "Thanks for reporting" appears; B isn't told; a row appears in staging's `reports` table |
+| D4.7e | A blocks B | The chat leaves A's inbox; B can't start a chat with A or see A's profile |
 | D4.8 | Photo in a message, then check the stored file's metadata | No GPS location in the stored photo |
 | D4.9 | No demo profiles anywhere | Only real accounts appear in feed, search, meets and leaderboards |
 
@@ -132,7 +136,7 @@ then.
 | --- | --- | --- |
 | D6.1 | Buy monthly with a sandbox account | Pro unlocks after the server confirms with Apple |
 | D6.2 | Delete and reinstall, Restore Purchases | Pro returns |
-| D6.3 | Sign in to a second Pull Up account on the same phone | Pro does not carry over ("belongs to a different account") |
+| D6.3 | Sign in to a second Pull Up account on the same phone, then tap Restore Purchases | Pro is off for the second account; Restore says the purchase belongs to a different account |
 | D6.4 | Let the sandbox subscription lapse | Pro ends |
 | D6.5 | Ask to Buy (sandbox child account) | Pending state, then Pro once approved |
 
