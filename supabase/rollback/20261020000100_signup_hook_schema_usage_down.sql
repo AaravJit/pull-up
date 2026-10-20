@@ -1,0 +1,4 @@
+-- Reverts 20261020000100_signup_hook_schema_usage.sql: deliberately nothing.
+-- supabase_auth_admin needs USAGE on schema public for Supabase Auth itself,
+-- and a REVOKE here would also remove a grant the platform may have made, so
+-- the grant stays. No data involved.

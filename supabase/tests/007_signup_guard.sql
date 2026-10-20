@@ -4,7 +4,7 @@
 
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(5);
+select plan(6);
 
 select is(
   public.hook_before_user_created('{"user":{"app_metadata":{"provider":"email","providers":["email"]}}}') -> 'error' ->> 'http_code',
@@ -22,6 +22,9 @@ select ok(
 select ok(
   has_function_privilege('supabase_auth_admin', 'public.hook_before_user_created(jsonb)', 'execute'),
   'Supabase Auth can call the hook');
+select ok(
+  has_schema_privilege('supabase_auth_admin', 'public', 'usage'),
+  'Supabase Auth can reach the schema the hook is in');
 
 select * from finish();
 rollback;
