@@ -37,8 +37,7 @@ Also re-checked:
 * **SEC-01 to SEC-06** are still fixed on `main`; their tests in `006` pass.
 * **SEC-07** (exports on disk) has no automated test; G9's test now covers
   their removal, not their file protection.
-* **R-4** (no `verify-subscription` rate limit) is fixed on the M5 branch
-  (PR #7), not on `main` yet.
+* **R-4** (no `verify-subscription` rate limit) is fixed on `main` (PR #7).
 * **Row-argument counts, confirmed and fixed.** `like_count`,
   `comment_count`, `going_count` and `interested_count` returned the counts
   of a post or meet the caller can't see when given a made-up row with its
@@ -90,7 +89,7 @@ hardening or jailbreak resistance, and load testing. See "Still to do".
 | R-1 | Accepted | Direct messages are not end-to-end encrypted | Design | Disclosed in the app |
 | R-2 | Accepted | A modified client can show Pro looks locally | Design | Server holds the truth |
 | R-3 | Residual | `app-store-notifications` is a public URL that can make the server call Apple | Design | Validated; quota risk |
-| R-4 | Residual | No per-user rate limit on `verify-subscription` | M3 | Add before launch |
+| R-4 | Low | No per-user rate limit on `verify-subscription` | M3 | Fixed in Phase 3 M5: 10 a minute, 60 an hour per account (migration `20261018000200`) |
 
 ## Findings
 
@@ -195,9 +194,9 @@ and each new export replaces the previous one. Not verified on a device.
   rather than trusting the payload. Since the Phase 3 re-check (G8) it
   also verifies the JWS certificate chain and signature first, so only
   Apple-signed notifications reach the App Store Server API.
-* **R-4 Rate limits on edge functions.** `verify-subscription` has no
-  per-user limit. Add one (for example 10 calls per user per hour, in a
-  table) before launch.
+* **R-4 Rate limits on edge functions.** Since Phase 3 M5 (PR #7),
+  `verify-subscription` allows 10 calls a minute and 60 an hour per account
+  and answers 429 beyond that without contacting Apple.
 * **Unbound purchases are refused.** A transaction without the user's id as
   `appAccountToken` never grants Pro, so one Apple subscription can't be
   shared across accounts.
@@ -230,7 +229,6 @@ and each new export replaces the previous one. Not verified on a device.
   fixes, see docs/STAGING_DEPLOYMENT.md).
 * On a device: confirm the session is in the Keychain, exported files are
   protected while locked, and pushes show no message text by default.
-* Merge the `verify-subscription` rate limit (R-4, PR #7).
 * Check G8 against a real App Store Server Notification (Apple's TEST
   notification once the App Store secrets are on staging).
 * On a device: post a video filmed with location on and check the uploaded

@@ -238,6 +238,15 @@ public final class AppModel {
         if let counts = try? await backend.unreadMessages() { unreadMessages = counts }
     }
 
+    /// Back in the foreground: anything that arrived while the app was
+    /// suspended or offline wasn't heard over realtime, so open screens
+    /// reload and the unread counts are fetched again.
+    func catchUpMessages() async {
+        guard case .signedIn = phase else { return }
+        messagingPulse = MessagingPulse(count: messagingPulse.count + 1, conversationID: nil)
+        await refreshMessages()
+    }
+
     /// Called by onboarding once the server has marked it complete.
     func finishOnboarding() async {
         guard case let .onboarding(user) = phase else { return }
