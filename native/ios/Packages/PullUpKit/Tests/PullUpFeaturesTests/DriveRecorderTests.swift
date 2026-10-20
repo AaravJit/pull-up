@@ -268,6 +268,52 @@ struct DriveRecorderTests {
         #expect(try await backend.drives(owner: me, limit: 50).count == before + 1)
     }
 
+    /// Relaunched offline: the garage hasn't loaded, but the drive still
+    /// knows its vehicle instead of turning into a guest drive.
+    @Test func resumedOfflineDriveKeepsItsVehicle() async throws {
+        let suite = "recorder-tests-\(UUID().uuidString)"
+        let backend = DemoBackend()
+        let first = await RecorderHarness(backend: backend, suite: suite)
+        let me = try #require(await backend.currentUserID())
+        let vehicle = try #require(try await backend.vehicles(owner: me).first)
+        _ = await first.recorder.start(with: vehicle)
+        try await first.drain(expecting: RecorderHarness.drive.count)
+        await first.recorder.flush()
+
+        let relaunched = await RecorderHarness(
+            backend: backend, provider: InstantProvider(speeds: RecorderHarness.drive, startOffset: 120), suite: suite
+        )
+        await relaunched.recorder.recoverInterrupted(vehicles: [])
+        #expect(relaunched.recorder.phase == .recording)
+        #expect(relaunched.recorder.vehicle?.id == vehicle.id)
+        await relaunched.recorder.discard()
+    }
+
+    /// Closed after iOS delivered fixes past the limit: the recovered drive
+    /// ends at the limit, so the server accepts it.
+    @Test func recoveredDrivePastTheLimitIsCapped() async throws {
+        let suite = "recorder-tests-\(UUID().uuidString)"
+        let backend = DemoBackend()
+        let first = await RecorderHarness(
+            backend: backend,
+            provider: InstantProvider(speeds: RecorderHarness.drive, startOffset: DriveRecorder.maximumDuration - 40),
+            suite: suite
+        )
+        let me = try #require(await backend.currentUserID())
+        _ = await first.recorder.start(with: nil)
+        try await first.drain(expecting: RecorderHarness.drive.count)
+        await first.recorder.flush()
+        let started = try #require(first.recorder.startedAt)
+        let before = Set(try await backend.drives(owner: me, limit: 50).map(\.id))
+
+        let relaunched = await RecorderHarness(backend: backend, suite: suite)
+        await relaunched.recorder.recoverInterrupted(now: started.addingTimeInterval(25 * 3600))
+        #expect(relaunched.recorder.phase == .idle)
+        #expect(relaunched.recorder.pendingUploads == 0)
+        let uploaded = try #require(try await backend.drives(owner: me, limit: 50).first { !before.contains($0.id) })
+        #expect(uploaded.endedAt.timeIntervalSince(started) <= DriveRecorder.maximumDuration + 0.001)
+    }
+
     /// Precise location was turned off while the app wasn't running.
     @Test func interruptedDriveIsNotResumedWithoutPermission() async throws {
         let suite = "recorder-tests-\(UUID().uuidString)"

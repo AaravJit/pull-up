@@ -172,11 +172,9 @@ public final class DriveRecorder {
         let now = Date()
         remember(vehicle)
         resumedDrive = nil
-        begin(
-            provider: provider, vehicle: vehicle,
-            draft: DriveDraft(ownerID: ownerID, vehicleID: vehicle?.id, startedAt: now, title: Drive.defaultTitle(startedAt: now)),
-            engine: TelemetryEngine(startedAt: now)
-        )
+        var draft = DriveDraft(ownerID: ownerID, vehicleID: vehicle?.id, startedAt: now, title: Drive.defaultTitle(startedAt: now))
+        draft.vehicle = vehicle
+        begin(provider: provider, vehicle: vehicle, draft: draft, engine: TelemetryEngine(startedAt: now))
         await persistDraft()
         return nil
     }
@@ -304,11 +302,8 @@ public final class DriveRecorder {
 
         // iOS can suspend the app past the limit before the tick that stops
         // it runs; the server would then refuse the drive outright.
-        let end = min(now, draft.startedAt.addingTimeInterval(Self.maximumDuration))
-        if draft.samples.contains(where: { $0.timestamp > end }) {
-            // Fixes delivered after the limit don't belong to this drive.
-            draft.samples.removeAll { $0.timestamp > end }
-            draft.stationaryPauses?.removeAll { $0 > end }
+        let end = min(now, Self.limit(of: draft))
+        if Self.trim(&draft, after: end) {
             engine = TelemetryEngine.replay(draft.samples, startedAt: draft.startedAt, stationaryPauses: draft.stationaryPauses ?? [])
         }
         draft.endedAt = end
@@ -375,6 +370,21 @@ public final class DriveRecorder {
         summary.acceptedSamples >= minimumSamples && summary.distanceMeters >= minimumDistance
     }
 
+    /// The latest a drive may end: the server refuses drives over 24 hours.
+    static func limit(of draft: DriveDraft) -> Date {
+        draft.startedAt.addingTimeInterval(maximumDuration)
+    }
+
+    /// Drops fixes and pauses after `end`, which don't belong to the drive
+    /// (iOS delivered them after the limit). Returns whether any were dropped.
+    @discardableResult
+    static func trim(_ draft: inout DriveDraft, after end: Date) -> Bool {
+        guard draft.samples.contains(where: { $0.timestamp > end }) else { return false }
+        draft.samples.removeAll { $0.timestamp > end }
+        draft.stationaryPauses?.removeAll { $0 > end }
+        return true
+    }
+
     static func makeDrive(from draft: DriveDraft, summary: DriveSummary) -> Drive {
         Drive(
             id: draft.id, ownerID: draft.ownerID ?? UUID(), vehicleID: draft.vehicleID,
@@ -399,8 +409,13 @@ public final class DriveRecorder {
     /// Uploads finished drives that couldn't be sent earlier.
     public func syncPending() async {
         guard let ownerID, phase == .idle else { return }
-        for draft in await store.pendingUploads() where draft.ownerID == ownerID {
-            guard let end = draft.endedAt else { continue }
+        for var draft in await store.pendingUploads() where draft.ownerID == ownerID {
+            guard let recorded = draft.endedAt else { continue }
+            // Drafts finished past the limit (by older builds) would be
+            // refused by the server forever.
+            let end = min(recorded, Self.limit(of: draft))
+            Self.trim(&draft, after: end)
+            draft.endedAt = end
             let engine = TelemetryEngine.replay(draft.samples, startedAt: draft.startedAt, stationaryPauses: draft.stationaryPauses ?? [])
             let summary = engine.summary(endedAt: end)
             guard Self.isWorthKeeping(summary) else {
@@ -434,12 +449,15 @@ public final class DriveRecorder {
                 engine.noteInterruption()
                 draft.samples = engine.accepted
                 resumedDrive = draft.startedAt
-                begin(provider: provider, vehicle: vehicles.first { $0.id == draft.vehicleID }, draft: draft, engine: engine)
+                let vehicle = vehicles.first { $0.id == draft.vehicleID } ?? draft.vehicle
+                begin(provider: provider, vehicle: vehicle, draft: draft, engine: engine)
                 await persistDraft()
                 return
             }
         }
-        draft.endedAt = lastFix
+        let end = min(lastFix, Self.limit(of: draft))
+        Self.trim(&draft, after: end)
+        draft.endedAt = end
         try? await store.save(draft)
         recoveredDrive = draft.startedAt
         await syncPending()
