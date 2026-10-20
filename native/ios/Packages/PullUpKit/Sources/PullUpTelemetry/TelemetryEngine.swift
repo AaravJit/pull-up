@@ -213,6 +213,11 @@ public struct TelemetryEngine: Sendable {
             minAltitude = nil
             maxAltitude = nil
             last = nil
+        } else {
+            // The jump's change in altitude is as unknown as its path: keep
+            // what was climbed so far, but measure from a fresh baseline.
+            smoothedAltitude = nil
+            elevationBaseline = nil
         }
         for (index, fix) in cluster.enumerated() {
             accept(fix, continuing: index > 0)

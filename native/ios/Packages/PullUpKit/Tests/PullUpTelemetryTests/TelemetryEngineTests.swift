@@ -91,6 +91,22 @@ struct TelemetryEngineTests {
         #expect((summary.averageMovingSpeed ?? .infinity) <= 10.5)
     }
 
+    @Test func relockMidDriveAddsNoClimb() {
+        // 20 s at 20 m/s and 100 m up, then every fix lands 2 km further on
+        // and 100 m higher. The engine relocks there; the unknown jump adds
+        // neither distance nor climb.
+        var samples = factory.samples(speeds: [Double](repeating: 20, count: 40), altitudes: [Double](repeating: 100, count: 40))
+        for i in 20..<40 {
+            samples[i].latitude += 2000 / TrackFactory.metersPerDegreeLatitude
+            samples[i].altitude = 200
+        }
+        let engine = TelemetryEngine.replay(samples, startedAt: factory.start)
+        let summary = engine.summary(endedAt: factory.start.addingTimeInterval(39))
+        #expect(engine.relocks == 1)
+        #expect(summary.elevationGain < 1)
+        #expect(summary.distanceMeters < 800)
+    }
+
     @Test func poorAccuracyFixesAreRejected() {
         var samples = factory.samples(speeds: [Double](repeating: 10, count: 10))
         samples[3].horizontalAccuracy = 65 // Wi-Fi fix
