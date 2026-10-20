@@ -9,6 +9,7 @@ public struct GarageView: View {
     @State private var filter: Filter = .all
     @State private var adding = false
     @State private var arranging = false
+    @State private var findingParts = false
 
     enum Filter: String, CaseIterable, Identifiable {
         case all, cars, motorcycles
@@ -37,6 +38,7 @@ public struct GarageView: View {
                             Button("Add vehicle", systemImage: "plus") { adding = true }
                             Button("Arrange", systemImage: "arrow.up.arrow.down") { arranging = true }
                                 .disabled(app.garage.active.count < 2)
+                            Button("Find parts", systemImage: "wrench.and.screwdriver") { findingParts = true }
                         } label: {
                             Image(systemName: "plus")
                                 .font(.system(size: 18, weight: .semibold))
@@ -58,6 +60,7 @@ public struct GarageView: View {
             .refreshable { await app.garage.reload() }
             .toolbar(.hidden, for: .navigationBar)
             .navigationDestination(for: Vehicle.ID.self) { id in VehicleDetailView(vehicleID: id) }
+            .navigationDestination(isPresented: $findingParts) { PartsFinderView(vehicle: app.garage.active.first) }
             .sheet(isPresented: $adding) { VehicleEditorView(vehicle: nil) }
             .sheet(isPresented: $arranging) { ArrangeGarageView() }
         }

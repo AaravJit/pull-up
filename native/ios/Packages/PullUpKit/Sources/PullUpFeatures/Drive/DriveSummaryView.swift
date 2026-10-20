@@ -180,6 +180,7 @@ struct DriveSummaryView: View {
         let points = SeriesDownsampler.downsample(result.speedSeries, maxPoints: 320)
         let top = drive.topSpeed.map { unit.speed(fromMetersPerSecond: $0) }
         let hasAltitude = points.contains { $0.altitude != nil }
+        let peak = points.map { unit.speed(fromMetersPerSecond: $0.speed) }.max() ?? 0
         return VStack(alignment: .leading, spacing: Space.m) {
             SectionHeader("Speed")
             Chart {
@@ -216,6 +217,14 @@ struct DriveSummaryView: View {
             .frame(height: 180)
             .accessibilityLabel("Speed over time")
             .accessibilityValue("Top speed \(Format.speed(drive.topSpeed, unit)) \(unit.label)")
+            if let top, peak > top + 0.5 {
+                // The line is every reading; top speed is a median of three,
+                // so a single spike can sit above it.
+                Text("The line shows every GPS reading. Top speed takes the middle of every three readings in a row, so one brief spike can sit above it.")
+                    .font(ClusterFont.body(.caption))
+                    .foregroundStyle(ClusterColor.inkTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
 
             if hasAltitude {
                 SectionHeader("Elevation")

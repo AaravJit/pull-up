@@ -53,6 +53,19 @@ final class PullUpUITests: XCTestCase {
         settle()
     }
 
+    /// Taps Start Drive and waits for `shown` in the picker. A loaded CI
+    /// simulator sometimes drops the tap or takes seconds to present the
+    /// sheet, so this waits longer and taps once more if the button is
+    /// still on screen.
+    @discardableResult
+    private func openPicker(_ app: XCUIApplication, until shown: XCUIElement) -> Bool {
+        let start = app.buttons["start-drive"]
+        start.tap()
+        if shown.waitForExistence(timeout: 10) { return true }
+        if start.isHittable { start.tap() }
+        return shown.waitForExistence(timeout: 10)
+    }
+
     // MARK: Journeys
 
     /// Start Drive → pick a vehicle → record → stop → summary, then check the
@@ -65,9 +78,8 @@ final class PullUpUITests: XCTestCase {
         settle(1.5)
         snap("01-drive-home")
 
-        start.tap()
         let confirm = app.buttons["picker-confirm"]
-        XCTAssertTrue(confirm.waitForExistence(timeout: 5))
+        XCTAssertTrue(openPicker(app, until: confirm))
         settle()
         XCTAssertFalse(element(app, "live-dashboard").exists, "Opening the picker must not start recording")
         snap("02-picker")
@@ -174,16 +186,14 @@ final class PullUpUITests: XCTestCase {
         let app = launch()
         let start = app.buttons["start-drive"]
         XCTAssertTrue(start.waitForExistence(timeout: 10))
-        start.tap()
-        XCTAssertTrue(app.buttons["picker-close"].waitForExistence(timeout: 5))
+        XCTAssertTrue(openPicker(app, until: app.buttons["picker-close"]))
         app.buttons["picker-close"].tap()
         settle()
         XCTAssertFalse(element(app, "live-dashboard").exists)
         XCTAssertTrue(start.isHittable)
 
-        start.tap()
         let picker = element(app, "start-drive-picker")
-        XCTAssertTrue(picker.waitForExistence(timeout: 5))
+        XCTAssertTrue(openPicker(app, until: picker))
         picker.swipeDown(velocity: .fast)
         settle()
         XCTAssertFalse(app.buttons["picker-confirm"].exists)
@@ -194,8 +204,7 @@ final class PullUpUITests: XCTestCase {
         let app = launch(["-PullUpEmptyGarage"])
         let start = app.buttons["start-drive"]
         XCTAssertTrue(start.waitForExistence(timeout: 10))
-        start.tap()
-        if !app.buttons["picker-add-vehicle"].waitForExistence(timeout: 5) { snap("debug-empty-picker") }
+        if !openPicker(app, until: app.buttons["picker-add-vehicle"]) { snap("debug-empty-picker") }
         XCTAssertTrue(app.buttons["picker-add-vehicle"].exists)
         XCTAssertTrue(app.buttons["picker-start-guest"].exists)
         settle()
@@ -211,8 +220,7 @@ final class PullUpUITests: XCTestCase {
         XCTAssertTrue(app.buttons["start-drive"].waitForExistence(timeout: 10))
         settle(1.5)
         snap("23-drive-dark")
-        app.buttons["start-drive"].tap()
-        XCTAssertTrue(app.buttons["picker-confirm"].waitForExistence(timeout: 5))
+        XCTAssertTrue(openPicker(app, until: app.buttons["picker-confirm"]))
         settle()
         snap("24-picker-dark")
         app.buttons["picker-close"].tap()
@@ -228,8 +236,7 @@ final class PullUpUITests: XCTestCase {
         let app = launch(["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityL"])
         let start = app.buttons["start-drive"]
         XCTAssertTrue(start.waitForExistence(timeout: 10))
-        start.tap()
-        XCTAssertTrue(app.buttons["vehicle-choice-guest"].waitForExistence(timeout: 5))
+        XCTAssertTrue(openPicker(app, until: app.buttons["vehicle-choice-guest"]))
         XCTAssertFalse(element(app, "vehicle-carousel").exists)
         settle()
         snap("27-picker-accessibility-text")
@@ -428,12 +435,32 @@ final class PullUpUITests: XCTestCase {
         let search = app.buttons["parts-search"]
         XCTAssertTrue(search.waitForExistence(timeout: 5))
         XCTAssertFalse(search.isEnabled, "Nothing to search until a part is named")
-        app.buttons["Brake pads"].tap()
+        XCTAssertEqual(element(app, "parts-model").value as? String, "GSX-R750", "the garage vehicle is filled in")
+        let pads = app.buttons["Brake pads"]
+        if !pads.isHittable { app.swipeUp() }
+        pads.tap()
         let preview = element(app, "parts-preview")
         XCTAssertTrue(preview.label.contains("2001 Suzuki GSX-R750 K1 Brake pads"), "Preview shows \(preview.label)")
+        XCTAssertTrue(element(app, "parts-fitment").exists, "the fitment caveat is shown with every search")
         XCTAssertTrue(search.isEnabled)
         settle()
         snap("45-parts-finder")
+
+        // A part number is searched on its own, without the vehicle.
+        app.swipeDown()
+        let numberMode = app.buttons.matching(NSPredicate(format: "label ==[c] %@", "Part number")).firstMatch
+        XCTAssertTrue(numberMode.waitForExistence(timeout: 5))
+        numberMode.tap()
+        XCTAssertFalse(search.isEnabled, "no number yet")
+        let number = element(app, "parts-number")
+        XCTAssertTrue(number.waitForExistence(timeout: 5))
+        number.tap()
+        number.typeText("59100-33E00")
+        XCTAssertTrue(preview.label.contains("59100-33E00"), "Preview shows \(preview.label)")
+        XCTAssertFalse(preview.label.contains("Suzuki"), "Preview shows \(preview.label)")
+        XCTAssertTrue(search.isEnabled)
+        settle()
+        snap("45b-parts-finder-part-number")
     }
 
     // MARK: Phase 2 screens in dark mode and at an accessibility text size
