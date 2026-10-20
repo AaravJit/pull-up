@@ -4,8 +4,9 @@ What to check on a real iPhone (target: iPhone 18 Pro Max) before Pull Up
 goes to testers outside the team. Everything here needs a physical device,
 a hosted backend, Apple's servers, or a real drive. CI can't cover it.
 
-None of these tests has been run yet. Results go in `PROGRESS.md` under
-"physical-device tests passed", with the build number and date. Report each
+None of these tests has been run yet. Each pass goes in a row of the
+"Physical-device tests passed" table in `PROGRESS.md`, with the build
+number and date. Report each
 failure with the **Device test result** issue template.
 
 Each Expected column describes what the app is built to do, checked against
@@ -62,7 +63,7 @@ lower one.
 | D1.3 | Sign in with Apple, **Hide My Email** | Same onboarding; afterwards Pull Up Settings ▸ Account shows "Email: Hidden by Apple" |
 | D1.4 | Delete the app, reinstall, open | Either already signed in or the sign-in screen (iOS may keep the saved session). After signing in with the same Apple ID: same @username, no onboarding |
 | D1.5 | Signed in with Apple on this phone: iOS Settings ▸ your name ▸ Sign in with Apple ▸ Pull Up ▸ Stop using | Next launch or return to the app signs out, and the sign-in screen says Sign in with Apple was turned off for Pull Up |
-| D1.6 | Pull Up Settings ▸ Account ▸ Delete account ▸ type DELETE ▸ Continue with Apple | Sign-in screen says "Your account and everything in it have been deleted." The other account can no longer see this one's posts or profile. Signing in again goes to "Pick your handle" (a new account) |
+| D1.6 | Run last, after every other section. Pull Up Settings ▸ Account ▸ Delete account ▸ type DELETE ▸ Continue with Apple | Sign-in screen says "Your account and everything in it have been deleted." The other account can no longer see this one's posts or profile. Signing in again goes to "Pick your handle" (a new account) |
 
 ## 2. Location permission
 
@@ -114,9 +115,10 @@ Pull Up should quote; none have been measured yet.
 ## 4. Social and messages (2 accounts)
 
 A and B are the two accounts. Run D4.6 first, while neither follows the
-other. Then run D4.1. For the rest of the section A and B follow each
-other: B turns Approve new followers off, and each follows the other (if
-A's request is still pending, A unfollows and follows again).
+other. Then run D4.1. D4.7e (block) runs last, after section 5, because the
+app has no unblock. For the rest A and B follow each other: B turns
+Approve new followers off, and each follows the other (if A's request is
+still pending, A unfollows and follows again).
 
 | ID | Steps | Expected |
 | --- | --- | --- |
@@ -124,13 +126,13 @@ A's request is still pending, A unfollows and follows again).
 | D4.2 | A sends B a message; B has the chat open | Appears within a few seconds without refreshing |
 | D4.3 | B turns on airplane mode; A sends two messages; B turns it off and opens the app | Both messages appear and the inbox shows them unread |
 | D4.4 | B leaves the app in the background for 10 minutes while A sends | On return to the foreground the chat and unread count are up to date |
-| D4.5 | A sets one vehicle and one drive to Public and Privacy ▸ Drive history to Public, and makes a Public post. B opens A's profile ▸ that vehicle ▸ Message @A ▸ send. A sends B the post (paper-plane button) and the drive (Drive ▸ Recent drives ▸ the drive ▸ ••• ▸ Send summary in a message). A then sets the vehicle and drive to Only me and Privacy ▸ Profile to Only me (posts can't be edited) | B reopens the chat: all three cards show a lock and "No longer available"; A still sees them |
+| D4.5 | A sets one vehicle and one drive to Public and Privacy ▸ Drive history to Public, and makes a Public post. B opens A's profile ▸ that vehicle ▸ Message @A ▸ send. A sends B the post (paper-plane button) and the drive (Drive ▸ Recent drives ▸ the drive ▸ ••• ▸ Send summary in a message). A then sets the vehicle and drive to Only me and Privacy ▸ Profile to Only me (posts can't be edited) | B reopens the chat: all three cards show a lock and "No longer available"; A still sees them. Afterwards A sets Privacy ▸ Profile back to Public for the later tests |
 | D4.6 | A: Privacy ▸ Who can message you = Everyone. B opens A's profile ▸ Message and sends four messages | A's Messages ▸ Requests shows B. Messages 1 to 3 send; the 4th shows "Not sent. Wait for them to accept your request before sending more." with Retry and Delete. After A taps Accept, B's Retry sends it. |
 | D4.7a | A reacts 🔥 to B's message, then taps 🔥 again | The reaction appears for both, then disappears for both |
 | D4.7b | A unsends one of A's own messages | A sees "You unsent a message", B sees "Message unsent"; the text is gone |
 | D4.7c | B turns off Privacy ▸ Read receipts; both reopen the chat | Neither sees when the other read messages |
 | D4.7d | A reports B from the chat | "Thanks for reporting" appears; B isn't told; a row appears in staging's `reports` table |
-| D4.7e | A blocks B | The chat leaves A's inbox; B can't start a chat with A, find A or see A's profile |
+| D4.7e | Run after section 5. A blocks B | The chat leaves A's inbox; B can't start a chat with A, find A or see A's profile. To undo, delete the row in staging's `blocks` table |
 | D4.8 | Send a photo that has a location (in Photos, swipe up shows a map). In the staging dashboard ▸ Storage ▸ dm-media, download that message's .jpg and check it with an EXIF viewer | No GPS fields; longest side 2048 px or less |
 | D4.9 | Look through Feed, search, meets and leaderboards | No demo profiles; only real accounts. CI's API tests briefly create "Test …" users on staging and delete them again |
 

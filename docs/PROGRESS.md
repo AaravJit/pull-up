@@ -23,6 +23,16 @@ test result** issue template. No physical-device test has been run yet.
 | M4 | Messages recover after going offline: channel rebuilt with backoff, chats and inbox reload on reconnect and on returning to the foreground | Working (local stack in CI) / app side unverified on a device | API test takes a client offline and checks the reload and resumed delivery; `DEVICE_TEST_PLAN.md` D4.3–D4.4 |
 | M1 | Build label for the staging backend | Working | Settings ▸ About shows "Pull Up server (staging)" when `PULLUP_BACKEND_ENVIRONMENT = staging` |
 
+### Physical-device tests passed
+
+One row per test from `DEVICE_TEST_PLAN.md` that passed on a real iPhone.
+Failures go in issues (**Device test result** template), not here.
+
+| Test ID | Build | iOS | Device | Date | Notes |
+| --- | --- | --- | --- | --- | --- |
+
+None yet.
+
 ## Phase 2
 
 Plan: `PHASE2_PLAN.md`. Status uses the legend below. Nothing in Phase 2 has
