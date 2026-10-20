@@ -428,12 +428,32 @@ final class PullUpUITests: XCTestCase {
         let search = app.buttons["parts-search"]
         XCTAssertTrue(search.waitForExistence(timeout: 5))
         XCTAssertFalse(search.isEnabled, "Nothing to search until a part is named")
-        app.buttons["Brake pads"].tap()
+        XCTAssertEqual(element(app, "parts-model").value as? String, "GSX-R750", "the garage vehicle is filled in")
+        let pads = app.buttons["Brake pads"]
+        if !pads.isHittable { app.swipeUp() }
+        pads.tap()
         let preview = element(app, "parts-preview")
         XCTAssertTrue(preview.label.contains("2001 Suzuki GSX-R750 K1 Brake pads"), "Preview shows \(preview.label)")
+        XCTAssertTrue(element(app, "parts-fitment").exists, "the fitment caveat is shown with every search")
         XCTAssertTrue(search.isEnabled)
         settle()
         snap("45-parts-finder")
+
+        // A part number is searched on its own, without the vehicle.
+        app.swipeDown()
+        let numberMode = app.buttons.matching(NSPredicate(format: "label ==[c] %@", "Part number")).firstMatch
+        XCTAssertTrue(numberMode.waitForExistence(timeout: 5))
+        numberMode.tap()
+        XCTAssertFalse(search.isEnabled, "no number yet")
+        let number = element(app, "parts-number")
+        XCTAssertTrue(number.waitForExistence(timeout: 5))
+        number.tap()
+        number.typeText("59100-33E00")
+        XCTAssertTrue(preview.label.contains("59100-33E00"), "Preview shows \(preview.label)")
+        XCTAssertFalse(preview.label.contains("Suzuki"), "Preview shows \(preview.label)")
+        XCTAssertTrue(search.isEnabled)
+        settle()
+        snap("45b-parts-finder-part-number")
     }
 
     // MARK: Phase 2 screens in dark mode and at an accessibility text size
