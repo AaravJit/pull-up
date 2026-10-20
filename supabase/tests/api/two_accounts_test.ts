@@ -334,10 +334,42 @@ Deno.test({
         assertEquals(heard.cat, [], `Cat's subscription carries nothing from a chat she isn't in: ${JSON.stringify(payloads.cat)}`);
         await Promise.all([ann, cat].map((u, i) => u.db.removeChannel(channels[i])));
 
+        // Ann goes offline. Realtime doesn't replay what she missed, so on
+        // reconnecting the app reloads (SupabaseBackend.messagingChanges);
+        // the reload must find the message, and live delivery must resume.
+        ann.db.realtime.disconnect();
+        const missed = crypto.randomUUID();
+        ok(await ben.db.from("messages").insert({ id: missed, conversation_id: conversation, sender_id: ben.id, body: "You there?" }), "sent while Ann is offline");
+        await wait(1_000);
+        assert(!heard.ann.includes(missed), "an offline client hears nothing");
+        const inbox = ok(await ann.db.rpc("inbox", { p_state: "active" }), "Ann reloads her inbox") as { conversation_id: string; unread_count: number }[];
+        const row = inbox.find((r) => r.conversation_id === conversation);
+        assert(row && row.unread_count >= 2, `the reload shows both unread messages: ${JSON.stringify(row)}`);
+        const latest = ok(await ann.db.from("messages").select("id").eq("conversation_id", conversation)
+          .order("created_at", { ascending: false }).limit(1), "Ann reloads the chat");
+        assertEquals(latest[0]?.id, missed);
+        ann.db.realtime.setAuth((await ann.db.auth.getSession()).data.session!.access_token);
+        const back = ann.db.channel(`dm-${run}-ann-again`)
+          .on("postgres_changes", { event: "*", schema: "public", table: "messages" }, (change) => {
+            heard.ann.push((change.new as { id?: string }).id ?? "");
+          });
+        await new Promise<void>((resolve, reject) => {
+          back.subscribe((status, err) => {
+            if (status === "SUBSCRIBED") resolve();
+            if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") reject(err ?? new Error(status));
+          });
+        });
+        await wait(3_000);
+        const after = crypto.randomUUID();
+        ok(await ben.db.from("messages").insert({ id: after, conversation_id: conversation, sender_id: ben.id, body: "Welcome back" }), "Ben sends again");
+        await eventually("Ann's delivery after reconnecting", async () => heard.ann.includes(after));
+        await ann.db.removeChannel(back);
+
         // Retrying a send after a lost response is a no-op, not a duplicate.
         ok(await ben.db.from("messages").upsert({ id: first, conversation_id: conversation, sender_id: ben.id, body: "Hi Ann" },
           { onConflict: "id", ignoreDuplicates: true }), "retry");
-        assertEquals(ok(await ann.db.from("messages").select("id").eq("conversation_id", conversation), "Ann's view").length, 1);
+        const view = ok(await ann.db.from("messages").select("id").eq("conversation_id", conversation), "Ann's view");
+        assertEquals(view.map((m) => m.id).sort(), [first, missed, after].sort());
 
         assertEquals(ok(await cat.db.from("messages").select("id").eq("conversation_id", conversation), "Cat reads"), []);
         refused(await cat.db.from("messages").insert({ conversation_id: conversation, sender_id: cat.id, body: "hey" }), "Cat posting in their chat");
