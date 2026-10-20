@@ -89,7 +89,7 @@ compared. Write down trip-meter distance at start and end.
 | D3.2 | 20+ minutes on a highway at the legal limit | Distance within about 2 %. Top speed close to the highest speed shown on the car's speedometer, which usually reads a few percent high |
 | D3.3 | Through a tunnel or multi-storey car park where GPS drops for more than 15 seconds | "GPS signal lost" while inside; summary ▸ Details shows "Bridged signal gaps" with a distance |
 | D3.4 | Slow driving in a car park (walking pace) | No wild speeds; distance plausible |
-| D3.5 | First add the Moving tile (Pull Up Settings ▸ Drive dashboard ▸ Dashboard tiles). Park for 5 minutes with recording on | Distance and Moving don't grow; the summary's Stopped time includes the 5 minutes |
+| D3.5 | First add the Moving tile (Pull Up Settings ▸ Drive dashboard ▸ Dashboard tiles). Park for 5 minutes with recording on, then drive on at least 200 m before stopping the recording | Distance and Moving don't grow; the summary's Stopped time includes the 5 minutes |
 | D3.6 | Turn on Low Power Mode during a drive | Low Power Mode notice on the dashboard; recording continues |
 | D3.7 | Switch vehicle between two drives | Each drive is logged to the vehicle picked for it |
 | D3.8 | 0–60 mph result, only if it happened naturally and legally (for example a highway on-ramp) | Always labelled an estimate (EST), even when the summary notes the data was consistent. Never test this on purpose |
@@ -157,7 +157,7 @@ to send you a message", with no text whatever the setting.
 | ID | Steps | Expected |
 | --- | --- | --- |
 | D5.1 | Pull Up Settings ▸ Account ▸ Notifications ▸ Push notifications ▸ Allow | iOS prompt appears only now |
-| D5.2 | B follows A (unfollow first if needed), likes and comments on A's post, and sends A a message with Show message text off | A gets "… started following you" (unless B already followed A in the last 24 hours), "… liked your post", "… commented on your post" (no comment text) and "… sent you a message" |
+| D5.2 | On B's phone sign in as E (B's follow is too recent to push again) and follow A, then sign back in with Apple as B. B likes and comments on A's post and sends A a message with Show message text off | A gets "… started following you" from E, "… liked your post", "… commented on your post" (no comment text) and "… sent you a message" |
 | D5.2b | A turns on Show message text; B sends again | Push titled with B's name, showing the message text |
 | D5.3 | Tap a message push | It opens that chat |
 | D5.4 | Push me about ▸ Messages off; B sends in an accepted chat. Turn it back on; B sends again | No push the first time (the chat still updates); a push the second time |
