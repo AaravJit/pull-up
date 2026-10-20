@@ -261,14 +261,13 @@ public final class DriveRecorder {
             isStationary = still
             refreshLive()
         case .unavailable:
+            // No fix and no pause (including a pause that ended without a
+            // fix, as when the car pulls out of a garage): what happens
+            // until the next fix is unknown.
+            if !isStationary { noteUnknownSilence(&engine) }
             refreshLive()
         case .restarting:
-            // A pause still open doesn't explain the silence that follows:
-            // drop it so the gap is disclosed, live and in later replays.
-            engine.noteInterruption()
-            self.engine = engine
-            if let lastFix = draft?.samples.last?.timestamp { draft?.stationaryPauses?.removeAll { $0 >= lastFix } }
-            isStationary = false
+            noteUnknownSilence(&engine)
             refreshLive()
         case .accuracyReduced:
             interruption = "Precise Location was turned off, so recording stopped. Everything up to that point was kept."
@@ -277,6 +276,15 @@ public final class DriveRecorder {
             interruption = "Location access was turned off, so recording stopped. Everything up to that point was kept."
             Task { await self.finish() }
         }
+    }
+
+    /// A pause still open doesn't explain the silence that follows: drop it
+    /// so the gap is bridged and disclosed, live and in later replays.
+    private func noteUnknownSilence(_ engine: inout TelemetryEngine) {
+        engine.noteInterruption()
+        self.engine = engine
+        if let lastFix = draft?.samples.last?.timestamp { draft?.stationaryPauses?.removeAll { $0 >= lastFix } }
+        isStationary = false
     }
 
     private func appendToRoute(_ coordinate: Coordinate) {

@@ -331,9 +331,9 @@ struct DriveRecorderTests {
         #expect(uploaded.endedAt.timeIntervalSince(started) <= DriveRecorder.maximumDuration + 0.001)
     }
 
-    /// iOS paused updates at a stop, then the updates stream failed and was
-    /// restarted. The car moved meanwhile: that's a signal gap, not a stop.
-    @Test func restartAfterAPauseIsASignalGap() async throws {
+    /// A stop iOS paused updates for, then `middle`, then the car 600 m on
+    /// a minute later. Returns the finished drive's summary.
+    private func scriptedStop(then middle: [LocationEvent]) async throws -> DriveSummary {
         let backend = DemoBackend()
         let suite = "recorder-tests-\(UUID().uuidString)"
         let store = LocalDriveStore(directory: FileManager.default.temporaryDirectory.appendingPathComponent(suite))
@@ -346,17 +346,31 @@ struct DriveRecorderTests {
         }
         var events = (0..<40).map { fix(Double($0), north: Double($0) * 10, speed: 10) }
         events += (40..<45).map { fix(Double($0), north: 390, speed: 0) }
-        events += [.stationary(true), .restarting]
+        events += [.stationary(true)] + middle
         events += (105..<115).map { fix(Double($0), north: 990 + Double($0 - 105) * 10, speed: 10) }
         let provider = ScriptedProvider(events: events)
         let recorder = DriveRecorder(backend: backend, store: store, defaults: UserDefaults(suiteName: suite)!) { provider }
         recorder.ownerID = await backend.currentUserID()
         _ = await recorder.start(with: nil)
-        for _ in 0..<200 where recorder.acceptedCount < 55 { try await Task.sleep(for: .milliseconds(10)) }
+        for _ in 0..<200 where recorder.acceptedCount < 54 { try await Task.sleep(for: .milliseconds(10)) }
         #expect(recorder.isStationary == false)
-        let result = try #require(await recorder.finish(now: start.addingTimeInterval(115)))
-        #expect(result.summary.longestSignalGap >= 60)
-        #expect(result.summary.gapDistanceMeters > 500)
+        return try #require(await recorder.finish(now: start.addingTimeInterval(115))).summary
+    }
+
+    /// iOS paused updates at a stop, then the updates stream failed and was
+    /// restarted. The car moved meanwhile: that's a signal gap, not a stop.
+    @Test func restartAfterAPauseIsASignalGap() async throws {
+        let summary = try await scriptedStop(then: [.restarting])
+        #expect(summary.longestSignalGap >= 60)
+        #expect(summary.gapDistanceMeters > 500)
+    }
+
+    /// The pause ended but no fix came (the car pulled out of a garage):
+    /// the silence until the next fix is a signal gap, not a stop.
+    @Test func pauseEndingWithoutAFixIsASignalGap() async throws {
+        let summary = try await scriptedStop(then: [.stationary(false), .unavailable])
+        #expect(summary.longestSignalGap >= 60)
+        #expect(summary.gapDistanceMeters > 500)
     }
 
     /// Precise location was turned off while the app wasn't running.
