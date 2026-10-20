@@ -32,6 +32,30 @@ for f in data.get("testFailures", [])[:40]:
     print("FAILED", f.get("testIdentifierString") or f.get("testName"), "--", " ".join(str(f.get("failureText", "")).split())[:400])
 ' || true
   fi
+  # Crash reports from this run: the reason and the crashed thread's frames.
+  find "$HOME/Library/Logs/DiagnosticReports" -name "*.ips" -mmin -90 2>/dev/null | head -5 | while read -r ips; do
+    echo "--- $(basename "$ips")"
+    python3 - "$ips" <<'PY' || true
+import json, sys
+text = open(sys.argv[1], errors="replace").read()
+header, _, body = text.partition("\n")
+try:
+    report = json.loads(body)
+except ValueError:
+    sys.exit(0)
+print("exception:", json.dumps(report.get("exception", {})))
+print("termination:", json.dumps(report.get("termination", {}))[:600])
+for key, value in (report.get("asi") or {}).items():
+    print("asi", key, " ".join(str(value).split())[:800])
+images = report.get("usedImages", [])
+for thread in report.get("threads", []):
+    if not thread.get("triggered"):
+        continue
+    for frame in thread.get("frames", [])[:30]:
+        image = images[frame.get("imageIndex", 0)].get("name", "?") if images else "?"
+        print("  ", image, frame.get("symbol", hex(frame.get("imageOffset", 0))), frame.get("sourceFile", ""), frame.get("sourceLine", ""))
+PY
+  done
   echo "::endgroup::"
   echo "xcodebuild exited with $status"
 fi
