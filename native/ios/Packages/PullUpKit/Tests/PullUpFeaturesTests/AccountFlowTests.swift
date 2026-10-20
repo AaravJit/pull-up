@@ -92,6 +92,18 @@ struct AccountFlowTests {
         #expect(app.signedOutNotice?.contains("deleted") == true)
     }
 
+    @Test func deletionDuringADriveStopsItAndRemovesExports() async throws {
+        let app = model()
+        await app.start()
+        let export = DriveProSection.exportsFolder.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: export, withIntermediateDirectories: true)
+        #expect(await app.recorder.start(with: nil) == nil)
+        try await app.deleteAccount(appleAuthorizationCode: nil)
+        #expect(!app.recorder.isRecording)
+        #expect(app.phase == .signedOut)
+        #expect(!FileManager.default.fileExists(atPath: DriveProSection.exportsFolder.path))
+    }
+
     @Test func authMessagesAreReadable() {
         struct Server: LocalizedError { let errorDescription: String? }
         #expect(AuthMessages.server(Server(errorDescription: "automatic account linking is disabled: sign in with your existing method")).contains("signs in another way"))

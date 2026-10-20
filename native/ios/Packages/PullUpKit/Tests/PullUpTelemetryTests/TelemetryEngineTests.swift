@@ -57,6 +57,88 @@ struct TelemetryEngineTests {
         #expect(abs(summary.distanceMeters - 285) < 3)
     }
 
+    @Test func uncertainDopplerDoesNotRejectAMovingCar() {
+        // iOS briefly reports ~0 m/s with a wide uncertainty while the car
+        // keeps going at 20 m/s. The positions are fine, so none of them is
+        // a jump.
+        var samples = factory.samples(speeds: [Double](repeating: 20, count: 30))
+        for i in 10..<15 {
+            samples[i].speed = 0
+            samples[i].speedAccuracy = 25
+        }
+        let engine = TelemetryEngine.replay(samples, startedAt: factory.start)
+        let summary = engine.summary(endedAt: factory.start.addingTimeInterval(29))
+        #expect(summary.rejectedSamples == 0)
+        #expect(engine.relocks == 0)
+        #expect(abs(summary.distanceMeters - 580) < 580 * 0.03)
+    }
+
+    @Test func setOffDuringStationaryPauseCreditsMovingTime() {
+        // 90 m at 10 m/s, stopped at a light until iOS pauses updates. The
+        // light turns green and the car is 40 m on, at 8 m/s, when updates
+        // resume a minute later.
+        var engine = TelemetryEngine(startedAt: factory.start)
+        for t in 0..<10 { engine.ingest(factory.sample(at: Double(t), northMeters: Double(t) * 10, speed: 10)) }
+        for t in 10..<15 { engine.ingest(factory.sample(at: Double(t), northMeters: 90, speed: 0)) }
+        engine.noteStationary(true)
+        engine.noteStationary(false)
+        for (t, north) in [(74.0, 130.0), (75, 138), (76, 146)] {
+            engine.ingest(factory.sample(at: t, northMeters: north, speed: 8))
+        }
+        let summary = engine.summary(endedAt: factory.start.addingTimeInterval(76))
+        #expect(abs(summary.distanceMeters - 146) < 2)
+        #expect(summary.movingSeconds >= 14)
+        #expect((summary.averageMovingSpeed ?? .infinity) <= 10.5)
+    }
+
+    @Test func relockMidDriveAddsNoClimb() {
+        // 20 s at 20 m/s and 100 m up, then every fix lands 2 km further on
+        // and 100 m higher. The engine relocks there; the unknown jump adds
+        // neither distance nor climb.
+        var samples = factory.samples(speeds: [Double](repeating: 20, count: 40), altitudes: [Double](repeating: 100, count: 40))
+        for i in 20..<40 {
+            samples[i].latitude += 2000 / TrackFactory.metersPerDegreeLatitude
+            samples[i].altitude = 200
+        }
+        let engine = TelemetryEngine.replay(samples, startedAt: factory.start)
+        let summary = engine.summary(endedAt: factory.start.addingTimeInterval(39))
+        #expect(engine.relocks == 1)
+        #expect(summary.elevationGain < 1)
+        #expect(summary.distanceMeters < 800)
+    }
+
+    @Test func droppedFirstFixLeavesNoTrace() {
+        // The first fix is a stale reading 5 km away at a standstill; the
+        // car is really cruising at 25 m/s. Once the engine relocks onto
+        // the real fixes, the bad one must not drag the rolling average down.
+        var samples = factory.samples(speeds: [Double](repeating: 25, count: 20))
+        samples[0].latitude += 5_000 / TrackFactory.metersPerDegreeLatitude
+        samples[0].speed = 0
+        let engine = TelemetryEngine.replay(samples, startedAt: factory.start)
+        #expect(engine.relocks == 1)
+        let live = engine.live(at: factory.start.addingTimeInterval(19))
+        #expect(abs((live.rollingAverageSpeed ?? 0) - 25) < 0.05)
+        #expect(engine.summary(endedAt: factory.start.addingTimeInterval(19)).zeroToSixty == nil)
+    }
+
+    @Test func historyReplayInfersStationaryPauses() {
+        // A minute stopped at a light (iOS paused updates), then a 30 s
+        // tunnel at speed, then a stop where the signal is lost and the car
+        // is 400 m on when it returns. Only the light is a pause.
+        var samples: [LocationSample] = []
+        for t in 0..<10 { samples.append(factory.sample(at: Double(t), northMeters: Double(t) * 10, speed: 10)) }
+        for t in 10..<15 { samples.append(factory.sample(at: Double(t), northMeters: 90, speed: 0)) }
+        for t in 74..<90 { samples.append(factory.sample(at: Double(t), northMeters: 90 + Double(t - 74) * 10, speed: 10)) }
+        for t in 119..<125 { samples.append(factory.sample(at: Double(t), northMeters: 540 + Double(t - 119) * 10, speed: 10)) }
+        for t in 125..<130 { samples.append(factory.sample(at: Double(t), northMeters: 590, speed: 0)) }
+        for t in 170..<175 { samples.append(factory.sample(at: Double(t), northMeters: 990 + Double(t - 170) * 10, speed: 10)) }
+        let pauses = TelemetryEngine.inferredStationaryPauses(samples)
+        #expect(pauses.count == 1)
+        let summary = TelemetryEngine.replay(samples, startedAt: factory.start, stationaryPauses: pauses)
+            .summary(endedAt: factory.start.addingTimeInterval(174))
+        #expect(summary.longestSignalGap == 41)
+    }
+
     @Test func poorAccuracyFixesAreRejected() {
         var samples = factory.samples(speeds: [Double](repeating: 10, count: 10))
         samples[3].horizontalAccuracy = 65 // Wi-Fi fix

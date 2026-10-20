@@ -70,6 +70,16 @@ public struct TelemetryEngine: Sendable {
         public var elevationHysteresis: Double = 3
         public var elevationSmoothing: Double = 0.35
         public var rollingWindow: Double = 30
+        /// After this many fixes in a row are rejected as jumps but agree
+        /// with each other, the fix before them is the bad one (typically a
+        /// stale cold-start fix): recording re-anchors on the new fixes
+        /// instead of rejecting the rest of the drive.
+        public var relockAfter: Int = 3
+        /// Between fixes at most this far apart, distance while moving comes
+        /// from Doppler speed rather than from the change in position.
+        /// Doppler is far less noisy than position, which otherwise inflates
+        /// distance at low speed by roughly 10 % (see TELEMETRY_VALIDATION.md).
+        public var maxIntervalForDopplerDistance: Double = 2
 
         public init() {}
     }
@@ -101,6 +111,15 @@ public struct TelemetryEngine: Sendable {
     private var maxAltitude: Double?
     private var currentSpeed: Double?
     private var currentSpeedDerived = false
+    private var jumpCandidates: [LocationSample] = []
+    /// iOS said the phone is still, so it paused updates; set until the next fix.
+    private var pausedStationary = false
+    /// The silence since the last fix began as a stationary pause. iOS
+    /// reports the end of a pause just before the fix that ends it, so the
+    /// gap up to that fix is still a pause, not lost signal.
+    private var silenceWasStationary = false
+    /// Times recording re-anchored after a run of jump rejections.
+    public private(set) var relocks = 0
 
     public init(startedAt: Date, configuration: Configuration = .init(), filter: SampleFilter = .init()) {
         self.startedAt = startedAt
@@ -119,18 +138,41 @@ public struct TelemetryEngine: Sendable {
             return .rejected(.outOfOrder)
         }
         let verdict = filter.evaluate(sample, previous: last)
-        guard verdict == .accepted else {
-            if case let .rejected(reason) = verdict { rejectionCounts[reason, default: 0] += 1 }
-            return verdict
+        if verdict == .accepted {
+            jumpCandidates.removeAll()
+            accept(sample, continuing: true)
+            return .accepted
         }
+        if case let .rejected(reason) = verdict { rejectionCounts[reason, default: 0] += 1 }
+        if verdict == .rejected(.implausibleJump), relock(with: sample) { return .accepted }
+        return verdict
+    }
 
-        if let previous = last {
+    /// iOS reports when it pauses updates because the phone is still. A
+    /// silence that follows isn't a lost signal, and the speed is a known zero.
+    public mutating func noteStationary(_ still: Bool) {
+        pausedStationary = still && last != nil
+        if pausedStationary { silenceWasStationary = true }
+    }
+
+    /// Recording itself stopped (the app was closed) and is starting again.
+    /// Whatever iOS said before, the silence until the next fix is unknown,
+    /// so it's bridged and disclosed as a signal gap.
+    public mutating func noteInterruption() {
+        pausedStationary = false
+        silenceWasStationary = false
+    }
+
+    private mutating func accept(_ sample: LocationSample, continuing: Bool) {
+        if continuing, let previous = last {
             integrate(from: previous, to: sample)
         } else {
             distanceAnchor = sample
             currentSpeed = sample.hasValidSpeed ? sample.speed : nil
             currentSpeedDerived = false
         }
+        pausedStationary = false
+        silenceWasStationary = false
 
         trackTopSpeed(sample)
         trackRolling(sample)
@@ -144,12 +186,72 @@ public struct TelemetryEngine: Sendable {
             altitude: smoothedAltitude
         ))
         last = sample
-        return .accepted
+    }
+
+    /// Collects jump-rejected fixes; once `relockAfter` of them agree with
+    /// each other, accepts them and continues from there. The path between
+    /// the old fix and the new ones is unknown, so it adds no distance.
+    private mutating func relock(with sample: LocationSample) -> Bool {
+        if let previous = jumpCandidates.last, filter.evaluate(sample, previous: previous) != .accepted {
+            jumpCandidates.removeAll()
+        }
+        jumpCandidates.append(sample)
+        guard jumpCandidates.count >= configuration.relockAfter else { return false }
+
+        let cluster = jumpCandidates
+        jumpCandidates.removeAll()
+        let remaining = (rejectionCounts[.implausibleJump] ?? 0) - cluster.count
+        rejectionCounts[.implausibleJump] = remaining > 0 ? remaining : nil
+        relocks += 1
+        recentSpeeds.removeAll()
+        if accepted.count == 1 {
+            // The only fix so far was the bad one: forget it entirely,
+            // including what it fed into speeds and 0–60 runs.
+            accepted.removeAll()
+            speedSeries.removeAll()
+            rolling.removeAll()
+            accelerations = AccelerationDetector()
+            topSpeed = nil
+            currentSpeed = nil
+            smoothedAltitude = nil
+            elevationBaseline = nil
+            minAltitude = nil
+            maxAltitude = nil
+            last = nil
+        } else {
+            // The jump's change in altitude is as unknown as its path: keep
+            // what was climbed so far, but measure from a fresh baseline.
+            smoothedAltitude = nil
+            elevationBaseline = nil
+        }
+        for (index, fix) in cluster.enumerated() {
+            accept(fix, continuing: index > 0)
+        }
+        return true
     }
 
     private mutating func integrate(from previous: LocationSample, to sample: LocationSample) {
         let dt = sample.timestamp.timeIntervalSince(previous.timestamp)
         let segment = previous.coordinate.distance(to: sample.coordinate)
+
+        if dt > configuration.gapThreshold, silenceWasStationary {
+            // iOS paused updates while the phone was still (red light,
+            // parked): not a signal gap. Count only movement the GPS error
+            // can't explain, as when parked.
+            if segment > max(5, previous.horizontalAccuracy + sample.horizontalAccuracy) {
+                distance += segment
+                // The car set off before iOS resumed updates. Credit the
+                // time that distance took at no more than the speed it has
+                // now, so the average moving speed can't jump.
+                let pace = max(sample.hasValidSpeed ? sample.speed : 0, configuration.startMovingSpeed)
+                moving += min(dt, segment / pace)
+            }
+            distanceAnchor = sample
+            currentSpeed = sample.hasValidSpeed ? sample.speed : nil
+            currentSpeedDerived = false
+            isMoving = (currentSpeed ?? 0) >= configuration.startMovingSpeed
+            return
+        }
 
         if dt > configuration.gapThreshold {
             // Bridge the gap with a straight line: a lower bound on true
@@ -188,9 +290,23 @@ public struct TelemetryEngine: Sendable {
         guard let anchor = distanceAnchor else { return }
         let fromAnchor = anchor.coordinate.distance(to: sample.coordinate)
         if isMoving || fromAnchor > max(5, sample.horizontalAccuracy + anchor.horizontalAccuracy) {
-            distance += isMoving ? segment : fromAnchor
+            distance += isMoving ? movingStep(from: previous, to: sample, dt: dt, segment: segment) : fromAnchor
             distanceAnchor = sample
         }
+    }
+
+    /// Distance covered between two fixes while moving: Doppler speed over
+    /// the interval when both readings are good and agree with the change in
+    /// position (so a Doppler glitch can't add distance), otherwise the
+    /// straight line between them.
+    private func movingStep(from previous: LocationSample, to sample: LocationSample, dt: Double, segment: Double) -> Double {
+        guard dt <= configuration.maxIntervalForDopplerDistance,
+              previous.hasValidSpeed, sample.hasValidSpeed,
+              previous.speedAccuracy <= configuration.maxSpeedAccuracyForTop,
+              sample.speedAccuracy <= configuration.maxSpeedAccuracyForTop
+        else { return segment }
+        let doppler = (previous.speed + sample.speed) / 2 * dt
+        return abs(doppler - segment) <= previous.horizontalAccuracy + sample.horizontalAccuracy ? doppler : segment
     }
 
     private mutating func trackTopSpeed(_ sample: LocationSample) {
@@ -260,12 +376,25 @@ public struct TelemetryEngine: Sendable {
         let state: LiveTelemetry.SignalState
         if let last {
             let silence = now.timeIntervalSince(last.timestamp)
-            state = silence > configuration.gapThreshold ? .lost(since: last.timestamp) : .tracking
+            state = silence > configuration.gapThreshold && !pausedStationary ? .lost(since: last.timestamp) : .tracking
         } else {
             state = .acquiring
         }
         let tracking = state == .tracking
-        return LiveTelemetry(
+        if pausedStationary {
+            // Paused because the phone is still: a known zero, not a guess.
+            var value = snapshot(elapsed: elapsed, state: state, tracking: tracking)
+            value.currentSpeed = 0
+            value.currentSpeedIsDerived = false
+            value.isMoving = false
+            value.rollingAverageSpeed = value.rollingAverageSpeed ?? 0
+            return value
+        }
+        return snapshot(elapsed: elapsed, state: state, tracking: tracking)
+    }
+
+    private func snapshot(elapsed: Double, state: LiveTelemetry.SignalState, tracking: Bool) -> LiveTelemetry {
+        LiveTelemetry(
             currentSpeed: tracking ? currentSpeed.map { max(0, $0) } : nil,
             currentSpeedIsDerived: currentSpeedDerived,
             topSpeed: topSpeed,
@@ -311,9 +440,38 @@ public struct TelemetryEngine: Sendable {
     }
 
     /// Rebuild an engine from a stored track (crash recovery, re-analysis).
-    public static func replay(_ samples: [LocationSample], startedAt: Date, configuration: Configuration = .init()) -> TelemetryEngine {
+    /// `stationaryPauses` are the times iOS reported the phone still, as the
+    /// recorder stores them; without them every pause reads as lost signal.
+    public static func replay(
+        _ samples: [LocationSample], startedAt: Date, stationaryPauses: [Date] = [], configuration: Configuration = .init()
+    ) -> TelemetryEngine {
         var engine = TelemetryEngine(startedAt: startedAt, configuration: configuration)
-        for sample in samples { engine.ingest(sample) }
+        var pauses = stationaryPauses.sorted()[...]
+        for sample in samples {
+            while let pause = pauses.first, pause < sample.timestamp {
+                engine.noteStationary(true)
+                pauses = pauses.dropFirst()
+            }
+            engine.ingest(sample)
+        }
+        if !pauses.isEmpty { engine.noteStationary(true) }
         return engine
+    }
+
+    /// Where iOS most likely paused updates because the phone was still,
+    /// for tracks stored without the recorder's markers (the server keeps
+    /// only the fixes): a silence longer than `gapThreshold` that starts at
+    /// a fix with a near-zero Doppler speed and ends close by, at under
+    /// walking pace on average. A tunnel is entered at speed, and an outage
+    /// the car drove through ends far away, so both stay signal gaps.
+    public static func inferredStationaryPauses(_ samples: [LocationSample], configuration: Configuration = .init()) -> [Date] {
+        zip(samples, samples.dropFirst()).compactMap { previous, next in
+            let dt = next.timestamp.timeIntervalSince(previous.timestamp)
+            guard dt > configuration.gapThreshold,
+                  previous.hasValidSpeed, previous.speed < configuration.stopMovingSpeed,
+                  previous.coordinate.distance(to: next.coordinate) / dt < configuration.startMovingSpeed
+            else { return nil }
+            return previous.timestamp.addingTimeInterval(0.5)
+        }
     }
 }

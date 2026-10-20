@@ -80,6 +80,11 @@ public final class DriveRecorder {
     public private(set) var lastResult: FinishedDrive?
     public private(set) var pendingUploads = 0
     public private(set) var recoveredDrive: Date?
+    /// The app was closed mid-drive and recording picked up where it left
+    /// off. The time it wasn't running counts as a signal gap.
+    public private(set) var resumedDrive: Date?
+    /// Low Power Mode is on. iOS may deliver fixes less often.
+    public private(set) var isLowPowerMode = false
     /// The location source replays a recorded track (demo mode).
     public let usesReplay: Bool
 
@@ -100,9 +105,17 @@ public final class DriveRecorder {
     private var streamTask: Task<Void, Never>?
     private var tickTask: Task<Void, Never>?
     private var unsavedSamples = 0
+    private var lastSave: Task<Void, Never>?
 
     static let minimumSamples = 30
     static let minimumDistance = 200.0
+    /// The server refuses drives longer than 24 hours, so recording stops
+    /// itself a little before that.
+    static let maximumDuration: TimeInterval = 23 * 3600 + 50 * 60
+    /// A drive cut short this recently is resumed rather than finished.
+    static let resumeWindow: TimeInterval = 15 * 60
+    /// Unsaved fixes are written to disk at least this often.
+    static let flushInterval = 30
 
     public init(
         backend: any BackendService, store: LocalDriveStore, defaults: UserDefaults = .standard,
@@ -158,19 +171,28 @@ public final class DriveRecorder {
         }
 
         let now = Date()
+        remember(vehicle)
+        resumedDrive = nil
+        var draft = DriveDraft(ownerID: ownerID, vehicleID: vehicle?.id, startedAt: now, title: Drive.defaultTitle(startedAt: now))
+        draft.vehicle = vehicle
+        begin(provider: provider, vehicle: vehicle, draft: draft, engine: TelemetryEngine(startedAt: now))
+        await persistDraft()
+        return nil
+    }
+
+    private func begin(provider: any LocationProvider, vehicle: Vehicle?, draft: DriveDraft, engine: TelemetryEngine) {
         self.provider = provider
         self.vehicle = vehicle
-        remember(vehicle)
-        engine = TelemetryEngine(startedAt: now)
-        draft = DriveDraft(ownerID: ownerID, vehicleID: vehicle?.id, startedAt: now, title: Drive.defaultTitle(startedAt: now))
+        self.engine = engine
+        self.draft = draft
         route = []
+        for sample in engine.accepted { appendToRoute(sample.coordinate) }
         live = .empty
         isStationary = false
         interruption = nil
         lastResult = nil
         unsavedSamples = 0
         phase = .recording
-        await persistDraft()
 
         let stream = provider.start()
         streamTask = Task { [weak self] in
@@ -180,33 +202,78 @@ public final class DriveRecorder {
             }
         }
         tickTask = Task { [weak self] in
+            var ticks = 0
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(1))
                 guard let self else { return }
-                self.refreshLive()
+                ticks += 1
+                self.tick(flush: ticks % Self.flushInterval == 0)
             }
         }
-        return nil
+    }
+
+    func tick(flush: Bool, now: Date = .now) {
+        guard phase == .recording, let draft else { return }
+        isLowPowerMode = ProcessInfo.processInfo.isLowPowerModeEnabled
+        if now.timeIntervalSince(draft.startedAt) >= Self.maximumDuration {
+            interruption = "Recording stopped on its own after almost 24 hours, the longest drive Pull Up keeps. Start a new drive to keep going."
+            Task { await self.finish(now: now) }
+            return
+        }
+        if flush, unsavedSamples > 0 { Task { await self.persistDraft() } }
+        refreshLive(now: now)
+    }
+
+    /// Writes unsaved fixes to disk now, e.g. when the app goes to the
+    /// background, so a crash or termination loses as little as possible.
+    public func flush() async {
+        guard phase == .recording, unsavedSamples > 0 else { return }
+        await persistDraft()
     }
 
     private func handle(_ event: LocationEvent) {
         guard phase == .recording, var engine else { return }
         switch event {
         case let .sample(sample):
+            let relocks = engine.relocks
             let verdict = engine.ingest(sample)
             self.engine = engine
-            if verdict == .accepted {
+            if engine.relocks != relocks {
+                // The engine re-anchored on a cluster of fixes it had been
+                // rejecting (a bad first fix, or a long multipath jump). Keep
+                // the stored track identical to what the engine accepted.
+                draft?.samples = engine.accepted
+                route = []
+                for fix in engine.accepted { appendToRoute(fix.coordinate) }
+            } else if verdict == .accepted {
                 draft?.samples.append(sample)
-                isStationary = false
                 appendToRoute(sample.coordinate)
+            }
+            if verdict == .accepted {
+                isStationary = false
                 unsavedSamples += 1
                 if unsavedSamples >= 15 { Task { await self.persistDraft() } }
             }
             refreshLive()
         case let .stationary(still):
+            engine.noteStationary(still)
+            self.engine = engine
+            if still {
+                // Read before writing: `draft?.x = …draft…` would read the
+                // property while the write's access is open, and crash.
+                let pauses = (draft?.stationaryPauses ?? []) + [Date()]
+                draft?.stationaryPauses = pauses
+            }
             isStationary = still
             refreshLive()
         case .unavailable:
+            // No fix and no pause (including a pause that ended without a
+            // fix, as when the car pulls out of a garage): what happens
+            // until the next fix is unknown.
+            if !isStationary { noteUnknownSilence(&engine) }
+            refreshLive()
+        case .restarting:
+            noteUnknownSilence(&engine)
             refreshLive()
         case .accuracyReduced:
             interruption = "Precise Location was turned off, so recording stopped. Everything up to that point was kept."
@@ -217,6 +284,15 @@ public final class DriveRecorder {
         }
     }
 
+    /// A pause still open doesn't explain the silence that follows: drop it
+    /// so the gap is bridged and disclosed, live and in later replays.
+    private func noteUnknownSilence(_ engine: inout TelemetryEngine) {
+        engine.noteInterruption()
+        self.engine = engine
+        if let lastFix = draft?.samples.last?.timestamp { draft?.stationaryPauses?.removeAll { $0 >= lastFix } }
+        isStationary = false
+    }
+
     private func appendToRoute(_ coordinate: Coordinate) {
         if let last = route.last, last.distance(to: coordinate) < 10 { return }
         route.append(coordinate)
@@ -224,37 +300,54 @@ public final class DriveRecorder {
 
     private func refreshLive(now: Date = .now) {
         guard phase == .recording, let engine else { return }
-        var value = engine.live(at: now)
-        if isStationary, engine.accepted.last != nil {
-            // iOS stops delivering fixes while the phone is still (red light,
-            // parked). That's a known zero, not a lost signal.
-            value.signalState = .tracking
-            value.currentSpeed = 0
-            value.currentSpeedIsDerived = false
-            value.isMoving = false
-            value.rollingAverageSpeed = value.rollingAverageSpeed ?? 0
-        }
-        live = value
+        // A stationary pause (red light, parked) is handled by the engine:
+        // a known zero, not a lost signal.
+        live = engine.live(at: now)
     }
 
+    /// Saves only while recording, one after another: a save still queued
+    /// when finish() or discard() runs would otherwise land after them,
+    /// overwriting the finished drive or bringing a discarded one back.
     private func persistDraft() async {
-        guard let draft else { return }
+        guard phase == .recording, let draft else { return }
         unsavedSamples = 0
-        try? await store.save(draft)
+        let previous = lastSave
+        let save = Task { [store] in
+            await previous?.value
+            try? await store.save(draft)
+        }
+        lastSave = save
+        await save.value
+    }
+
+    /// Waits for saves already under way, before the drive's last write.
+    private func settleSaves() async {
+        await lastSave?.value
+        lastSave = nil
     }
 
     /// Stops recording and produces the summary. Uploads when worth keeping;
     /// otherwise discards the local copy.
     @discardableResult
-    public func finish() async -> FinishedDrive? {
-        guard phase == .recording, let engine, var draft else { return nil }
+    public func finish(now: Date = .now) async -> FinishedDrive? {
+        guard phase == .recording, var engine, var draft else { return nil }
         phase = .finishing
         streamTask?.cancel()
         tickTask?.cancel()
         provider?.stop()
         provider = nil
+        await settleSaves()
 
-        let end = Date()
+        // iOS can suspend the app past the limit before the tick that stops
+        // it runs; the server would then refuse the drive outright.
+        var end = min(now, Self.limit(of: draft))
+        if Self.trimToLimit(&draft) {
+            engine = TelemetryEngine.replay(draft.samples, startedAt: draft.startedAt, stationaryPauses: draft.stationaryPauses ?? [])
+        }
+        // The server times a drive by its track. A stop long after the last
+        // fix (parked with updates paused, or still in a tunnel after a
+        // relaunch) would fail its duration check, so the drive ends there.
+        if let lastFix = draft.samples.last?.timestamp { end = min(end, lastFix) }
         draft.endedAt = end
         let summary = engine.summary(endedAt: end)
         var result = FinishedDrive(
@@ -285,10 +378,12 @@ public final class DriveRecorder {
     /// Stops and throws the drive away without saving anything.
     public func discard() async {
         guard phase == .recording, let draft else { return }
+        phase = .finishing
         streamTask?.cancel()
         tickTask?.cancel()
         provider?.stop()
         provider = nil
+        await settleSaves()
         await store.delete(draft.id)
         engine = nil
         self.draft = nil
@@ -300,10 +395,39 @@ public final class DriveRecorder {
     public func clearResult() {
         lastResult = nil
         interruption = nil
+        resumedDrive = nil
+    }
+
+    /// After `owner`'s account is deleted: stops a drive in progress and
+    /// removes every drive of theirs still on this phone (raw GPS, including
+    /// protected places) and the vehicle remembered for them.
+    public func eraseLocalData(for owner: UserID) async {
+        if draft?.ownerID == owner { await discard() }
+        await store.deleteAll(owner: owner)
+        defaults.removeObject(forKey: "pullup.lastVehicle.\(owner.uuidString)")
+        if lastResult?.drive.ownerID == owner { clearResult() }
+        recoveredDrive = nil
+        await refreshPendingCount()
     }
 
     static func isWorthKeeping(_ summary: DriveSummary) -> Bool {
         summary.acceptedSamples >= minimumSamples && summary.distanceMeters >= minimumDistance
+    }
+
+    /// The latest a drive may end: the server refuses drives over 24 hours.
+    static func limit(of draft: DriveDraft) -> Date {
+        draft.startedAt.addingTimeInterval(maximumDuration)
+    }
+
+    /// Drops fixes and pauses after the limit, which don't belong to the
+    /// drive (iOS delivered them late). Returns whether any were dropped.
+    @discardableResult
+    static func trimToLimit(_ draft: inout DriveDraft) -> Bool {
+        let cutoff = Self.limit(of: draft)
+        guard draft.samples.contains(where: { $0.timestamp > cutoff }) else { return false }
+        draft.samples.removeAll { $0.timestamp > cutoff }
+        draft.stationaryPauses?.removeAll { $0 > cutoff }
+        return true
     }
 
     static func makeDrive(from draft: DriveDraft, summary: DriveSummary) -> Drive {
@@ -330,9 +454,14 @@ public final class DriveRecorder {
     /// Uploads finished drives that couldn't be sent earlier.
     public func syncPending() async {
         guard let ownerID, phase == .idle else { return }
-        for draft in await store.pendingUploads() where draft.ownerID == ownerID {
-            guard let end = draft.endedAt else { continue }
-            let engine = TelemetryEngine.replay(draft.samples, startedAt: draft.startedAt)
+        for var draft in await store.pendingUploads() where draft.ownerID == ownerID {
+            guard let recorded = draft.endedAt else { continue }
+            // Drafts finished past the limit (by older builds) would be
+            // refused by the server forever.
+            let end = min(recorded, Self.limit(of: draft))
+            Self.trimToLimit(&draft)
+            draft.endedAt = end
+            let engine = TelemetryEngine.replay(draft.samples, startedAt: draft.startedAt, stationaryPauses: draft.stationaryPauses ?? [])
             let summary = engine.summary(endedAt: end)
             guard Self.isWorthKeeping(summary) else {
                 await store.delete(draft.id)
@@ -343,11 +472,37 @@ public final class DriveRecorder {
         await refreshPendingCount()
     }
 
-    /// Finalises a recording that was cut short by the app being killed, so
-    /// that it uploads instead of disappearing.
-    public func recoverInterrupted() async {
+    /// Handles a recording that was cut short because the app was closed
+    /// (iOS ended it, it crashed, or the person force-quit it).
+    ///
+    /// If the last fix is recent and precise location is still allowed,
+    /// recording resumes on the same drive; the time the app wasn't running
+    /// is a signal gap, bridged and disclosed like any other. Otherwise the
+    /// drive is finished at its last fix so it uploads instead of
+    /// disappearing. `vehicles` resolves the drive's vehicle for display.
+    public func recoverInterrupted(vehicles: [Vehicle] = [], now: Date = .now) async {
         guard phase == .idle, var draft = await store.interrupted(), draft.ownerID == ownerID else { return }
-        draft.endedAt = draft.samples.last?.timestamp ?? draft.startedAt
+        let lastFix = draft.samples.last?.timestamp ?? draft.startedAt
+        if now.timeIntervalSince(lastFix) <= Self.resumeWindow,
+           now.timeIntervalSince(draft.startedAt) < Self.maximumDuration {
+            let provider = makeProvider()
+            if provider.permission == .authorized {
+                // A pause still open when the app closed doesn't explain the
+                // silence that followed; drop it so later replays agree.
+                draft.stationaryPauses?.removeAll { $0 >= lastFix }
+                var engine = TelemetryEngine.replay(draft.samples, startedAt: draft.startedAt, stationaryPauses: draft.stationaryPauses ?? [])
+                engine.noteInterruption()
+                draft.samples = engine.accepted
+                resumedDrive = draft.startedAt
+                let vehicle = vehicles.first { $0.id == draft.vehicleID } ?? draft.vehicle
+                begin(provider: provider, vehicle: vehicle, draft: draft, engine: engine)
+                await persistDraft()
+                return
+            }
+        }
+        let end = min(lastFix, Self.limit(of: draft))
+        Self.trimToLimit(&draft)
+        draft.endedAt = end
         try? await store.save(draft)
         recoveredDrive = draft.startedAt
         await syncPending()

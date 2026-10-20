@@ -6,9 +6,22 @@ The Expo app at the repository root is unchanged.
 
 ## Phase 3
 
-Plan: `PHASE3_PLAN.md`. Device checks: `DEVICE_TEST_PLAN.md`, failures
-reported with the **Device test result** issue template. No physical-device
-test has been run yet.
+Plan and milestone order: `PHASE3_PLAN.md`. As in Phase 2, nothing has run
+on a real device, a hosted Supabase project, Apple's servers or eBay unless
+a row says so.
+Device checks: `DEVICE_TEST_PLAN.md`, failures reported with the **Device
+test result** issue template. No physical-device test has been run yet.
+
+| Milestone | Work | Status | Evidence / remaining action |
+| --- | --- | --- | --- |
+| M1 | Two-account API tests over the full local stack (auth, REST, realtime, storage, edge functions) | Working (local stack in CI) | `supabase/tests/api/two_accounts_test.ts`, 13 areas, green in backend CI on `f3d9d18` |
+| M1 | Staging and production deploy workflow with a destructive-migration guard | Written, not run | Needs the hosted projects and GitHub environments (`SUPABASE_SETUP.md` steps 1–3); hand-run workflows appear once on `main` |
+| M2 | Public email and phone sign-ups refused on the server (Apple only) | Working (local stack in CI) | Auth hook, migration `20261018000100`; pgTAP `007`; API test "nobody can register with email from outside". Enable the hook on hosted projects (`SUPABASE_SETUP.md` step 5) |
+| M2 | Live Sign in with Apple | Needs Apple | Not run: needs the Services ID, key and a device |
+| M5 | Per-account rate limit on `verify-subscription` (10 a minute, 60 an hour) | Working (local stack in CI) | Migration `20261018000200`; API test calls it 12 times. Pro state comes only from the server's entitlement; local StoreKit state never grants it |
+| M5 | Pro prices ($3.99 a month, $29.99 a year) | Proposed | Not set up in App Store Connect; no products exist |
+| M4 | Messages recover after going offline: channel rebuilt with backoff, chats and inbox reload on reconnect and on returning to the foreground | Working (local stack in CI) / app side unverified on a device | API test takes a client offline and checks the reload and resumed delivery; `DEVICE_TEST_PLAN.md` D4.3–D4.4 |
+| M1 | Build label for the staging backend | Working | Settings ▸ About shows "Pull Up server (staging)" when `PULLUP_BACKEND_ENVIRONMENT = staging` |
 
 ## Phase 2
 

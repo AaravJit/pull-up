@@ -1,6 +1,8 @@
 // Applies the direct-message retention rules once a day (see public.dm_purge
 // in migration 20261017000200_direct_messages.sql) and deletes the photos of
-// the messages it removed.
+// the messages it removed. Then deletes DM photos no message refers to any
+// more, a day after upload: sends that failed or were abandoned, and unsent
+// messages (public.dm_orphaned_media, migration 20261018000800).
 //
 // Schedule it with Supabase Cron (Integrations ▸ Cron) or any scheduler,
 // calling this function daily with the header
@@ -33,5 +35,18 @@ Deno.serve(async (req: Request): Promise<Response> => {
     const { error: removeError } = await admin.storage.from("dm-media").remove(paths.slice(i, i + 100));
     if (removeError) return Response.json({ error: removeError.message, removed: i }, { status: 500 });
   }
-  return Response.json({ purged_media: paths.length });
+  let orphans = 0;
+  // Each pass lists at most 1,000; stop after 20 so one run stays bounded.
+  for (let pass = 0; pass < 20; pass++) {
+    const { data: rows, error: listError } = await admin.rpc("dm_orphaned_media", { p_limit: 1000 });
+    if (listError) return Response.json({ error: listError.message, purged_media: paths.length }, { status: 500 });
+    const names = ((rows ?? []) as { name: string }[]).map((row) => row.name);
+    for (let i = 0; i < names.length; i += 100) {
+      const { error: removeError } = await admin.storage.from("dm-media").remove(names.slice(i, i + 100));
+      if (removeError) return Response.json({ error: removeError.message, purged_media: paths.length, orphans }, { status: 500 });
+      orphans += Math.min(100, names.length - i);
+    }
+    if (names.length < 1000) break;
+  }
+  return Response.json({ purged_media: paths.length, orphaned_media: orphans });
 });

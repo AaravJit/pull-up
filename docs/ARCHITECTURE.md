@@ -125,8 +125,10 @@ security boundary.
   stats) are protected by triggers; only `private.is_trusted()` roles may set
   them.
 * `private.validate_drive` re-derives distance and top speed from the stored
-  track and rejects or flags inconsistent uploads (non-monotonic time,
-  distance mismatch over 25%, top speed absent from the track, implausible
+  track and rejects or flags inconsistent uploads (non-monotonic time, a
+  distance more than 25% outside the range the track allows, from a lower
+  bound that discounts GPS error up to the raw sum of segments, top speed
+  absent from the track, implausible
   speeds, overlapping drives, uniform accuracy, flat altitude).
 * Performance leaderboards (0–60, top speed) only accept drives attached to
   a verified organizer's track-day event, by an attendee who RSVP'd going,
@@ -238,3 +240,15 @@ live dashboard says it is replaying a recorded track.
   the pgTAP suite, lints, rolls every migration back and re-applies it,
   type-checks the edge functions and runs their Deno unit tests (Apple and
   APNs stubbed, no network).
+  A second job starts the full local stack (auth, REST, realtime, storage,
+  edge functions) and runs `supabase/tests/api/`: three throwaway accounts
+  exercise every feature through the same HTTP and realtime APIs the app
+  uses, including what each account must be refused.
+* `.github/workflows/supabase-deploy.yml` (run by hand): applies the
+  migrations and functions to the hosted `staging` or `production` project
+  through a GitHub environment of the same name. It lists pending
+  migrations first and refuses any that drop, truncate or retype data, or
+  run dynamic SQL, unless the file carries a named approval line
+  (`supabase/scripts/check-pending-migrations.sh`). Staging runs then repeat
+  the pgTAP and API tests against the project; production runs none that
+  write. Setup: `SUPABASE_SETUP.md`.

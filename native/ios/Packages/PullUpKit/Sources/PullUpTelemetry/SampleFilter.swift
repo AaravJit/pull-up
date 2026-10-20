@@ -31,6 +31,12 @@ public struct SampleFilter: Sendable {
         /// Peak sustained longitudinal acceleration of very fast road cars is
         /// ~1.3 g. Above 1.6 g between Doppler readings is a sensor glitch.
         public var maxPlausibleAcceleration: Double = 16 // m/s²
+        /// Between fixes this close together, the position can't have moved
+        /// further than Doppler speed allows, plus this slack and both
+        /// accuracy radii. Longer intervals (tunnels) skip the check, since
+        /// the car may have sped up and slowed down in between.
+        public var dopplerSlack: Double = 2 // m/s
+        public var maxIntervalForDopplerCheck: Double = 5
 
         public init() {}
     }
@@ -64,6 +70,19 @@ public struct SampleFilter: Sendable {
         let forgiven = max(0, distance - previous.horizontalAccuracy - sample.horizontalAccuracy)
         if forgiven / dt > configuration.maxPlausibleSpeed {
             return .rejected(.implausibleJump)
+        }
+
+        // Multipath: a fix reflected off a building can land 30–60 m away
+        // while the car sits at a red light. The implied speed looks
+        // possible, but Doppler (measured independently of position) says
+        // the car can't have got there. Each reading's own uncertainty is
+        // allowed for, so a near-zero speed iOS isn't sure of can't reject
+        // honest fixes from a moving car.
+        if previous.hasValidSpeed, sample.hasValidSpeed, dt <= configuration.maxIntervalForDopplerCheck {
+            let fastest = max(previous.speed + previous.speedAccuracy, sample.speed + sample.speedAccuracy)
+            let reach = (fastest + configuration.dopplerSlack) * dt
+                + previous.horizontalAccuracy + sample.horizontalAccuracy
+            if distance > reach { return .rejected(.implausibleJump) }
         }
 
         if previous.hasValidSpeed, sample.hasValidSpeed {

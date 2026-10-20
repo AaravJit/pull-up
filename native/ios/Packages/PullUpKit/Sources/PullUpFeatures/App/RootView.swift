@@ -36,7 +36,12 @@ public struct RootView: View {
         .clusterTheme(theme)
         .task { await app.start() }
         .onChange(of: scenePhase) { _, phase in
-            if phase == .active { Task { await app.verifyAppleCredential() } }
+            if phase == .active {
+                Task {
+                    await app.verifyAppleCredential()
+                    await app.catchUpMessages()
+                }
+            }
         }
     }
 }
