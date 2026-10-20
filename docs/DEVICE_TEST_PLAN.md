@@ -157,7 +157,7 @@ to send you a message", with no text whatever the setting.
 | D5.2b | A turns on Show message text; B sends again | Push titled with B's name, showing the message text |
 | D5.3 | Tap a message push | It opens that chat |
 | D5.4 | Push me about ▸ Messages off; B sends in an accepted chat. Turn it back on; B sends again | No push the first time (the chat still updates); a push the second time |
-| D5.5 | On A's phone sign out and sign in to the second account (a staging email account), which makes one Public post. B likes A's post and sends A a message; then B follows the second account | Nothing arrives for A. The second account gets "… started following you" |
+| D5.5 | On A's phone sign out and sign in to the second account (a staging email account), which makes one Public post. B likes A's post and sends A a message; then B follows the second account. Afterwards sign out and sign back in with Apple as A, for the tests that follow | Nothing arrives for A. The second account gets "… started following you" |
 
 A push is verified only when it shows up on the device. A green server log
 doesn't count.
