@@ -39,8 +39,10 @@ lower one.
 * **2 accounts** means two iPhones, each signed in to its own Apple ID, both
   in use at the same time for the live tests (D4.2, D4.4, D4.7a). Sign in
   with Apple always uses the phone's own Apple ID, so a second account on
-  the same phone (E, used in D5.5 and section 6) has to be an email account created in the
-  staging dashboard, used through "Other ways to sign in".
+  the same phone (E, used in D5.2, D5.5 and section 6) has to be an email
+  account created in the staging dashboard, used through "Other ways to
+  sign in". The first time E signs in, finish its onboarding (handle, then
+  Profile: Public under "Who sees what").
 * After section 1, A adds two vehicles (Garage ▸ Add vehicle ▸ year, make
   and model ▸ Save), with a real year, make and model. D3.7, D4.5, D7.1 and
   D9.2 need them.
@@ -131,7 +133,7 @@ still pending, A unfollows and follows again).
 
 | ID | Steps | Expected |
 | --- | --- | --- |
-| D4.1 | B: Pull Up Settings ▸ Privacy ▸ Approve new followers on, Profile = Friends. A opens B's profile from B's post ▸ Follow | A's button reads "Requested"; B's notifications show that A asked to follow; A sees that only friends can see B's garage and drives. See [Known gaps](#known-gaps): B can't approve yet |
+| D4.1 | B: Pull Up Settings ▸ Privacy ▸ Approve new followers on. A opens B's profile from B's post ▸ Follow. Then B sets Privacy ▸ Profile to Friends, and A goes back to Feed (without refreshing) and opens B's profile again from the same post | A's button reads "Requested"; B's notifications show that A asked to follow; on reopening, A sees that only friends can see B's garage and drives. Afterwards B sets Profile back to Public. See [Known gaps](#known-gaps): B can't approve yet |
 | D4.2 | A sends B a message; B has the chat open | Appears within a few seconds without refreshing |
 | D4.3 | B turns on airplane mode; A sends two messages; B turns it off and opens the app | Both messages appear and the inbox shows them unread |
 | D4.4 | B leaves the app in the background for 10 minutes while A sends | On return to the foreground the chat and unread count are up to date |
@@ -143,7 +145,7 @@ still pending, A unfollows and follows again).
 | D4.7d | A reports B from the chat | "Thanks for reporting" appears; B isn't told; a row appears in staging's `reports` table |
 | D4.7e | Run after section 5. A blocks B | The chat leaves A's inbox; B can't start a chat with A, find A or see A's profile. To undo, delete the row in staging's `blocks` table |
 | D4.8 | Send a photo that has a location (in Photos, swipe up shows a map). In the staging dashboard ▸ Storage ▸ dm-media, download that message's .jpg and check it with an EXIF viewer | No GPS fields; longest side 2048 px or less |
-| D4.9 | Look through Feed, search, meets and leaderboards | No demo profiles; only real accounts. CI's API tests briefly create "Test …" users on staging and delete them again |
+| D4.9 | Look through Feed, meets and leaderboards, and the people search when sending a post (paper-plane button ▸ search). The app has no other search | No demo profiles; only real accounts. CI's API tests briefly create "Test …" users on staging and delete them again |
 | D4.10 | A: Feed ▸ New post ▸ Add ▸ pick a clip under 100 MB filmed on the phone ▸ Public ▸ Post. B turns Wi-Fi off (cellular only), opens Feed and plays A's video | The post appears with the video. On cellular it starts playing and plays to the end with the standard controls; note in the result how long it took to start |
 
 ## 5. Notifications (2 accounts)
