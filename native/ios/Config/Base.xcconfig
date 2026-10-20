@@ -11,6 +11,9 @@ PULLUP_TEAM_ID =
 // configured" and offers labelled demo data.
 PULLUP_SUPABASE_HOST =
 PULLUP_SUPABASE_ANON_KEY =
+// Which project the host above is: staging or production. Shown in
+// Settings > About so a tester can tell which backend a build talks to.
+PULLUP_BACKEND_ENVIRONMENT =
 
 // Privacy policy shown with the Pull Up Pro subscription, WITHOUT the
 // scheme (https is added), e.g. pullup.app/privacy. Required before Pro can

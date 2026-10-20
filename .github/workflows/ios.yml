@@ -42,6 +42,21 @@ jobs:
             -resultBundlePath "$RUNNER_TEMP/PullUpKit.xcresult" \
             -skipPackagePluginValidation \
             CODE_SIGNING_ALLOWED=NO
+      - name: Telemetry replay report
+        # The replay scenario tests attach one line each with their measured
+        # error (docs/TELEMETRY_VALIDATION.md). Synthetic tracks, not a phone.
+        if: always()
+        run: |
+          mkdir -p "$RUNNER_TEMP/attachments"
+          xcrun xcresulttool export attachments --path "$RUNNER_TEMP/PullUpKit.xcresult" --output-path "$RUNNER_TEMP/attachments" || true
+          grep -rhoE "SCENARIO [^:]+: .*" "$RUNNER_TEMP/attachments" | sort -u > "$RUNNER_TEMP/scenarios.txt" || true
+          cat "$RUNNER_TEMP/scenarios.txt"
+          {
+            echo "### Telemetry replay scenarios (synthetic tracks)"
+            echo '```'
+            cat "$RUNNER_TEMP/scenarios.txt"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
       - name: Upload results
         if: always()
         uses: actions/upload-artifact@v4

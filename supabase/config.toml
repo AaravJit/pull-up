@@ -32,11 +32,19 @@ enable_signup = true
 enable_manual_linking = true
 
 # New accounts are created with Sign in with Apple (Google on Android later).
-# Email stays enabled for sign-in only: the App Review demo account is made
-# in the dashboard.
+# Email stays enabled for sign-in: the App Review demo account is made in the
+# dashboard, and CI's API tests sign in synthetic users with it. Despite its
+# name, `enable_signup` here switches the whole email provider on or off;
+# the app itself offers no email sign-up.
 [auth.email]
-enable_signup = false
+enable_signup = true
 enable_confirmations = true
+
+# Refuses new email (and phone) accounts from the public sign-up endpoint;
+# admin-created accounts are unaffected. Migration 20261018000100.
+[auth.hook.before_user_created]
+enabled = true
+uri = "pg-functions://postgres/public/hook_before_user_created"
 
 # Enabled in production once the Services ID and signing key exist.
 [auth.external.apple]
