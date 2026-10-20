@@ -62,7 +62,7 @@ lower one.
 | D1.2 | Sign in with Apple, share email | Onboarding: "Pick your handle", "Add a photo", "Who sees what". "Other ways to sign in" only offers email sign-in for accounts set up by Pull Up support; nothing lets you create an account with email |
 | D1.3 | On the second phone, whose Apple ID hasn't used Pull Up yet (Apple only offers the choice the first time): Sign in with Apple, **Hide My Email**. This becomes account B | Same onboarding; afterwards Pull Up Settings ▸ Account shows "Email: Hidden by Apple" |
 | D1.4 | Delete the app, reinstall, open | Either already signed in or the sign-in screen (iOS may keep the saved session). After signing in with the same Apple ID: same @username, no onboarding |
-| D1.5 | Signed in with Apple on this phone: iOS Settings ▸ your name ▸ Sign in with Apple ▸ Pull Up ▸ Stop using | Next launch or return to the app signs out, and the sign-in screen says Sign in with Apple was turned off for Pull Up |
+| D1.5 | Signed in with Apple on this phone: iOS Settings ▸ your name ▸ Sign in with Apple ▸ Pull Up ▸ Stop using | Next launch or return to the app signs out, and the sign-in screen says Sign in with Apple was turned off for Pull Up. Sign in with Apple again afterwards: same @username, no onboarding |
 | D1.6 | Run last, after every other section. Pull Up Settings ▸ Account ▸ Delete account ▸ type DELETE ▸ Continue with Apple | Sign-in screen says "Your account and everything in it have been deleted." The other account can no longer see this one's posts or profile. Signing in again goes to "Pick your handle" (a new account) |
 
 ## 2. Location permission
@@ -140,8 +140,8 @@ still pending, A unfollows and follows again).
 | D4.7d | A reports B from the chat | "Thanks for reporting" appears; B isn't told; a row appears in staging's `reports` table |
 | D4.7e | Run after section 5. A blocks B | The chat leaves A's inbox; B can't start a chat with A, find A or see A's profile. To undo, delete the row in staging's `blocks` table |
 | D4.8 | Send a photo that has a location (in Photos, swipe up shows a map). In the staging dashboard ▸ Storage ▸ dm-media, download that message's .jpg and check it with an EXIF viewer | No GPS fields; longest side 2048 px or less |
-| D4.9 | A: Feed ▸ New post ▸ Add ▸ pick a clip under 100 MB filmed on the phone ▸ Public ▸ Post. B turns Wi-Fi off (cellular only), opens Feed and plays A's video | The post appears with the video. On cellular it starts playing and plays to the end with the standard controls; note in the result how long it took to start |
 | D4.9 | Look through Feed, search, meets and leaderboards | No demo profiles; only real accounts. CI's API tests briefly create "Test …" users on staging and delete them again |
+| D4.10 | A: Feed ▸ New post ▸ Add ▸ pick a clip under 100 MB filmed on the phone ▸ Public ▸ Post. B turns Wi-Fi off (cellular only), opens Feed and plays A's video | The post appears with the video. On cellular it starts playing and plays to the end with the standard controls; note in the result how long it took to start |
 
 ## 5. Notifications (2 accounts)
 
