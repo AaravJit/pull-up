@@ -41,6 +41,9 @@ lower one.
   with Apple always uses the phone's own Apple ID, so a second account on
   the same phone (E, used in D5.5 and section 6) has to be an email account created in the
   staging dashboard, used through "Other ways to sign in".
+* After section 1, A adds two vehicles (Garage ▸ Add vehicle ▸ year, make
+  and model ▸ Save), with a real year, make and model. D3.7, D4.5, D7.1 and
+  D9.2 need them.
 * The only way to open another person's profile is to tap their name on a
   post in Feed. Before the 2-account tests, each account makes one Public
   post.
@@ -215,8 +218,8 @@ simulator doesn't exercise the connection.
 | D9.1 | Signed out of Pull Up, connect the phone to the head unit and open Pull Up there | "Signed out: Open Pull Up on your iPhone to sign in." and no buttons |
 | D9.2 | Sign in on the phone, then on the head unit tap Start drive | "Choose vehicle" lists the garage vehicles and "Guest vehicle" |
 | D9.3 | Pick a vehicle and drive a keepable drive (the passenger checks the phone) | The phone records; the head unit shows the drive's status and "Stop and save" |
-| D9.4 | Tap Stop and save on the head unit | The drive is in Recent drives on the phone, logged to the vehicle picked in D9.3 |
-| D9.5 | Unplug the phone mid-drive, then plug it back in | Recording carries on on the phone; on reconnecting the head unit shows the same drive with "Stop and save" |
+| D9.4 | Mid-drive, unplug the phone, then plug it back in | Recording carries on on the phone; on reconnecting the head unit shows the same drive with "Stop and save" |
+| D9.5 | Tap Stop and save on the head unit | The drive is in Recent drives on the phone, logged to the vehicle picked in D9.3 |
 
 ## Known gaps
 
