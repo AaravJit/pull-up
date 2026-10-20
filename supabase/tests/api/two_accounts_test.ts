@@ -38,16 +38,62 @@ const admin = createClient(url, serviceKey, noSession);
 const run = crypto.randomUUID().replaceAll("-", "").slice(0, 8);
 
 type User = { name: string; id: string; db: SupabaseClient; email: string };
+/** Every account this run created, from the moment it exists, so cleanup never misses one. */
+type Created = { id: string; db?: SupabaseClient };
 
-async function makeUser(name: string): Promise<User> {
+async function makeUser(name: string, created: Created[]): Promise<User> {
   const email = `pullup-api-${run}-${name}@example.com`;
   const password = `${crypto.randomUUID()}Aa1!`;
-  const created = await admin.auth.admin.createUser({ email, password, email_confirm: true });
-  if (created.error) throw created.error;
+  const result = await admin.auth.admin.createUser({ email, password, email_confirm: true });
+  if (result.error) throw result.error;
+  const entry: Created = { id: result.data.user.id };
+  created.push(entry);
   const db = createClient(url, anonKey, noSession);
   const signedIn = await db.auth.signInWithPassword({ email, password });
   if (signedIn.error) throw signedIn.error;
-  return { name, id: created.data.user.id, db, email };
+  entry.db = db;
+  return { name, id: entry.id, db, email };
+}
+
+/** Removes every object under root, the same walk delete-account does. */
+async function removeTree(bucket: string, root: string): Promise<string | null> {
+  const queue = [root];
+  while (queue.length > 0) {
+    const prefix = queue.pop()!;
+    const { data: entries, error } = await admin.storage.from(bucket).list(prefix, { limit: 1000 });
+    if (error) return `listing ${bucket}/${prefix}: ${error.message}`;
+    const files: string[] = [];
+    for (const entry of entries ?? []) {
+      if (entry.id === null) queue.push(`${prefix}/${entry.name}`);
+      else files.push(`${prefix}/${entry.name}`);
+    }
+    if (files.length > 0) {
+      const { error: removeError } = await admin.storage.from(bucket).remove(files);
+      if (removeError) return `removing from ${bucket}/${prefix}: ${removeError.message}`;
+    }
+  }
+  return null;
+}
+
+/** Fallback when delete-account fails: the account's files, then the account. */
+async function removeAccount(id: string): Promise<string[]> {
+  const problems: string[] = [];
+  const { data: conversations, error } = await admin.from("conversations").select("id").or(`user_a.eq.${id},user_b.eq.${id}`);
+  if (error) problems.push(`listing conversations: ${error.message}`);
+  for (const c of conversations ?? []) {
+    const problem = await removeTree("dm-media", c.id);
+    if (problem) problems.push(problem);
+  }
+  for (const bucket of ["avatars", "vehicle-media", "post-media"]) {
+    const problem = await removeTree(bucket, id);
+    if (problem) problems.push(problem);
+  }
+  // Deleting the account cascades its conversations away, and with them the
+  // only way to find its message photos, so it stays until its files are gone.
+  if (problems.length > 0) return [...problems, `kept auth user ${id} so a retry can find its files`];
+  const deleted = await admin.auth.admin.deleteUser(id);
+  if (deleted.error) problems.push(`deleting auth user ${id}: ${deleted.error.message}`);
+  return problems;
 }
 
 /** Data from a call that must succeed. */
@@ -105,11 +151,13 @@ Deno.test({
   sanitizeOps: false,
   sanitizeResources: false,
   async fn(t) {
+    const created: Created[] = [];
     const users: User[] = [];
+    let finished = false;
     try {
-      const ann = await makeUser("ann");
-      const ben = await makeUser("ben");
-      const cat = await makeUser("cat");
+      const ann = await makeUser("ann", created);
+      const ben = await makeUser("ben", created);
+      const cat = await makeUser("cat", created);
       users.push(ann, ben, cat);
 
       await t.step("signed out, the API serves nothing", async () => {
@@ -406,17 +454,30 @@ Deno.test({
         assertEquals(deleted.error, null, `delete-account: ${deleted.error}`);
         assertEquals((deleted.data as { deleted?: boolean }).deleted, true);
         users.splice(users.indexOf(cat), 1);
+        created.splice(created.findIndex((c) => c.id === cat.id), 1);
         assert((await admin.auth.admin.getUserById(cat.id)).error, "the auth user is gone");
         assertEquals(ok(await ann.db.from("profiles").select("id").eq("id", cat.id), "Cat's profile"), []);
         const requests = ok(await ann.db.rpc("inbox", { p_state: "request" }), "requests") as { conversation_id: string }[];
         assert(!requests.some((r) => r.conversation_id === ids.request), "her conversations went with her");
       });
+      finished = true;
     } finally {
       // Same path as a person deleting their account, so Storage is cleaned
-      // too; the admin call is a fallback if the function itself failed.
-      for (const u of users) {
-        const result = await u.db.functions.invoke("delete-account", { body: {} }).catch((error) => ({ error }));
-        if (result.error) await admin.auth.admin.deleteUser(u.id);
+      // too. If the function fails, or the account never got signed in, the
+      // service role removes its files and the account, and the run fails so
+      // nothing is left behind unnoticed.
+      const problems: string[] = [];
+      for (const c of created) {
+        const result = c.db
+          ? await c.db.functions.invoke("delete-account", { body: {} }).catch((error) => ({ error }))
+          : { error: "never signed in" };
+        if (!result.error) continue;
+        problems.push(`delete-account for ${c.id} failed (${result.error instanceof Error ? result.error.message : String(result.error)}); removed by the service role instead`);
+        problems.push(...await removeAccount(c.id));
+      }
+      if (problems.length > 0) {
+        if (finished) throw new Error(`Cleanup:\n${problems.join("\n")}`);
+        console.error(`Cleanup:\n${problems.join("\n")}`);
       }
     }
   },

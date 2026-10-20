@@ -245,8 +245,8 @@ live dashboard says it is replaying a recorded track.
 * `.github/workflows/supabase-deploy.yml` (run by hand): applies the
   migrations and functions to the hosted `staging` or `production` project
   through a GitHub environment of the same name. It lists pending
-  migrations first and refuses any that drop, truncate or retype data
-  unless the file carries a named approval line
+  migrations first and refuses any that drop, truncate or retype data, or
+  run dynamic SQL, unless the file carries a named approval line
   (`supabase/scripts/check-pending-migrations.sh`). Staging runs then repeat
   the pgTAP and API tests against the project; production runs none that
   write. Setup: `SUPABASE_SETUP.md`.

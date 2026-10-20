@@ -13,7 +13,7 @@ functions and tests have only run on the local Supabase stack in CI.
 | --- | --- | --- |
 | Tables, policies, functions, triggers, storage buckets and their policies, realtime publication | `supabase/migrations/` | `supabase db push` in the deploy workflow |
 | Edge functions | `supabase/functions/` | `supabase functions deploy` in the deploy workflow |
-| Function secrets (push, Apple, App Store) | GitHub environment secrets | copied by the deploy workflow when present |
+| Function secrets (push, Apple, App Store) | GitHub environment secrets | copied by the deploy workflow; one deleted here is removed from the project on the next deploy |
 | Auth providers, sign-up switches, redirect URLs, database webhook, cron | Supabase dashboard | **You**, once per project (step 5) |
 | App's project URL and anon key | GitHub environment secrets, or your local `Config/Secrets.xcconfig` | the iOS build |
 
@@ -48,7 +48,8 @@ Repository ▸ Settings ▸ Environments ▸ New environment:
 | `production` | `SUPABASE_PROJECT_REF` = production ref | `SUPABASE_ACCESS_TOKEN`, `SUPABASE_DB_PASSWORD` (production's) | **Required reviewers: you**; deployment branches: `main` only |
 
 Optional secrets, per environment, copied to the project's function
-secrets on each deploy. Functions answer "not configured" without them.
+secrets on each deploy, and removed from them once deleted here. Functions
+answer "not configured" without them.
 
 | Secret | Used by | Where it comes from |
 | --- | --- | --- |
@@ -64,8 +65,13 @@ Actions ▸ **Supabase deploy** ▸ Run workflow. (GitHub lists a hand-run
 workflow only once it is on `main`, so this appears after PR #2 is merged.)
 
 1. `staging`, **apply unticked**. This is a dry run: it lists the migrations
-   staging doesn't have yet and refuses any that could drop data
-   (`supabase/scripts/check-pending-migrations.sh`).
+   staging doesn't have yet and refuses any that could drop data or that
+   run dynamic SQL (`supabase/scripts/check-pending-migrations.sh`). It stops
+   first if the project has migrations the checkout lacks (staging carries
+   the Phase 3 migrations from their pull requests, so run it from `main`
+   once those are merged). It also refuses any
+   migration not recorded in `supabase/applied/staging.sha256`: record new
+   ones there in their pull request, so CI guards them once deployed.
 2. `staging`, **apply ticked**. Applies the migrations, copies the function
    secrets, deploys the functions, then runs against staging:
    * the pgTAP suite (`supabase/tests/*.sql`), which rolls back everything

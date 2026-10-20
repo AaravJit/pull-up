@@ -66,17 +66,35 @@ jobs:
       - name: Link the project
         run: supabase link --project-ref "$PROJECT_REF" --password "$SUPABASE_DB_PASSWORD"
 
+      # db push refuses to run when the project has migrations this checkout
+      # lacks (for example ones deployed to staging from a pull request that
+      # isn't merged yet). Name them instead of failing on the CLI's error.
+      - name: The checkout has every migration the project has applied
+        run: |
+          set -o pipefail
+          supabase migration list --password "$SUPABASE_DB_PASSWORD" | tee "$RUNNER_TEMP/migrations.txt"
+          missing=$(awk -F'|' '{ l=$1; r=$2; gsub(/ /, "", l); gsub(/ /, "", r) } l == "" && r ~ /^[0-9]+$/ && length(r) == 14 { print r }' "$RUNNER_TEMP/migrations.txt")
+          if [ -n "$missing" ]; then
+            echo "::error::${{ inputs.environment }} has migrations this checkout doesn't: $(echo $missing | tr '\n' ' '). Merge the pull requests that add them, then run from main."
+            exit 1
+          fi
+
       - name: List migrations the project doesn't have yet
         id: pending
         run: |
           set -o pipefail
           supabase db push --dry-run --password "$SUPABASE_DB_PASSWORD" 2>&1 | tee "$RUNNER_TEMP/dry-run.txt"
-          pending=$(grep -oE '[0-9]{14}_[a-z0-9_]+\.sql' "$RUNNER_TEMP/dry-run.txt" | sort -u | sed 's|^|supabase/migrations/|' | tr '\n' ' ')
+          pending=$({ grep -oE '[0-9]{14}_[a-z0-9_]+\.sql' "$RUNNER_TEMP/dry-run.txt" || true; } | sort -u | sed 's|^|supabase/migrations/|' | tr '\n' ' ')
           echo "files=$pending" >> "$GITHUB_OUTPUT"
           {
             echo "### ${{ inputs.environment }}: pending migrations"
             if [ -n "$pending" ]; then for f in $pending; do echo "- \`$f\`"; done; else echo "None"; fi
           } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Every migration is recorded in the staging manifest
+        run: |
+          git fetch --no-tags --depth=1 origin main:refs/remotes/origin/main
+          bash supabase/scripts/check-applied-migrations.sh --complete
 
       - name: Refuse migrations that could destroy data
         if: steps.pending.outputs.files != ''
@@ -86,7 +104,7 @@ jobs:
         if: inputs.apply
         run: supabase db push --password "$SUPABASE_DB_PASSWORD"
 
-      - name: Copy function secrets that are set in this environment
+      - name: Copy function secrets from this environment
         if: inputs.apply
         env:
           PUSH_WEBHOOK_SECRET: ${{ secrets.PUSH_WEBHOOK_SECRET }}
@@ -108,14 +126,27 @@ jobs:
           file="$RUNNER_TEMP/function-secrets.env"
           : > "$file"
           names=""
+          absent=""
           for name in PUSH_WEBHOOK_SECRET CRON_SECRET APNS_KEY_ID APNS_PRIVATE_KEY APNS_TEAM_ID APNS_TOPIC \
                       APPLE_CLIENT_ID APPLE_KEY_ID APPLE_PRIVATE_KEY APPLE_TEAM_ID \
                       APPSTORE_ISSUER_ID APPSTORE_KEY_ID APPSTORE_PRIVATE_KEY APPSTORE_BUNDLE_ID; do
             value="${!name}"
-            [ -n "$value" ] || continue
+            if [ -z "$value" ]; then absent="$absent $name"; continue; fi
             printf '%s="%s"\n' "$name" "$value" >> "$file"
             names="$names $name"
           done
+          # This environment is the source of truth: a secret deleted here
+          # (say, a revoked key) is removed from the project too.
+          existing=$(curl -fsS -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+            "https://api.supabase.com/v1/projects/$PROJECT_REF/secrets" | jq -r '.[].name')
+          stale=""
+          for name in $absent; do
+            grep -qx "$name" <<<"$existing" && stale="$stale $name"
+          done
+          if [ -n "$stale" ]; then
+            supabase secrets unset --project-ref "$PROJECT_REF" $stale
+            echo "Removed (no longer in this environment):$stale"
+          fi
           if [ -n "$names" ]; then
             supabase secrets set --project-ref "$PROJECT_REF" --env-file "$file"
             echo "Set:$names"
@@ -141,11 +172,17 @@ jobs:
         if: inputs.apply && inputs.environment == 'staging'
         run: |
           # Legacy anon/service_role keys if the project has them, else the
-          # newer publishable/secret keys.
-          keys=$(supabase projects api-keys --project-ref "$PROJECT_REF" --reveal -o json)
-          anon=$(jq -r 'first(.[] | select(.name == "anon" or .type == "publishable") | .api_key)' <<<"$keys")
-          service=$(jq -r 'first(.[] | select(.name == "service_role" or .type == "secret") | .api_key)' <<<"$keys")
-          echo "::add-mask::$service"
+          # newer publishable/secret keys. Straight from the Management API:
+          # the CLI this job installs has no way to reveal secret keys.
+          keys=$(curl -fsS -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+            "https://api.supabase.com/v1/projects/$PROJECT_REF/api-keys?reveal=true")
+          service=$(jq -r 'first(.[] | select(.name == "service_role" or .type == "secret") | .api_key) // empty' <<<"$keys")
+          [ -n "$service" ] && echo "::add-mask::$service"
+          anon=$(jq -r 'first(.[] | select(.name == "anon" or .type == "publishable") | .api_key) // empty' <<<"$keys")
+          if [ -z "$anon" ] || [ -z "$service" ]; then
+            echo "::error::Couldn't read the project's API keys with SUPABASE_ACCESS_TOKEN."
+            exit 1
+          fi
           PULLUP_API_TARGET=staging PULLUP_API_URL="https://$PROJECT_REF.supabase.co" \
           PULLUP_API_ANON_KEY="$anon" PULLUP_API_SERVICE_ROLE_KEY="$service" \
             deno test --config supabase/functions/deno.json --allow-env --allow-net supabase/tests/api/

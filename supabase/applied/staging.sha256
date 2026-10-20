@@ -1,5 +1,6 @@
 # Migrations applied to pull-up-staging (hllfsfbuexuniosdewob), as sha256sum prints them.
-# Checked by supabase/scripts/check-applied-migrations.sh. After deploying to staging, regenerate:
+# Checked by supabase/scripts/check-applied-migrations.sh. Record a migration here in its pull
+# request, before deploying it; the deploy workflow refuses migrations that aren't recorded:
 #   (cd supabase/migrations && sha256sum *.sql) > supabase/applied/staging.sha256  (keep these comments)
 # Last deployed 2026-10-18: main plus PRs #4, #6, #7, #10 and #14.
 aa88cb0f46014a39f39a720690d03a053f12ebb72160c3e7928a1857707bf65d  20261016000100_core_identity.sql
