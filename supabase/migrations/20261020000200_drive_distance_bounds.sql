@@ -4,9 +4,10 @@
 -- that sum and flagged a difference above 5 %, so ordinary stop-and-go
 -- drives would have lost "validated". It now also computes a lower bound
 -- (straight hops between well-separated fixes, each less both fixes'
--- accuracy radii) and accepts the app's figure anywhere between the two,
--- with the same 5 % / 50 m and 25 % / 200 m margins as before.
--- server_distance_m is still the raw sum.
+-- accuracy radii, restarting wherever the app relocked after a jump) and
+-- accepts the app's figure anywhere between the two, with the same
+-- 5 % / 50 m and 25 % / 200 m margins as before. server_distance_m is
+-- still the raw sum.
 --
 -- Reversible: supabase/rollback/20261020000200_drive_distance_bounds_down.sql
 -- restores the previous definition. No data is touched; drives already
@@ -26,6 +27,9 @@ declare
   prev_t double precision;
   prev_lat double precision;
   prev_lon double precision;
+  prev_spd double precision;
+  prev_sacc double precision;
+  prev_hacc double precision;
   dist double precision := 0;
   low_dist double precision := 0;
   anchor_lat double precision;
@@ -58,7 +62,8 @@ begin
 
   for rec in
     select (p ->> 0)::float8 as t, (p ->> 1)::float8 as lat, (p ->> 2)::float8 as lon,
-           (p ->> 3)::float8 as alt, (p ->> 4)::float8 as spd, (p ->> 5)::float8 as hacc
+           (p ->> 3)::float8 as alt, (p ->> 4)::float8 as spd, (p ->> 5)::float8 as hacc,
+           (p ->> 7)::float8 as sacc
     from jsonb_array_elements(pts) with ordinality as e(p, i)
     order by i
   loop
@@ -81,9 +86,22 @@ begin
           jumps := jumps + 1; -- teleport; don't count it
         else
           dist := dist + seg;
-          -- Lower bound: hop from fix to fix once they are well apart, and
-          -- credit each hop less both fixes' accuracy radii, which is the
-          -- least the car can have moved between them.
+        end if;
+        -- Lower bound: hop from fix to fix once they are well apart, and
+        -- credit each hop less both fixes' accuracy radii, which is the
+        -- least the car can have moved between them. A step the app's own
+        -- jump check rejects (faster than 120 m/s, or further than the
+        -- Doppler speeds allow) is where it relocked and added nothing, so
+        -- the bound restarts from there instead of spanning it.
+        if seg / dt > 120
+           or (coalesce(prev_spd, -1) >= 0 and coalesce(prev_sacc, -1) >= 0
+               and coalesce(rec.spd, -1) >= 0 and coalesce(rec.sacc, -1) >= 0 and dt <= 5
+               and seg > (greatest(prev_spd + prev_sacc, rec.spd + rec.sacc) + 2) * dt
+                         + coalesce(prev_hacc, 0) + coalesce(rec.hacc, 0)) then
+          anchor_lat := rec.lat;
+          anchor_lon := rec.lon;
+          anchor_hacc := rec.hacc;
+        else
           from_anchor := public.haversine_m(anchor_lat, anchor_lon, rec.lat, rec.lon);
           if from_anchor > greatest(5, 2 * (coalesce(anchor_hacc, 0) + coalesce(rec.hacc, 0))) then
             low_dist := low_dist + from_anchor - coalesce(anchor_hacc, 0) - coalesce(rec.hacc, 0);
@@ -102,6 +120,9 @@ begin
     prev_t := rec.t;
     prev_lat := rec.lat;
     prev_lon := rec.lon;
+    prev_spd := rec.spd;
+    prev_sacc := rec.sacc;
+    prev_hacc := rec.hacc;
   end loop;
 
   duration := coalesce(prev_t, 0);
