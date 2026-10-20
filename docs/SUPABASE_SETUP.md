@@ -92,6 +92,12 @@ These aren't in migrations because they hold per-project values:
   API tests. Don't turn off "Allow new users to sign up": that switch
   covers every provider, so it would stop new Sign in with Apple accounts
   too. The app offers no email sign-up.
+* **Auth ▸ Hooks ▸ Before User Created:** enable it with type Postgres and
+  the function `public.hook_before_user_created`. It refuses new email and
+  phone accounts from the public sign-up endpoint, so registering takes
+  Sign in with Apple; accounts you create under Auth ▸ Users still work.
+  Check it: a sign-up from the API with the anon key must fail with
+  "New Pull Up accounts are created with Sign in with Apple."
 * **Auth ▸ Providers ▸ Apple:** enable with the Services ID and key
   (`RELEASE_CHECKLIST.md` §3).
 * **Auth ▸ Sign In / Providers:** "Allow manual linking" on (the database

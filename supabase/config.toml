@@ -40,6 +40,12 @@ enable_manual_linking = true
 enable_signup = true
 enable_confirmations = true
 
+# Refuses new email (and phone) accounts from the public sign-up endpoint;
+# admin-created accounts are unaffected. Migration 20261018000100.
+[auth.hook.before_user_created]
+enabled = true
+uri = "pg-functions://postgres/public/hook_before_user_created"
+
 # Enabled in production once the Services ID and signing key exist.
 [auth.external.apple]
 enabled = false
