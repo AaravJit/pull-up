@@ -56,7 +56,7 @@ always discloses it.
 
 | Problem | What happens | Scenario |
 | --- | --- | --- |
-| Stopped at lights | iOS pauses updates; the engine treats the pause as a known zero, not lost signal. Speed shows 0, the gap isn't counted | urban, stationary pause |
+| Stopped at lights | iOS pauses updates; the engine treats the pause as a known zero, not lost signal. Speed shows 0, the gap isn't counted. If the car has already moved off when updates resume, that distance is credited with the time it took at no more than the current speed | urban, stationary pause, unit tests |
 | GPS jitter while parked or crawling | At short intervals, distance follows the Doppler speed when it agrees with the position change, so wander doesn't add up | low speed, stop-and-go |
 | Multipath jump off a building | A fix further away than the Doppler speed allows (plus each reading's speed uncertainty, 2 m/s and both accuracy radii) is rejected | multipath, unit tests |
 | Wrong cached first fix | After three consistent fixes that all disagree with the first, the engine relocks on them and drops it | bad first fix |

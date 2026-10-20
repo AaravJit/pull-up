@@ -3,7 +3,7 @@
 # request, before deploying it; the deploy workflow refuses migrations that aren't recorded:
 #   (cd supabase/migrations && sha256sum *.sql) > supabase/applied/staging.sha256  (keep these comments)
 # Last deployed 2026-10-18: main plus PRs #4, #6, #7, #10 and #14.
-# Recorded, not yet deployed: 20261020000100 (#6).
+# Recorded, not yet deployed: 20261020000100 (#6), 20261020000200 (#13).
 aa88cb0f46014a39f39a720690d03a053f12ebb72160c3e7928a1857707bf65d  20261016000100_core_identity.sql
 e3b2bcf5e705c09d5b17b1366e0e17187b8997c2bbd38a9a57d62670cd716940  20261016000200_garage.sql
 fb987a63893b1a7459e2ea3376dc4519878bb0d7e9a4f45f7d7f2424ab1e6cf5  20261016000300_drives.sql
@@ -26,3 +26,4 @@ d257df6f94aab280e1916cd0e1ed5404e551b7cb442445ee601e279a4fa44632  20261018000500
 d25152497abee42b1abee7045f581162db7f153e1367379c85710d7cf9ecbc43  20261018000700_explicit_api_grants.sql
 fea6d4823abcdbfce502a027f9fcdd872b3ecef4d649ec0cc49529333c9cd921  20261018000800_security_open_findings.sql
 2ff249e0a76958fc167a492b97731245827506f7fb71f8418f68690f1a5fc4f8  20261020000100_signup_hook_schema_usage.sql
+c95149ebabcd28da4af0148e6ddedcd80f8c3b4020e29f6381fa757dfd109f21  20261020000200_drive_distance_bounds.sql

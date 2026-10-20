@@ -125,8 +125,10 @@ security boundary.
   stats) are protected by triggers; only `private.is_trusted()` roles may set
   them.
 * `private.validate_drive` re-derives distance and top speed from the stored
-  track and rejects or flags inconsistent uploads (non-monotonic time,
-  distance mismatch over 25%, top speed absent from the track, implausible
+  track and rejects or flags inconsistent uploads (non-monotonic time, a
+  distance more than 25% outside the range the track allows, from a lower
+  bound that discounts GPS error up to the raw sum of segments, top speed
+  absent from the track, implausible
   speeds, overlapping drives, uniform accuracy, flat altitude).
 * Performance leaderboards (0–60, top speed) only accept drives attached to
   a verified organizer's track-day event, by an attendee who RSVP'd going,

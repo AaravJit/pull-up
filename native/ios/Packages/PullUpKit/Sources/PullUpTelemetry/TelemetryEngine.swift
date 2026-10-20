@@ -230,6 +230,11 @@ public struct TelemetryEngine: Sendable {
             // can't explain, as when parked.
             if segment > max(5, previous.horizontalAccuracy + sample.horizontalAccuracy) {
                 distance += segment
+                // The car set off before iOS resumed updates. Credit the
+                // time that distance took at no more than the speed it has
+                // now, so the average moving speed can't jump.
+                let pace = max(sample.hasValidSpeed ? sample.speed : 0, configuration.startMovingSpeed)
+                moving += min(dt, segment / pace)
             }
             distanceAnchor = sample
             currentSpeed = sample.hasValidSpeed ? sample.speed : nil

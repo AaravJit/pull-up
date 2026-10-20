@@ -73,6 +73,24 @@ struct TelemetryEngineTests {
         #expect(abs(summary.distanceMeters - 580) < 580 * 0.03)
     }
 
+    @Test func setOffDuringStationaryPauseCreditsMovingTime() {
+        // 90 m at 10 m/s, stopped at a light until iOS pauses updates. The
+        // light turns green and the car is 40 m on, at 8 m/s, when updates
+        // resume a minute later.
+        var engine = TelemetryEngine(startedAt: factory.start)
+        for t in 0..<10 { engine.ingest(factory.sample(at: Double(t), northMeters: Double(t) * 10, speed: 10)) }
+        for t in 10..<15 { engine.ingest(factory.sample(at: Double(t), northMeters: 90, speed: 0)) }
+        engine.noteStationary(true)
+        engine.noteStationary(false)
+        for (t, north) in [(74.0, 130.0), (75, 138), (76, 146)] {
+            engine.ingest(factory.sample(at: t, northMeters: north, speed: 8))
+        }
+        let summary = engine.summary(endedAt: factory.start.addingTimeInterval(76))
+        #expect(abs(summary.distanceMeters - 146) < 2)
+        #expect(summary.movingSeconds >= 14)
+        #expect((summary.averageMovingSpeed ?? .infinity) <= 10.5)
+    }
+
     @Test func poorAccuracyFixesAreRejected() {
         var samples = factory.samples(speeds: [Double](repeating: 10, count: 10))
         samples[3].horizontalAccuracy = 65 // Wi-Fi fix
