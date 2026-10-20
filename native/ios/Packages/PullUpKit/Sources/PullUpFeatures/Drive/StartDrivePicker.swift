@@ -131,20 +131,31 @@ struct StartDrivePicker: View {
                 .accessibilityLabel("Loading your garage")
         } else if vehicles.isEmpty {
             emptyGarage
-        } else {
-            VStack(alignment: .leading, spacing: Space.l) {
-                if typeSize.isAccessibilitySize {
-                    accessibleList
-                } else {
-                    carousel
-                }
-                selectionDetail
-                    .padding(.horizontal, Space.gutter)
-                footer
-                    .padding(.horizontal, Space.gutter)
+        } else if typeSize.isAccessibilitySize {
+            // Large text: one scroll view for the list and the Start button,
+            // so every vehicle can be reached instead of a squeezed inner list.
+            ScrollView {
+                choiceStack
             }
-            .padding(.top, Space.l)
+            .scrollIndicators(.visible)
+        } else {
+            choiceStack
         }
+    }
+
+    private var choiceStack: some View {
+        VStack(alignment: .leading, spacing: Space.l) {
+            if typeSize.isAccessibilitySize {
+                accessibleList
+            } else {
+                carousel
+            }
+            selectionDetail
+                .padding(.horizontal, Space.gutter)
+            footer
+                .padding(.horizontal, Space.gutter)
+        }
+        .padding(.top, Space.l)
     }
 
     private var cardWidth: CGFloat { verticalSizeClass == .compact ? 180 : 212 }
@@ -182,16 +193,13 @@ struct StartDrivePicker: View {
     /// Vertical list used at accessibility text sizes, where cards would
     /// truncate.
     private var accessibleList: some View {
-        ScrollView {
-            VStack(spacing: Space.s) {
-                ForEach(choices, id: \.self) { choice in
-                    let vehicle = vehicle(for: choice)
-                    VehicleChoiceRow(vehicle: vehicle, isSelected: choice == selection) { select(choice) }
-                }
+        VStack(spacing: Space.s) {
+            ForEach(choices, id: \.self) { choice in
+                let vehicle = vehicle(for: choice)
+                VehicleChoiceRow(vehicle: vehicle, isSelected: choice == selection) { select(choice) }
             }
-            .padding(.horizontal, Space.gutter)
         }
-        .frame(maxHeight: 360)
+        .padding(.horizontal, Space.gutter)
     }
 
     private func vehicle(for choice: DriveRecorder.Choice) -> Vehicle? {

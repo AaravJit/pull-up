@@ -69,6 +69,7 @@ struct LeaderboardView: View {
                 .foregroundStyle(ClusterColor.inkSecondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(Space.m)
         .plate(stroke: ClusterColor.caution.opacity(0.6))
     }
@@ -118,6 +119,7 @@ struct LeaderboardView: View {
                     .font(ClusterFont.body(.footnote))
                     .foregroundStyle(ClusterColor.inkSecondary)
                     .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 Button("Join") { Task { await optIn() } }
                     .buttonStyle(.clusterSecondary)
                     .accessibilityIdentifier("leaderboard-join")

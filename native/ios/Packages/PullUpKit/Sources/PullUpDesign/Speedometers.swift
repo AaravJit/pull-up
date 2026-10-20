@@ -187,11 +187,14 @@ private struct GaugeNeedle: View, Animatable {
             lit.addArc(center: center, radius: radius - 8, startAngle: .degrees(AnalogSpeedometer.startAngle), endAngle: .radians(a), clockwise: false)
             context.stroke(lit, with: .color(color.opacity(dimmed ? 0 : 0.85)), style: StrokeStyle(lineWidth: 3, lineCap: .butt))
 
-            let tip = CGPoint(x: center.x + (radius - 6) * cos(a), y: center.y + (radius - 6) * sin(a))
-            let tail = CGPoint(x: center.x + (radius - 46) * cos(a), y: center.y + (radius - 46) * sin(a))
+            func at(_ r: CGFloat) -> CGPoint { CGPoint(x: center.x + r * cos(a), y: center.y + r * sin(a)) }
+            // Broken where the numerals sit (radius - 30), so the needle never
+            // covers the number it points at.
             var needle = Path()
-            needle.move(to: tail)
-            needle.addLine(to: tip)
+            needle.move(to: at(radius - 46))
+            needle.addLine(to: at(radius - 41))
+            needle.move(to: at(radius - 19))
+            needle.addLine(to: at(radius - 6))
             context.stroke(needle, with: .color(dimmed ? ClusterColor.inkTertiary : color), style: StrokeStyle(lineWidth: 4, lineCap: .round))
         }
         .allowsHitTesting(false)

@@ -143,8 +143,10 @@ struct ProView: View {
             }
         }
         if pro.phase != .loading {
-            Button("Restore purchases") { Task { await pro.restore() } }
-                .buttonStyle(.clusterSecondary)
+            Button { Task { await pro.restore() } } label: {
+                Text("Restore purchases").frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.clusterSecondary)
                 .accessibilityIdentifier("pro-restore")
         }
     }
@@ -165,7 +167,7 @@ struct ProView: View {
         case let .activating(message):
             NoticeStrip(message, tone: .caution).accessibilityIdentifier("pro-activating")
         case .purchased:
-            NoticeStrip("You're Pro. Everything below is unlocked.").accessibilityIdentifier("pro-purchased")
+            NoticeStrip("You're Pro. Every Pro feature above is unlocked.").accessibilityIdentifier("pro-purchased")
         case .restored:
             NoticeStrip("Restored. Pro is active on this account.").accessibilityIdentifier("pro-restored")
         case .nothingToRestore:
