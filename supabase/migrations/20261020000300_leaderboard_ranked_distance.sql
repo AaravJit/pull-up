@@ -87,10 +87,13 @@ as $$
 $$;
 revoke execute on function private.track_coverage_m(jsonb) from public, anon, authenticated;
 
+-- A drive whose owner has since deleted its track keeps the figure it
+-- ranked on before.
 insert into private.drive_scores (drive_id, ranked_distance_m)
-select d.id, least(d.server_distance_m, private.track_coverage_m(t.points))
+select d.id, case when t.drive_id is null then d.server_distance_m
+                  else least(d.server_distance_m, private.track_coverage_m(t.points)) end
 from public.drives d
-join public.drive_tracks t on t.drive_id = d.id
+left join public.drive_tracks t on t.drive_id = d.id
 where d.validation_status in ('validated', 'flagged') and d.server_distance_m is not null;
 
 create or replace function private.validate_drive(p_drive uuid)
