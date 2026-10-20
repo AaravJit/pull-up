@@ -68,10 +68,10 @@ struct VehicleEditorView: View {
                     bodyStylePicker
                     VStack(alignment: .leading, spacing: Space.l) {
                         HStack(spacing: Space.l) {
-                            FieldRow(label: "Make", text: $make, prompt: "Mazda")
-                            FieldRow(label: "Year", text: $year, prompt: "1994", keyboard: .numberPad).frame(width: 90)
+                            FieldRow(label: "Make", text: $make, prompt: "e.g. Mazda")
+                            FieldRow(label: "Year", text: $year, prompt: "e.g. 1994", keyboard: .numberPad).frame(width: 90)
                         }
-                        FieldRow(label: "Model", text: $model, prompt: "RX-7")
+                        FieldRow(label: "Model", text: $model, prompt: "e.g. RX-7")
                         FieldRow(label: "Trim", text: $trim, prompt: "Optional")
                         FieldRow(label: "Nickname", text: $nickname, prompt: "Optional")
                         HStack(alignment: .bottom, spacing: Space.l) {

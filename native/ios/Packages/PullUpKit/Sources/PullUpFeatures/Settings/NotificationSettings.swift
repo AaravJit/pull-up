@@ -8,15 +8,20 @@ import PullUpDomain
 struct NotificationSettingsRow: View {
     @State private var status: UNAuthorizationStatus = .notDetermined
     @Environment(\.openURL) private var openURL
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
-        HStack(alignment: .top) {
+        // Side by side, the text gets a one-word column at large sizes.
+        let layout = typeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: Space.m))
+            : AnyLayout(HStackLayout(alignment: .top))
+        layout {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Push notifications").font(ClusterFont.headline(.subheadline)).foregroundStyle(ClusterColor.ink)
                 Text(detail).font(ClusterFont.body(.caption)).foregroundStyle(ClusterColor.inkSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            Spacer()
+            if !typeSize.isAccessibilitySize { Spacer() }
             switch status {
             case .notDetermined:
                 Button("Allow") { Task { await request() } }
