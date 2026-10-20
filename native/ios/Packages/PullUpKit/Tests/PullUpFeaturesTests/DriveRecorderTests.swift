@@ -44,6 +44,23 @@ final class InstantProvider: LocationProvider {
     func stop() { stopCount += 1 }
 }
 
+/// Delivers a fixed list of events, for exact sequences.
+@MainActor
+final class ScriptedProvider: LocationProvider {
+    let permission: LocationPermission = .authorized
+    let events: [LocationEvent]
+    init(events: [LocationEvent]) { self.events = events }
+    func requestPermission() async -> LocationPermission { permission }
+    func start() -> AsyncStream<LocationEvent> {
+        let events = self.events
+        return AsyncStream { continuation in
+            for event in events { continuation.yield(event) }
+            continuation.finish()
+        }
+    }
+    func stop() {}
+}
+
 @MainActor
 final class Counter {
     var value = 0
@@ -312,6 +329,34 @@ struct DriveRecorderTests {
         #expect(relaunched.recorder.pendingUploads == 0)
         let uploaded = try #require(try await backend.drives(owner: me, limit: 50).first { !before.contains($0.id) })
         #expect(uploaded.endedAt.timeIntervalSince(started) <= DriveRecorder.maximumDuration + 0.001)
+    }
+
+    /// iOS paused updates at a stop, then the updates stream failed and was
+    /// restarted. The car moved meanwhile: that's a signal gap, not a stop.
+    @Test func restartAfterAPauseIsASignalGap() async throws {
+        let backend = DemoBackend()
+        let suite = "recorder-tests-\(UUID().uuidString)"
+        let store = LocalDriveStore(directory: FileManager.default.temporaryDirectory.appendingPathComponent(suite))
+        let start = Date()
+        func fix(_ t: Double, north: Double, speed: Double) -> LocationEvent {
+            .sample(LocationSample(
+                timestamp: start.addingTimeInterval(t), latitude: 38.58 + north / 111_195, longitude: -121.49,
+                altitude: 20, horizontalAccuracy: 5, verticalAccuracy: 4, speed: speed, speedAccuracy: 0.5, course: 0
+            ))
+        }
+        var events = (0..<40).map { fix(Double($0), north: Double($0) * 10, speed: 10) }
+        events += (40..<45).map { fix(Double($0), north: 390, speed: 0) }
+        events += [.stationary(true), .restarting]
+        events += (105..<115).map { fix(Double($0), north: 990 + Double($0 - 105) * 10, speed: 10) }
+        let provider = ScriptedProvider(events: events)
+        let recorder = DriveRecorder(backend: backend, store: store, defaults: UserDefaults(suiteName: suite)!) { provider }
+        recorder.ownerID = await backend.currentUserID()
+        _ = await recorder.start(with: nil)
+        for _ in 0..<200 where recorder.acceptedCount < 55 { try await Task.sleep(for: .milliseconds(10)) }
+        #expect(recorder.isStationary == false)
+        let result = try #require(await recorder.finish(now: start.addingTimeInterval(115)))
+        #expect(result.summary.longestSignalGap >= 60)
+        #expect(result.summary.gapDistanceMeters > 500)
     }
 
     /// Precise location was turned off while the app wasn't running.

@@ -9,6 +9,10 @@ public enum LocationEvent: Sendable, Equatable {
     case stationary(Bool)
     /// No fix available (tunnel, parking garage).
     case unavailable
+    /// The updates stream ended or failed and is being started again. What
+    /// happens until the next fix is unknown, even if iOS had said the
+    /// phone was still.
+    case restarting
     /// The user granted approximate location only. Telemetry is not
     /// possible at ~1 km accuracy, so recording must stop and say why.
     case accuracyReduced

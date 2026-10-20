@@ -93,6 +93,8 @@ public final class CoreLocationProvider: NSObject, LocationProvider, CLLocationM
                         continuation.yield(.unavailable)
                     }
                     if Task.isCancelled { break }
+                    wasStationary = false
+                    continuation.yield(.restarting)
                     try? await Task.sleep(for: restartDelay)
                     restartDelay = min(restartDelay * 2, .seconds(30))
                 }

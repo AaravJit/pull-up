@@ -262,6 +262,14 @@ public final class DriveRecorder {
             refreshLive()
         case .unavailable:
             refreshLive()
+        case .restarting:
+            // A pause still open doesn't explain the silence that follows:
+            // drop it so the gap is disclosed, live and in later replays.
+            engine.noteInterruption()
+            self.engine = engine
+            if let lastFix = draft?.samples.last?.timestamp { draft?.stationaryPauses?.removeAll { $0 >= lastFix } }
+            isStationary = false
+            refreshLive()
         case .accuracyReduced:
             interruption = "Precise Location was turned off, so recording stopped. Everything up to that point was kept."
             Task { await self.finish() }
