@@ -189,7 +189,7 @@ Settings ▸ App Store ▸ Sandbox Account).
 | D6.4 | On the second phone, sign out of B and sign in as E | Pro is Active there too, without tapping anything. Afterwards sign out and sign back in with Apple as B |
 | D6.5 | On the first phone, sign in with Apple as A, open the Pro screen, tap Restore purchases | Pro is off; Restore says "This subscription belongs to a different Pull Up account. Sign in to that account to use it." |
 | D6.6 | Sign out and sign back in as E. Pro screen ▸ Manage subscription ▸ cancel; wait past the end date; reopen the Pro screen | Plans and Restore show again; Pro looks are locked. Afterwards sign back in with Apple as A |
-| D6.7 | Ask to Buy (sandbox child account), then approve | "Waiting for approval…", then Pro after the approval (reopen the Pro screen) |
+| D6.7 | Ask to Buy (sandbox child account): tap Subscribe | "Waiting for approval…" and Pro stays off. The sandbox can't approve or decline the request; approval is only testable with StoreKit Testing in Xcode, so stop here |
 
 A sandbox refund isn't in this list; see [Known gaps](#known-gaps).
 
