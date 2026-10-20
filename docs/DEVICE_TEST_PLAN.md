@@ -167,7 +167,12 @@ doesn't count.
 
 Only with sandbox testers in App Store Connect, and only after the products
 exist there and are approved by the owner. Prices stay proposals until
-then. Buy as E, the staging email account from D5.5, because it can sign in
+then. Staging also needs the `APPSTORE_ISSUER_ID`, `APPSTORE_KEY_ID`,
+`APPSTORE_BUNDLE_ID` and `APPSTORE_PRIVATE_KEY` secrets, `verify-subscription`
+and `app-store-notifications` deployed, and App Store Connect's Sandbox
+Server Notifications URL pointing at staging's `app-store-notifications`
+(`RELEASE_CHECKLIST.md` 4a). Without them Pro never turns on and
+renewals aren't recorded, whatever the app does. Buy as E, the staging email account from D5.5, because it can sign in
 on either phone (D6.4). Both phones use the same sandbox tester (iOS
 Settings ▸ App Store ▸ Sandbox Account).
 
