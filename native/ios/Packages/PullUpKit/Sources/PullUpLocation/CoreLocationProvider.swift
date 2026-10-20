@@ -20,6 +20,8 @@ public final class CoreLocationProvider: NSObject, LocationProvider, CLLocationM
     private var serviceSession: CLServiceSession?
     private var updatesTask: Task<Void, Never>?
     private var authorizationWaiters: [CheckedContinuation<LocationPermission, Never>] = []
+    /// Key in Info.plist's NSLocationTemporaryUsageDescriptionDictionary.
+    private static let fullAccuracyPurposeKey = "DriveTelemetry"
 
     public override init() {
         super.init()
@@ -45,6 +47,16 @@ public final class CoreLocationProvider: NSObject, LocationProvider, CLLocationM
         }
     }
 
+    public func requestFullAccuracy() async -> LocationPermission {
+        guard permission == .reducedAccuracy else { return permission }
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            manager.requestTemporaryFullAccuracyAuthorization(withPurposeKey: Self.fullAccuracyPurposeKey) { _ in
+                continuation.resume()
+            }
+        }
+        return permission
+    }
+
     public nonisolated func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
         Task { @MainActor in
             guard self.manager.authorizationStatus != .notDetermined else { return }
@@ -57,7 +69,7 @@ public final class CoreLocationProvider: NSObject, LocationProvider, CLLocationM
 
     public func start() -> AsyncStream<LocationEvent> {
         stop()
-        serviceSession = CLServiceSession(authorization: .whenInUse, fullAccuracyPurposeKey: "DriveTelemetry")
+        serviceSession = CLServiceSession(authorization: .whenInUse, fullAccuracyPurposeKey: Self.fullAccuracyPurposeKey)
         backgroundSession = CLBackgroundActivitySession()
         return AsyncStream { continuation in
             let task = Task { @MainActor in
