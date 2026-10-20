@@ -100,7 +100,7 @@ struct PostComposerView: View {
                     }
                 }
             }
-            Text("Location metadata is removed from photos before upload.")
+            Text("Location metadata is removed from photos and videos before upload.")
                 .font(ClusterFont.body(.caption))
                 .foregroundStyle(ClusterColor.inkTertiary)
         }
@@ -119,8 +119,13 @@ struct PostComposerView: View {
                     error = "Videos must be under 100 MB."
                     continue
                 }
-                let info = await VideoInfo.read(data)
-                loaded.append(.init(data: data, type: .video, width: info.width, height: info.height, duration: info.duration))
+                // Uploaded as MP4 without the clip's location and device details.
+                guard let shared = await VideoInfo.shareable(data) else {
+                    error = "This video couldn't be prepared for posting. Try another clip."
+                    continue
+                }
+                let info = await VideoInfo.read(shared)
+                loaded.append(.init(data: shared, type: .video, width: info.width, height: info.height, duration: info.duration))
                 if let thumb = info.thumbnail { thumbs.append(thumb) }
             } else if let jpeg = ImageProcessing.uploadJPEG(from: data), let image = UIImage(data: jpeg) {
                 loaded.append(.init(data: jpeg, type: .image, width: Int(image.size.width), height: Int(image.size.height)))
@@ -148,6 +153,30 @@ struct PostComposerView: View {
 
 /// Reads a video's dimensions, duration and a poster frame.
 enum VideoInfo {
+    /// Rewraps a picked video as MP4 without re-encoding, dropping the
+    /// metadata `AVMetadataItemFilter.forSharing()` removes (location, device
+    /// and personal details), so a clip filmed at home doesn't publish where
+    /// home is. `nil` if it can't be converted; the clip isn't posted then.
+    static func shareable(_ data: Data) async -> Data? {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        do {
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            let source = folder.appendingPathComponent("picked.mov")
+            let output = folder.appendingPathComponent("shared.mp4")
+            try data.write(to: source)
+            guard let session = AVAssetExportSession(asset: AVURLAsset(url: source), presetName: AVAssetExportPresetPassthrough) else {
+                return nil
+            }
+            session.metadataItemFilter = .forSharing()
+            session.shouldOptimizeForNetworkUse = true
+            try await session.export(to: output, as: .mp4)
+            return try Data(contentsOf: output)
+        } catch {
+            return nil
+        }
+    }
+
     struct Result {
         var width = 1080
         var height = 1920

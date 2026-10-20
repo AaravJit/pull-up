@@ -53,6 +53,7 @@ final class Counter {
 struct RecorderHarness {
     let backend: DemoBackend
     let defaults: UserDefaults
+    let store: LocalDriveStore
     let recorder: DriveRecorder
     let provider: InstantProvider
     let requests = Counter()
@@ -69,6 +70,7 @@ struct RecorderHarness {
         self.provider = provider
         defaults = UserDefaults(suiteName: suite)!
         let store = LocalDriveStore(directory: FileManager.default.temporaryDirectory.appendingPathComponent(suite))
+        self.store = store
         let counter = requests
         recorder = DriveRecorder(backend: backend, store: store, defaults: defaults) {
             counter.value += 1
@@ -120,6 +122,23 @@ struct DriveRecorderTests {
         #expect(stored.vehicleID == vehicle.id)
         #expect(stored.distanceMeters == result.drive.distanceMeters)
         #expect(try await h.backend.ownTrack(drive: stored.id).count == result.track.count)
+    }
+
+    @Test func deletedAccountLeavesNoDrivesOnThePhone() async throws {
+        let h = await RecorderHarness()
+        let me = try #require(await h.backend.currentUserID())
+        let waiting = DriveDraft(ownerID: me, vehicleID: nil, startedAt: .now.addingTimeInterval(-900), endedAt: .now.addingTimeInterval(-600))
+        let someoneElse = DriveDraft(ownerID: UUID(), vehicleID: nil, startedAt: .now.addingTimeInterval(-900), endedAt: .now.addingTimeInterval(-600))
+        try await h.store.save(waiting)
+        try await h.store.save(someoneElse)
+        #expect(await h.recorder.start(with: nil) == nil)
+        #expect(h.defaults.string(forKey: "pullup.lastVehicle.\(me.uuidString)") == "guest")
+
+        await h.recorder.eraseLocalData(for: me)
+        #expect(h.recorder.phase == .idle)
+        #expect(await h.store.all().map(\.id) == [someoneElse.id])
+        #expect(h.defaults.string(forKey: "pullup.lastVehicle.\(me.uuidString)") == nil)
+        #expect(h.recorder.pendingUploads == 0)
     }
 
     @Test func guestDriveHasNoVehicle() async throws {

@@ -125,12 +125,20 @@ struct DriveProSection: View {
         }
     }
 
+    static var exportsFolder: URL {
+        FileManager.default.temporaryDirectory.appendingPathComponent("Exports", isDirectory: true)
+    }
+
+    /// Removes every export file left on this phone (full routes), on
+    /// sign-out and account deletion.
+    static func removeExports() {
+        try? FileManager.default.removeItem(at: exportsFolder)
+    }
+
     /// Writes both formats to a per-drive temporary folder, replacing any
     /// earlier export of the drive so old copies don't pile up.
     static func write(_ track: [LocationSample], drive: Drive) throws -> [TrackExport.Format: URL] {
-        let folder = FileManager.default.temporaryDirectory
-            .appendingPathComponent("Exports", isDirectory: true)
-            .appendingPathComponent(drive.id.uuidString, isDirectory: true)
+        let folder = exportsFolder.appendingPathComponent(drive.id.uuidString, isDirectory: true)
         try? FileManager.default.removeItem(at: folder)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let day = drive.startedAt.formatted(.iso8601.year().month().day())

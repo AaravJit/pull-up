@@ -1,7 +1,56 @@
-# Security report (Phase 2)
+# Security report
 
-Assessment of the Pull Up native iOS app and its Supabase backend on branch
-`claude/pull-up-phase-2` (PR #3, stacked on PR #2), 2026-10-17.
+Assessment of the Pull Up native iOS app and its Supabase backend: first on
+branch `claude/pull-up-phase-2` (PR #3, stacked on PR #2), 2026-10-17, then a
+Phase 3 re-check of `main` after PR #2 merged (`515ec98`), 2026-10-18.
+
+**Passing tests don't make the app secure.** They show that the specific
+weaknesses below are closed on the local stack. Nothing here has been run
+against a hosted Supabase project or on a phone.
+
+## Phase 3 re-check (Milestone 10)
+
+Same method as below, on `main` at `515ec98`: every migration, policy,
+function and edge function re-read, plus the client's storage, sharing and
+account-deletion paths. Each fixed finding has a test that fails without
+the fix. Tests: `supabase/tests/009_drive_privacy.sql` (12), `012_open_findings.sql` (22),
+`010_notification_limits.sql` (6), `011_storage_moves.sql` (2), and Swift
+tests in `PullUpFeaturesTests` and `PullUpDataTests`.
+
+| ID | Severity | Finding | Status |
+| --- | --- | --- | --- |
+| G1 | Medium | Anyone allowed to see a drive could read `drives.explored_cells`, the ~1 km grid cells it passed through, which traces the route even when it was never shared and through privacy zones | Fixed, `20261018000400`: cells moved to `private.drive_cells`, read only by the leaderboard. Tests `009` 1–6, 11–12 |
+| G2 | Medium | Shared routes are trimmed at both ends by a random extra 0–250 m, re-drawn every time the route is rebuilt (privacy zone change, share again). Comparing rebuilds narrows down where the drive really started and ended | Fixed, `20261018000800`: the extra is drawn once per drive and kept in `private.route_trim_extra`. Tests `012` 7–11 |
+| G3 | Medium | Videos were uploaded exactly as picked, so a clip's GPS location (and device details) went to everyone who could see the post | Fixed (client): rewrapped as MP4 with `AVMetadataItemFilter.forSharing()` before upload. Test `Video sharing` (synthetic clip with a location). Not checked on a real Camera clip |
+| G4 | Low | Unlike/like or unfollow/follow repeatedly sent a new notification and push each time; comments had no cap | Fixed, `20261018000500`: repeats within 24 h are skipped, and one person can send another at most 30 notifications an hour. Tests `010` |
+| G5 | Low | No per-user storage quota: per-file limits only (5–100 MB), so one account can fill the project's storage | Fixed, `20261018000800`: uploads stop at 2 GB or 5,000 files per account, all buckets together (one upload can overshoot by its bucket's file limit). Tests `012` 12–16 |
+| G6 | Low | `drive_history_ceiling(owner)` told any signed-in user anyone's drive-history setting | Fixed, `20261018000400`: answers only for the caller; the drives policy uses a yes/no helper. Tests `009` 7–10, `006` 17 |
+| G7 | Low | A DM photo uploaded but never sent (the send failed or was abandoned) stays in `dm-media` forever | Fixed, `20261018000800` + `dm-retention`: photos no message refers to are deleted a day after upload, which also covers unsent messages' photos. Tests `012` 17–21 |
+| G8 | Low | `app-store-notifications` reads the notification without checking Apple's signature (see R-3); a forged one can only make the server re-read the subscription from Apple, but each adds a row | Fixed: the function checks the JWS certificate chain up to Apple Root CA - G3 (pinned), Apple's marker extensions and the signature before using a notification. Tests `_shared/jws_test.ts` (14, generated test chain). Not yet checked against a real Apple notification |
+| G9 | Low | Deleting the account left that person's unsent drives (raw GPS, protected places included), the remembered vehicle and route exports on the phone | Fixed (client): erased on deletion, exports also on sign-out. Tests `deletedAccountLeavesNoDrivesOnThePhone`, `deletionDuringADriveStopsItAndRemovesExports` |
+| G10 | Low | The Supabase session (refresh token) used supabase-swift's default keychain item, `AfterFirstUnlock`, which moves to a new phone in an encrypted backup | Fixed (client): stored `AfterFirstUnlockThisDeviceOnly`, existing sessions moved over on first read. Test `Session keychain` checks the attributes; the keychain itself is not exercised in CI |
+| G11 | Low | The storage update policy didn't check the new bucket, so someone could move their own file into a bucket with stricter upload rules (for example a 100 MB video into `avatars`, or anything into `dm-media`) | Fixed, `20261018000600`. Tests `011`. Moves between the three owner-folder buckets are still possible |
+| G13 | Low | Supabase's own `public.rls_auto_enable()`, created with the project, was callable by signed-in users through `/rest/v1/rpc` (found by the staging advisor). Calling it does nothing | Fixed, `20261018000800`: execute revoked. Test `012` 22 |
+
+Also re-checked:
+
+* **SEC-01 to SEC-06** are still fixed on `main`; their tests in `006` pass.
+* **SEC-07** (exports on disk) has no automated test; G9's test now covers
+  their removal, not their file protection.
+* **R-4** (no `verify-subscription` rate limit) is fixed on `main` (PR #7).
+* **Row-argument counts, confirmed and fixed.** `like_count`,
+  `comment_count`, `going_count` and `interested_count` returned the counts
+  of a post or meet the caller can't see when given a made-up row with its
+  id (confirmed in the database the way an RPC passes a row; tests `012`
+  2–5 failed before the fix). Fixed in `20261018000800`: they count only
+  what the caller can see. `liked_by_me` and `my_rsvp` describe only the
+  caller and were fine.
+* **G12 withdrawn.** The staging advisor's list made `is_friend` and
+  `is_blocked_between` look open; both already answer only when the caller
+  is one of the two (SEC-02), on staging too.
+* **Staging.** All of the above is applied to `pull-up-staging`; 190
+  database checks passed there (docs/STAGING_DEPLOYMENT.md).
+
 
 ## Scope and method
 
@@ -40,7 +89,7 @@ hardening or jailbreak resistance, and load testing. See "Still to do".
 | R-1 | Accepted | Direct messages are not end-to-end encrypted | Design | Disclosed in the app |
 | R-2 | Accepted | A modified client can show Pro looks locally | Design | Server holds the truth |
 | R-3 | Residual | `app-store-notifications` is a public URL that can make the server call Apple | Design | Validated; quota risk |
-| R-4 | Residual | No per-user rate limit on `verify-subscription` | M3 | Add before launch |
+| R-4 | Low | No per-user rate limit on `verify-subscription` | M3 | Fixed in Phase 3 M5: 10 a minute, 60 an hour per account (migration `20261018000200`) |
 
 ## Findings
 
@@ -142,12 +191,12 @@ and each new export replaces the previous one. Not verified on a device.
 * **R-3 Public notification endpoint.** App Store Server Notifications must
   reach a public URL. The function checks the bundle id, notification id
   and signing date, deduplicates, and re-fetches the subscription from Apple
-  rather than trusting the payload. A flood could still spend App Store
-  Server API quota. Mitigation if needed: verify the JWS certificate chain
-  before calling Apple.
-* **R-4 Rate limits on edge functions.** `verify-subscription` has no
-  per-user limit. Add one (for example 10 calls per user per hour, in a
-  table) before launch.
+  rather than trusting the payload. Since the Phase 3 re-check (G8) it
+  also verifies the JWS certificate chain and signature first, so only
+  Apple-signed notifications reach the App Store Server API.
+* **R-4 Rate limits on edge functions.** Since Phase 3 M5 (PR #7),
+  `verify-subscription` allows 10 calls a minute and 60 an hour per account
+  and answers 429 beyond that without contacting Apple.
 * **Unbound purchases are refused.** A transaction without the user's id as
   `appAccountToken` never grants Pro, so one Apple subscription can't be
   shared across accounts.
@@ -170,13 +219,19 @@ and each new export replaces the previous one. Not verified on a device.
 * Client: no secrets in the repository (the anon key and service-role key
   are configured outside git), no logging of tokens or message content,
   location history excluded from backups and file-protected, no App
-  Transport Security exceptions. Sessions use supabase-swift's default
-  storage, which is the Keychain on iOS (not inspected on a device).
+  Transport Security exceptions. Sessions are in the Keychain, device-only
+  since the Phase 3 re-check (G10; not inspected on a device).
 
 ## Still to do (needs people or systems outside CI)
 
-* Run `supabase test db` against the staging project once it exists.
+* Run the full suites against staging from the `Supabase deploy` workflow
+  (004, 009, 010 and the two-account API tests haven't run there since the
+  fixes, see docs/STAGING_DEPLOYMENT.md).
 * On a device: confirm the session is in the Keychain, exported files are
   protected while locked, and pushes show no message text by default.
-* Add the `verify-subscription` rate limit (R-4).
+* Check G8 against a real App Store Server Notification (Apple's TEST
+  notification once the App Store secrets are on staging).
+* On a device: post a video filmed with location on and check the uploaded
+  file has none (G3); restore a backup to another phone and check Pull Up
+  asks to sign in again (G10).
 * Re-run this checklist before the App Store submission.

@@ -99,4 +99,9 @@ public actor LocalDriveStore {
     public func delete(_ id: UUID) {
         try? FileManager.default.removeItem(at: url(for: id))
     }
+
+    /// Removes every draft recorded by `owner`, finished or not.
+    public func deleteAll(owner: UserID) {
+        for draft in all() where draft.ownerID == owner { delete(draft.id) }
+    }
 }

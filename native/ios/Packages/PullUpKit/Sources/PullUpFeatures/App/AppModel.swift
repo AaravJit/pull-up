@@ -238,6 +238,15 @@ public final class AppModel {
         if let counts = try? await backend.unreadMessages() { unreadMessages = counts }
     }
 
+    /// Back in the foreground: anything that arrived while the app was
+    /// suspended or offline wasn't heard over realtime, so open screens
+    /// reload and the unread counts are fetched again.
+    func catchUpMessages() async {
+        guard case .signedIn = phase else { return }
+        messagingPulse = MessagingPulse(count: messagingPulse.count + 1, conversationID: nil)
+        await refreshMessages()
+    }
+
     /// Called by onboarding once the server has marked it complete.
     func finishOnboarding() async {
         guard case let .onboarding(user) = phase else { return }
@@ -288,6 +297,7 @@ public final class AppModel {
         if let pushToken { try? await backend.unregisterPushToken(pushToken.token) }
         try? await backend.signOut()
         appleCredentials.store(userID: nil)
+        DriveProSection.removeExports()
         await apply(nil)
     }
 
@@ -295,7 +305,12 @@ public final class AppModel {
     /// a fresh Sign in with Apple prompt so the server can revoke Apple's
     /// tokens; without it the account is still deleted.
     public func deleteAccount(appleAuthorizationCode: String?) async throws {
+        let owner = userID
         let result = try await backend.deleteAccount(appleAuthorizationCode: appleAuthorizationCode)
+        // The server copy is gone; nothing of the account should stay here
+        // either. Before apply(nil), which keeps a drive that's recording.
+        if let owner { await recorder.eraseLocalData(for: owner) }
+        DriveProSection.removeExports()
         appleCredentials.store(userID: nil)
         await apply(nil)
         switch result.apple {
