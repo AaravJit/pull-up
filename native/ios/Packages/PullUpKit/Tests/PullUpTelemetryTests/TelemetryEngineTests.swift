@@ -57,6 +57,22 @@ struct TelemetryEngineTests {
         #expect(abs(summary.distanceMeters - 285) < 3)
     }
 
+    @Test func uncertainDopplerDoesNotRejectAMovingCar() {
+        // iOS briefly reports ~0 m/s with a wide uncertainty while the car
+        // keeps going at 20 m/s. The positions are fine, so none of them is
+        // a jump.
+        var samples = factory.samples(speeds: [Double](repeating: 20, count: 30))
+        for i in 10..<15 {
+            samples[i].speed = 0
+            samples[i].speedAccuracy = 25
+        }
+        let engine = TelemetryEngine.replay(samples, startedAt: factory.start)
+        let summary = engine.summary(endedAt: factory.start.addingTimeInterval(29))
+        #expect(summary.rejectedSamples == 0)
+        #expect(engine.relocks == 0)
+        #expect(abs(summary.distanceMeters - 580) < 580 * 0.03)
+    }
+
     @Test func poorAccuracyFixesAreRejected() {
         var samples = factory.samples(speeds: [Double](repeating: 10, count: 10))
         samples[3].horizontalAccuracy = 65 // Wi-Fi fix

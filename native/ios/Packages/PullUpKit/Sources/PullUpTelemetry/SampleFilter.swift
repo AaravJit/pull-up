@@ -75,9 +75,12 @@ public struct SampleFilter: Sendable {
         // Multipath: a fix reflected off a building can land 30–60 m away
         // while the car sits at a red light. The implied speed looks
         // possible, but Doppler (measured independently of position) says
-        // the car can't have got there.
+        // the car can't have got there. Each reading's own uncertainty is
+        // allowed for, so a near-zero speed iOS isn't sure of can't reject
+        // honest fixes from a moving car.
         if previous.hasValidSpeed, sample.hasValidSpeed, dt <= configuration.maxIntervalForDopplerCheck {
-            let reach = (max(previous.speed, sample.speed) + configuration.dopplerSlack) * dt
+            let fastest = max(previous.speed + previous.speedAccuracy, sample.speed + sample.speedAccuracy)
+            let reach = (fastest + configuration.dopplerSlack) * dt
                 + previous.horizontalAccuracy + sample.horizontalAccuracy
             if distance > reach { return .rejected(.implausibleJump) }
         }
