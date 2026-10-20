@@ -324,7 +324,7 @@ public final class DriveRecorder {
         // iOS can suspend the app past the limit before the tick that stops
         // it runs; the server would then refuse the drive outright.
         let end = min(now, Self.limit(of: draft))
-        if Self.trim(&draft, after: end) {
+        if Self.trimToLimit(&draft) {
             engine = TelemetryEngine.replay(draft.samples, startedAt: draft.startedAt, stationaryPauses: draft.stationaryPauses ?? [])
         }
         draft.endedAt = end
@@ -396,13 +396,14 @@ public final class DriveRecorder {
         draft.startedAt.addingTimeInterval(maximumDuration)
     }
 
-    /// Drops fixes and pauses after `end`, which don't belong to the drive
-    /// (iOS delivered them after the limit). Returns whether any were dropped.
+    /// Drops fixes and pauses after the limit, which don't belong to the
+    /// drive (iOS delivered them late). Returns whether any were dropped.
     @discardableResult
-    static func trim(_ draft: inout DriveDraft, after end: Date) -> Bool {
-        guard draft.samples.contains(where: { $0.timestamp > end }) else { return false }
-        draft.samples.removeAll { $0.timestamp > end }
-        draft.stationaryPauses?.removeAll { $0 > end }
+    static func trimToLimit(_ draft: inout DriveDraft) -> Bool {
+        let cutoff = Self.limit(of: draft)
+        guard draft.samples.contains(where: { $0.timestamp > cutoff }) else { return false }
+        draft.samples.removeAll { $0.timestamp > cutoff }
+        draft.stationaryPauses?.removeAll { $0 > cutoff }
         return true
     }
 
@@ -435,7 +436,7 @@ public final class DriveRecorder {
             // Drafts finished past the limit (by older builds) would be
             // refused by the server forever.
             let end = min(recorded, Self.limit(of: draft))
-            Self.trim(&draft, after: end)
+            Self.trimToLimit(&draft)
             draft.endedAt = end
             let engine = TelemetryEngine.replay(draft.samples, startedAt: draft.startedAt, stationaryPauses: draft.stationaryPauses ?? [])
             let summary = engine.summary(endedAt: end)
@@ -477,7 +478,7 @@ public final class DriveRecorder {
             }
         }
         let end = min(lastFix, Self.limit(of: draft))
-        Self.trim(&draft, after: end)
+        Self.trimToLimit(&draft)
         draft.endedAt = end
         try? await store.save(draft)
         recoveredDrive = draft.startedAt
