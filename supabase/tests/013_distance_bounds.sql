@@ -3,7 +3,7 @@
 
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(11);
+select plan(13);
 
 insert into auth.users (id, email, raw_user_meta_data) values
   ('db000000-0000-0000-0000-00000000000a', 'bounds-ann@example.com', '{"username":"bounds_ann"}');
@@ -19,24 +19,29 @@ end $$;
 -- jitter and 8–10 m accuracy. The raw sum of segments is ~3750 m. With a
 -- jump, fixes from #150 on are 556 m further north and `jump_s` later:
 -- where the app relocked and added no distance. `wide` claims ~5 km
--- accuracy on every fix.
-create or replace function pg_temp.crawl(jump boolean default false, jump_s int default 0, wide boolean default false)
+-- accuracy on every fix. `hops` adds an 89 m step in one second every
+-- 50 fixes: under the 120 m/s teleport limit, but far more than 3 m/s
+-- allows, so each is a Doppler relock.
+create or replace function pg_temp.crawl(jump boolean default false, jump_s int default 0, wide boolean default false,
+                                         hops boolean default false)
 returns jsonb language sql as $$
   select jsonb_agg(jsonb_build_array(
     i + case when jump and i >= 150 then jump_s else 0 end,
-    38.58 + i * 0.000027 + case when jump and i >= 150 then 0.005 else 0 end,
+    38.58 + i * 0.000027 + case when jump and i >= 150 then 0.005 else 0 end
+      + case when hops then (i / 50) * 0.0008 else 0 end,
     -121.49 + case when i % 2 = 1 then 0.00007 else -0.00007 end,
     20 + sin(i), 3, case when wide then 5000 else 8 end + (i % 3), 4, 0.5) order by i)
   from generate_series(0, 299) as i;
 $$;
 
 create or replace function pg_temp.drive(p_id uuid, hours_ago int, distance double precision,
-                                         jump boolean default false, jump_s int default 0, wide boolean default false)
+                                         jump boolean default false, jump_s int default 0, wide boolean default false,
+                                         hops boolean default false)
 returns void language sql as $$
   insert into public.drives (id, owner_id, started_at, ended_at, distance_m, moving_s, stopped_s, elapsed_s, top_speed_mps)
   values (p_id, auth.uid(), now() - make_interval(hours => hours_ago),
           now() - make_interval(hours => hours_ago) + interval '299 seconds', distance, 299, 0, 299, 3);
-  insert into public.drive_tracks (drive_id, owner_id, points) values (p_id, auth.uid(), pg_temp.crawl(jump, jump_s, wide));
+  insert into public.drive_tracks (drive_id, owner_id, points) values (p_id, auth.uid(), pg_temp.crawl(jump, jump_s, wide, hops));
 $$;
 
 select pg_temp.act_as('db000000-0000-0000-0000-00000000000a');
@@ -80,6 +85,14 @@ select is((select validation_status from public.drives where id = 'db100000-0000
   'a zero distance with ~5 km claimed accuracy is still rejected');
 select ok((select validation_notes @> array['distance_mismatch'] from public.drives where id = 'db100000-0000-0000-0000-000000000006'),
   'accuracy is capped at the app''s 35 m limit for the bound');
+
+-- 12–13: Doppler relocks count as position jumps like teleports do, so
+-- five of them flag the drive.
+select pg_temp.drive('db100000-0000-0000-0000-000000000007', 14, 898, hops => true);
+select is((select validation_status from public.drives where id = 'db100000-0000-0000-0000-000000000007'), 'flagged',
+  'a drive with five Doppler relocks is flagged');
+select ok((select validation_notes = array['position_jumps'] from public.drives where id = 'db100000-0000-0000-0000-000000000007'),
+  'the flag names position_jumps only');
 
 select * from finish();
 rollback;

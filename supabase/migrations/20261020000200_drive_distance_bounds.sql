@@ -93,9 +93,9 @@ begin
           or (coalesce(prev_spd, -1) >= 0 and coalesce(prev_sacc, -1) >= 0
               and coalesce(rec.spd, -1) >= 0 and coalesce(rec.sacc, -1) >= 0 and dt <= 5
               and seg > (greatest(prev_spd + prev_sacc, rec.spd + rec.sacc) + 2) * dt + prev_hacc + err);
-        if seg / dt > 120 then
-          jumps := jumps + 1; -- teleport; don't count it
-        elsif not relocked then
+        if relocked then
+          jumps := jumps + 1; -- a relock either way; don't count it
+        else
           dist := dist + seg;
         end if;
         -- Lower bound: hop from fix to fix once they are well apart, and
