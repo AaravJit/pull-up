@@ -3,13 +3,17 @@
 // Deployed with verify_jwt = false (supabase/config.toml) because Apple
 // doesn't send a Supabase token.
 //
-// The notification body is only a hint: it says which subscription changed.
-// What is stored comes from the App Store Server API, so a forged
-// notification can at most make us re-read the truth from Apple. Notifications
-// are recorded by notificationUUID so Apple's retries are no-ops.
+// The notification is verified before anything in it is used: signedPayload
+// and the signedTransactionInfo inside it must be JWS signed through Apple's
+// certificate chain (_shared/jws.ts). One that isn't answers 400 and nothing
+// is recorded or asked of Apple. Even then the body only says which
+// subscription changed: what is stored is still re-read from the App Store
+// Server API. Notifications are recorded by notificationUUID so Apple's
+// retries are no-ops.
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
-import { applyArguments, AppStoreError, fetchSubscription, loadConfig, readJwsPayload, type TransactionInfo } from "../_shared/appstore.ts";
+import { applyArguments, AppStoreError, fetchSubscription, loadConfig, type TransactionInfo } from "../_shared/appstore.ts";
+import { JwsError, verifyAppleJws } from "../_shared/jws.ts";
 
 interface NotificationPayload {
   notificationType?: string;
@@ -20,6 +24,10 @@ interface NotificationPayload {
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// 400 "bad_signature" when the JWS isn't Apple's, "malformed" when it isn't a JWS at all.
+const rejected = (error: unknown) =>
+  Response.json({ error: error instanceof JwsError && error.code !== "malformed" ? "bad_signature" : "malformed" }, { status: 400 });
 
 Deno.serve(async (req: Request): Promise<Response> => {
   if (req.method !== "POST") return new Response("Method not allowed", { status: 405 });
@@ -33,9 +41,9 @@ Deno.serve(async (req: Request): Promise<Response> => {
   }
   let payload: NotificationPayload;
   try {
-    payload = readJwsPayload<NotificationPayload>(body.signedPayload);
-  } catch {
-    return Response.json({ error: "malformed" }, { status: 400 });
+    payload = await verifyAppleJws<NotificationPayload>(body.signedPayload);
+  } catch (error) {
+    return rejected(error);
   }
   const age = Date.now() - (payload.signedDate ?? 0);
   if (!payload.notificationUUID || !UUID.test(payload.notificationUUID) || payload.data?.bundleId !== config.bundleId ||
@@ -53,9 +61,9 @@ Deno.serve(async (req: Request): Promise<Response> => {
 
   let transaction: TransactionInfo = {};
   try {
-    if (payload.data?.signedTransactionInfo) transaction = readJwsPayload<TransactionInfo>(payload.data.signedTransactionInfo);
-  } catch {
-    return Response.json({ error: "malformed" }, { status: 400 });
+    if (payload.data?.signedTransactionInfo) transaction = await verifyAppleJws<TransactionInfo>(payload.data.signedTransactionInfo);
+  } catch (error) {
+    return rejected(error);
   }
   const record = async () => {
     await admin.from("app_store_notifications").upsert({
