@@ -3,7 +3,7 @@
 
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(13);
+select plan(15);
 
 insert into auth.users (id, email, raw_user_meta_data) values
   ('db000000-0000-0000-0000-00000000000a', 'bounds-ann@example.com', '{"username":"bounds_ann"}');
@@ -93,6 +93,23 @@ select is((select validation_status from public.drives where id = 'db100000-0000
   'a drive with five Doppler relocks is flagged');
 select ok((select validation_notes = array['position_jumps'] from public.drives where id = 'db100000-0000-0000-0000-000000000007'),
   'the flag names position_jumps only');
+
+-- 14–15: like the app, the 120 m/s jump check forgives both accuracy
+-- radii. A fast drive without Doppler where five fixes sit 80 m ahead of
+-- the car (125 m in 1 s, but only ~65 m beyond the 30 m radii) isn't a
+-- relock: nothing is dropped and no jumps are counted.
+insert into public.drives (id, owner_id, started_at, ended_at, distance_m, moving_s, stopped_s, elapsed_s, top_speed_mps)
+values ('db100000-0000-0000-0000-000000000008', auth.uid(), now() - interval '16 hours',
+        now() - interval '16 hours' + interval '59 seconds', 3000, 59, 0, 59, null);
+insert into public.drive_tracks (drive_id, owner_id, points)
+select 'db100000-0000-0000-0000-000000000008', auth.uid(), jsonb_agg(jsonb_build_array(
+         i, 38.58 + (i * 45 + case when i % 10 = 0 and i > 0 then 80 else 0 end) / 111195.0, -121.49,
+         20 + sin(i), -1, 30 + (i % 3), 4, -1) order by i)
+from generate_series(0, 59) as i;
+select is((select validation_status from public.drives where id = 'db100000-0000-0000-0000-000000000008'), 'validated',
+  'fixes within their accuracy of a 120 m/s step are not relocks');
+select ok((select server_distance_m > 2950 from public.drives where id = 'db100000-0000-0000-0000-000000000008'),
+  'and their segments stay in server_distance_m');
 
 select * from finish();
 rollback;

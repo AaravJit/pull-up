@@ -84,12 +84,12 @@ begin
         non_monotonic := non_monotonic + 1;
       else
         seg := public.haversine_m(prev_lat, prev_lon, rec.lat, rec.lon);
-        -- A step the app's own jump check rejects (faster than 120 m/s, or
-        -- further than the Doppler speeds allow) is where it relocked and
-        -- added nothing, so neither the raw sum nor the lower bound spans
-        -- it; the bound restarts there.
+        -- A step the app's own jump check rejects (faster than 120 m/s once
+        -- both accuracy radii are forgiven, or further than the Doppler
+        -- speeds allow) is where it relocked and added nothing, so neither
+        -- the raw sum nor the lower bound spans it; the bound restarts there.
         err := least(greatest(coalesce(rec.hacc, 0), 0), 35);
-        relocked := seg / dt > 120
+        relocked := greatest(0, seg - coalesce(prev_hacc, 0) - err) / dt > 120
           or (coalesce(prev_spd, -1) >= 0 and coalesce(prev_sacc, -1) >= 0
               and coalesce(rec.spd, -1) >= 0 and coalesce(rec.sacc, -1) >= 0 and dt <= 5
               and seg > (greatest(prev_spd + prev_sacc, rec.spd + rec.sacc) + 2) * dt + prev_hacc + err);
