@@ -48,3 +48,6 @@ native/**/.swiftpm/
 native/ios/Config/Secrets.xcconfig
 *.xcresult
 DerivedData/
+
+# Supabase CLI scratch files
+supabase/.temp/

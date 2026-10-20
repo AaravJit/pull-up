@@ -29,6 +29,11 @@ targets:
       - path: PullUp
         excludes:
           - "*.entitlements"
+          - "*.xcprivacy"
+      # Listed on its own so it is always copied into the app bundle, where
+      # App Store Connect looks for it.
+      - path: PullUp/PrivacyInfo.xcprivacy
+        buildPhase: resources
     dependencies:
       - package: PullUpKit
         product: PullUpFeatures

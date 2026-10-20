@@ -48,6 +48,8 @@
 	<string>$(PULLUP_SUPABASE_HOST)</string>
 	<key>PullUpSupabaseAnonKey</key>
 	<string>$(PULLUP_SUPABASE_ANON_KEY)</string>
+	<key>PullUpBackendEnvironment</key>
+	<string>$(PULLUP_BACKEND_ENVIRONMENT)</string>
 	<key>PullUpPrivacyPolicyURL</key>
 	<string>$(PULLUP_PRIVACY_POLICY)</string>
 	<key>PullUpEPNCampaignID</key>

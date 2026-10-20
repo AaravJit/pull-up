@@ -2,6 +2,7 @@ import Foundation
 import Testing
 @testable import PullUpData
 import PullUpDomain
+import Security
 
 @Suite("Track encoding")
 struct TrackEncodingTests {
@@ -113,5 +114,16 @@ struct DemoBackendTests {
             #expect(drive.distanceMeters > 1_000)
             #expect(drive.topSpeed != nil)
         }
+    }
+}
+
+/// Security re-check G10 (docs/SECURITY_REPORT.md).
+@Suite("Session keychain")
+struct SessionKeychainTests {
+    @Test func sessionNeverLeavesThePhone() {
+        let item = SessionKeychain.item(key: "session", value: Data("token".utf8))
+        #expect(item[kSecAttrAccessible as String] as? String == kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly as String)
+        #expect(item[kSecAttrService as String] as? String == SessionKeychain.service)
+        #expect(item[kSecAttrSynchronizable as String] == nil)
     }
 }
