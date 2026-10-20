@@ -105,6 +105,7 @@ public final class DriveRecorder {
     private var streamTask: Task<Void, Never>?
     private var tickTask: Task<Void, Never>?
     private var unsavedSamples = 0
+    private var lastSave: Task<Void, Never>?
 
     static let minimumSamples = 30
     static let minimumDistance = 200.0
@@ -304,10 +305,25 @@ public final class DriveRecorder {
         live = engine.live(at: now)
     }
 
+    /// Saves only while recording, one after another: a save still queued
+    /// when finish() or discard() runs would otherwise land after them,
+    /// overwriting the finished drive or bringing a discarded one back.
     private func persistDraft() async {
-        guard let draft else { return }
+        guard phase == .recording, let draft else { return }
         unsavedSamples = 0
-        try? await store.save(draft)
+        let previous = lastSave
+        let save = Task { [store] in
+            await previous?.value
+            try? await store.save(draft)
+        }
+        lastSave = save
+        await save.value
+    }
+
+    /// Waits for saves already under way, before the drive's last write.
+    private func settleSaves() async {
+        await lastSave?.value
+        lastSave = nil
     }
 
     /// Stops recording and produces the summary. Uploads when worth keeping;
@@ -320,6 +336,7 @@ public final class DriveRecorder {
         tickTask?.cancel()
         provider?.stop()
         provider = nil
+        await settleSaves()
 
         // iOS can suspend the app past the limit before the tick that stops
         // it runs; the server would then refuse the drive outright.
@@ -357,10 +374,12 @@ public final class DriveRecorder {
     /// Stops and throws the drive away without saving anything.
     public func discard() async {
         guard phase == .recording, let draft else { return }
+        phase = .finishing
         streamTask?.cancel()
         tickTask?.cancel()
         provider?.stop()
         provider = nil
+        await settleSaves()
         await store.delete(draft.id)
         engine = nil
         self.draft = nil

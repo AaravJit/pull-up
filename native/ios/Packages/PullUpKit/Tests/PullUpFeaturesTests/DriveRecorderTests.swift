@@ -373,6 +373,18 @@ struct DriveRecorderTests {
         #expect(summary.gapDistanceMeters > 500)
     }
 
+    /// A periodic save was still queued when the drive was thrown away; it
+    /// must not write the drive back to disk afterwards.
+    @Test func queuedSaveDoesNotBringBackADiscardedDrive() async throws {
+        let h = await RecorderHarness()
+        _ = await h.recorder.start(with: nil)
+        try await h.drain(expecting: RecorderHarness.drive.count)
+        h.recorder.tick(flush: true)
+        await h.recorder.discard()
+        for _ in 0..<5 { await Task.yield() }
+        #expect(await h.store.all().isEmpty)
+    }
+
     /// Precise location was turned off while the app wasn't running.
     @Test func interruptedDriveIsNotResumedWithoutPermission() async throws {
         let suite = "recorder-tests-\(UUID().uuidString)"
