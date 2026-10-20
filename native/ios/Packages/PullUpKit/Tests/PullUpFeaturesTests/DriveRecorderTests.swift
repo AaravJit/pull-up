@@ -97,8 +97,10 @@ struct RecorderHarness {
     }
 
     /// Waits until the recorder has consumed the provider's track.
+    /// Waits up to 10 s: a loaded CI simulator can take seconds to deliver
+    /// a scripted drive.
     func drain(expecting count: Int) async throws {
-        for _ in 0..<200 where recorder.acceptedCount + recorder.rejectedCount < count {
+        for _ in 0..<1000 where recorder.acceptedCount + recorder.rejectedCount < count {
             try await Task.sleep(for: .milliseconds(10))
         }
     }
@@ -350,7 +352,8 @@ struct DriveRecorderTests {
         let recorder = DriveRecorder(backend: backend, store: store, defaults: UserDefaults(suiteName: suite)!) { provider }
         recorder.ownerID = await backend.currentUserID()
         _ = await recorder.start(with: nil)
-        for _ in 0..<200 where !recorder.isStationary { try await Task.sleep(for: .milliseconds(10)) }
+        for _ in 0..<1000 where !recorder.isStationary { try await Task.sleep(for: .milliseconds(10)) }
+        try #require(recorder.isStationary)
         let result = try #require(await recorder.finish(now: start.addingTimeInterval(400)))
         #expect(result.summary.endedAt == start.addingTimeInterval(39))
         #expect(result.upload == .uploaded)
@@ -372,7 +375,7 @@ struct DriveRecorderTests {
         let recorder = DriveRecorder(backend: backend, store: store, defaults: UserDefaults(suiteName: suite)!) { provider }
         recorder.ownerID = await backend.currentUserID()
         _ = await recorder.start(with: nil)
-        for _ in 0..<200 where recorder.acceptedCount < 54 { try await Task.sleep(for: .milliseconds(10)) }
+        for _ in 0..<1000 where recorder.acceptedCount < 54 { try await Task.sleep(for: .milliseconds(10)) }
         #expect(recorder.isStationary == false)
         return try #require(await recorder.finish(now: start.addingTimeInterval(115))).summary
     }
@@ -430,7 +433,7 @@ struct DriveRecorderTests {
         try await h.drain(expecting: RecorderHarness.drive.count)
         let started = try #require(h.recorder.startedAt)
         h.recorder.tick(flush: false, now: started.addingTimeInterval(DriveRecorder.maximumDuration))
-        for _ in 0..<200 where h.recorder.phase != .idle { try await Task.sleep(for: .milliseconds(10)) }
+        for _ in 0..<1000 where h.recorder.phase != .idle { try await Task.sleep(for: .milliseconds(10)) }
         #expect(h.recorder.phase == .idle)
         #expect(h.recorder.interruption != nil)
         #expect(h.recorder.lastResult?.upload == .uploaded)
@@ -443,7 +446,7 @@ struct DriveRecorderTests {
         try await h.drain(expecting: RecorderHarness.drive.count)
         let started = try #require(h.recorder.startedAt)
         h.recorder.tick(flush: false, now: started.addingTimeInterval(25 * 3600))
-        for _ in 0..<200 where h.recorder.phase != .idle { try await Task.sleep(for: .milliseconds(10)) }
+        for _ in 0..<1000 where h.recorder.phase != .idle { try await Task.sleep(for: .milliseconds(10)) }
         let result = try #require(h.recorder.lastResult)
         #expect(result.summary.endedAt.timeIntervalSince(started) <= DriveRecorder.maximumDuration)
         #expect(result.upload == .uploaded)
