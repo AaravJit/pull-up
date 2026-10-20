@@ -331,8 +331,6 @@ struct DriveRecorderTests {
         #expect(uploaded.endedAt.timeIntervalSince(started) <= DriveRecorder.maximumDuration + 0.001)
     }
 
-    /// A stop iOS paused updates for, then `middle`, then the car 600 m on
-    /// a minute later. Returns the finished drive's summary.
     private static func fix(_ start: Date, _ t: Double, north: Double, speed: Double) -> LocationEvent {
         .sample(LocationSample(
             timestamp: start.addingTimeInterval(t), latitude: 38.58 + north / 111_195, longitude: -121.49,
@@ -358,6 +356,8 @@ struct DriveRecorderTests {
         #expect(result.upload == .uploaded)
     }
 
+    /// A stop iOS paused updates for, then `middle`, then the car 600 m on
+    /// a minute later. Returns the finished drive's summary.
     private func scriptedStop(then middle: [LocationEvent]) async throws -> DriveSummary {
         let backend = DemoBackend()
         let suite = "recorder-tests-\(UUID().uuidString)"
