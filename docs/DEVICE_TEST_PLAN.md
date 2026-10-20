@@ -60,7 +60,7 @@ lower one.
 | --- | --- | --- |
 | D1.1 | Install from TestFlight, open | Sign-in screen. No location, notification or tracking prompt yet |
 | D1.2 | Sign in with Apple, share email | Onboarding: "Pick your handle", "Add a photo", "Who sees what". "Other ways to sign in" only offers email sign-in for accounts set up by Pull Up support; nothing lets you create an account with email |
-| D1.3 | Sign in with Apple, **Hide My Email** | Same onboarding; afterwards Pull Up Settings ▸ Account shows "Email: Hidden by Apple" |
+| D1.3 | On the second phone, whose Apple ID hasn't used Pull Up yet (Apple only offers the choice the first time): Sign in with Apple, **Hide My Email**. This becomes account B | Same onboarding; afterwards Pull Up Settings ▸ Account shows "Email: Hidden by Apple" |
 | D1.4 | Delete the app, reinstall, open | Either already signed in or the sign-in screen (iOS may keep the saved session). After signing in with the same Apple ID: same @username, no onboarding |
 | D1.5 | Signed in with Apple on this phone: iOS Settings ▸ your name ▸ Sign in with Apple ▸ Pull Up ▸ Stop using | Next launch or return to the app signs out, and the sign-in screen says Sign in with Apple was turned off for Pull Up |
 | D1.6 | Run last, after every other section. Pull Up Settings ▸ Account ▸ Delete account ▸ type DELETE ▸ Continue with Apple | Sign-in screen says "Your account and everything in it have been deleted." The other account can no longer see this one's posts or profile. Signing in again goes to "Pick your handle" (a new account) |
@@ -112,6 +112,12 @@ end, the phone's temperature (warm, hot) and whether it was charging. iOS
 Settings ▸ Battery shows Pull Up's share. These are the only battery numbers
 Pull Up should quote; none have been measured yet.
 
+### Shared route privacy
+
+| ID | Steps | Expected |
+| --- | --- | --- |
+| D3.18 | Pull Up Settings ▸ Protected places ▸ Add a protected place, centred where the drive will start ▸ Save. Pull Up Settings ▸ Privacy: Allow route sharing on, trim at 200 m. Record a keepable drive that starts inside the protected place and ends at least 1 km away. On its summary set "Who can see this drive" to Friends or Public ▸ Save changes ▸ Share trimmed route | The map shows a dashed route (with "Dashed: the trimmed route others can see…") that starts outside the protected place and its 150 m margin, and stops at least 200 m short of where the drive ended. Note the drive's date and time in the result. See [Known gaps](#known-gaps): the other account can't view it in the app |
+
 ## 4. Social and messages (2 accounts)
 
 A and B are the two accounts. Run D4.6 first, while neither follows the
@@ -151,7 +157,7 @@ to send you a message", with no text whatever the setting.
 | D5.2b | A turns on Show message text; B sends again | Push titled with B's name, showing the message text |
 | D5.3 | Tap a message push | It opens that chat |
 | D5.4 | Push me about ▸ Messages off; B sends in an accepted chat. Turn it back on; B sends again | No push the first time (the chat still updates); a push the second time |
-| D5.5 | Sign out on the phone, sign in to the second account | Pushes for the old account stop |
+| D5.5 | On A's phone sign out and sign in to the second account (a staging email account), which makes one Public post. B likes A's post and sends A a message; then B follows the second account | Nothing arrives for A. The second account gets "… started following you" |
 
 A push is verified only when it shows up on the device. A green server log
 doesn't count.
@@ -167,7 +173,7 @@ then.
 | D6.1 | Buy monthly with a sandbox account | "You're Pro…" after the server confirms with Apple |
 | D6.2 | Delete and reinstall, sign in with the same Apple ID | Pro is back without tapping anything: Pull Up Settings ▸ Pull Up Pro says Active, and the Pro screen shows the plan with no Restore button |
 | D6.3 | Sign in to the second account on the same phone, open the Pro screen, tap Restore purchases | Pro is off; Restore says "This subscription belongs to a different Pull Up account. Sign in to that account to use it." |
-| D6.4 | Pro screen ▸ Manage subscription ▸ cancel; wait past the end date; reopen the Pro screen | Plans and Restore show again; Pro looks are locked |
+| D6.4 | Sign out and sign back in to the account that bought Pro in D6.1. Pro screen ▸ Manage subscription ▸ cancel; wait past the end date; reopen the Pro screen | Plans and Restore show again; Pro looks are locked |
 | D6.5 | Ask to Buy (sandbox child account), then approve | "Waiting for approval…", then Pro after the approval (reopen the Pro screen) |
 
 ## 7. Parts finder
@@ -198,6 +204,11 @@ fixed yet.
   The drive summary replaces it, and closing the summary clears it.
 * **D3.15:** a saved drive uploads only when the app starts, on sign-in, or
   on Retry, not when the app returns to the foreground.
+* **D3.18:** the app has no screen that shows another person's shared
+  route, so the second-account check in `RELEASE_CHECKLIST.md` can't be
+  done in the app. Who can read a shared route is covered by the
+  two-account API tests; the developer checks the stored copy of the D3.18
+  drive on staging.
 * **D4.1:** there is no way in the app to approve a follow request.
 * **D8.3:** some selection animations ignore Reduce Motion: segmented
   switches, accent swatches, the speedometer picker in Settings, the vehicle
