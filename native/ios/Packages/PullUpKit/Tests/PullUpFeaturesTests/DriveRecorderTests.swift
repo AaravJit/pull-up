@@ -333,17 +333,37 @@ struct DriveRecorderTests {
 
     /// A stop iOS paused updates for, then `middle`, then the car 600 m on
     /// a minute later. Returns the finished drive's summary.
+    private static func fix(_ start: Date, _ t: Double, north: Double, speed: Double) -> LocationEvent {
+        .sample(LocationSample(
+            timestamp: start.addingTimeInterval(t), latitude: 38.58 + north / 111_195, longitude: -121.49,
+            altitude: 20, horizontalAccuracy: 5, verticalAccuracy: 4, speed: speed, speedAccuracy: 0.5, course: 0
+        ))
+    }
+
+    /// Parked with updates paused, then stopped minutes later: the drive
+    /// ends at its last fix, which is how the server times it.
+    @Test func driveEndsAtItsLastFix() async throws {
+        let backend = DemoBackend()
+        let suite = "recorder-tests-\(UUID().uuidString)"
+        let store = LocalDriveStore(directory: FileManager.default.temporaryDirectory.appendingPathComponent(suite))
+        let start = Date()
+        let events = (0..<40).map { Self.fix(start, Double($0), north: Double($0) * 10, speed: 10) } + [.stationary(true)]
+        let provider = ScriptedProvider(events: events)
+        let recorder = DriveRecorder(backend: backend, store: store, defaults: UserDefaults(suiteName: suite)!) { provider }
+        recorder.ownerID = await backend.currentUserID()
+        _ = await recorder.start(with: nil)
+        for _ in 0..<200 where !recorder.isStationary { try await Task.sleep(for: .milliseconds(10)) }
+        let result = try #require(await recorder.finish(now: start.addingTimeInterval(400)))
+        #expect(result.summary.endedAt == start.addingTimeInterval(39))
+        #expect(result.upload == .uploaded)
+    }
+
     private func scriptedStop(then middle: [LocationEvent]) async throws -> DriveSummary {
         let backend = DemoBackend()
         let suite = "recorder-tests-\(UUID().uuidString)"
         let store = LocalDriveStore(directory: FileManager.default.temporaryDirectory.appendingPathComponent(suite))
         let start = Date()
-        func fix(_ t: Double, north: Double, speed: Double) -> LocationEvent {
-            .sample(LocationSample(
-                timestamp: start.addingTimeInterval(t), latitude: 38.58 + north / 111_195, longitude: -121.49,
-                altitude: 20, horizontalAccuracy: 5, verticalAccuracy: 4, speed: speed, speedAccuracy: 0.5, course: 0
-            ))
-        }
+        func fix(_ t: Double, north: Double, speed: Double) -> LocationEvent { Self.fix(start, t, north: north, speed: speed) }
         var events = (0..<40).map { fix(Double($0), north: Double($0) * 10, speed: 10) }
         events += (40..<45).map { fix(Double($0), north: 390, speed: 0) }
         events += [.stationary(true)] + middle

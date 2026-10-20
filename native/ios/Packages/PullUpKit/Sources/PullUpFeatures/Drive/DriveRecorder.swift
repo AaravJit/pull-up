@@ -340,10 +340,14 @@ public final class DriveRecorder {
 
         // iOS can suspend the app past the limit before the tick that stops
         // it runs; the server would then refuse the drive outright.
-        let end = min(now, Self.limit(of: draft))
+        var end = min(now, Self.limit(of: draft))
         if Self.trimToLimit(&draft) {
             engine = TelemetryEngine.replay(draft.samples, startedAt: draft.startedAt, stationaryPauses: draft.stationaryPauses ?? [])
         }
+        // The server times a drive by its track. A stop long after the last
+        // fix (parked with updates paused, or still in a tunnel after a
+        // relaunch) would fail its duration check, so the drive ends there.
+        if let lastFix = draft.samples.last?.timestamp { end = min(end, lastFix) }
         draft.endedAt = end
         let summary = engine.summary(endedAt: end)
         var result = FinishedDrive(
