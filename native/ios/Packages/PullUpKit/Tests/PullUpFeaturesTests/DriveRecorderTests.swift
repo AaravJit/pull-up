@@ -512,8 +512,15 @@ struct LocationEventOrderTests {
         #expect(events == [.stationary(false), .sample(fix)])
     }
 
+    /// Ingesting a fix clears the pause, so a fix iOS delivers while still
+    /// paused is followed by the pause again.
+    @Test func fixDuringAPauseKeepsThePause() {
+        let events = LocationEvent.forUpdate(location: fix, stationary: true, locationUnavailable: false, wasStationary: true)
+        #expect(events == [.sample(fix), .stationary(true)])
+    }
+
     @Test func unchangedFlagAddsNoMarker() {
-        #expect(LocationEvent.forUpdate(location: fix, stationary: true, locationUnavailable: false, wasStationary: true) == [.sample(fix)])
+        #expect(LocationEvent.forUpdate(location: nil, stationary: true, locationUnavailable: false, wasStationary: true) == [])
         #expect(LocationEvent.forUpdate(location: nil, stationary: false, locationUnavailable: true, wasStationary: false) == [.unavailable])
     }
 }

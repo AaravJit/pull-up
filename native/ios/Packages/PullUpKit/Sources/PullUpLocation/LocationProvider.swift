@@ -21,8 +21,10 @@ public enum LocationEvent: Sendable, Equatable {
     /// The events for one Core Location update, in the order the recorder
     /// needs them. iOS's last update before it pauses carries both a fix and
     /// the stationary flag; the fix goes first, or ingesting it would clear
-    /// the pause and the stop would look like lost signal. When moving again,
-    /// the pause ends before the fix that follows it.
+    /// the pause and the stop would look like lost signal. For the same
+    /// reason the pause is reapplied after any further fix iOS delivers
+    /// while still paused. When moving again, the pause ends before the fix
+    /// that follows it.
     public static func forUpdate(
         location: LocationSample?, stationary: Bool, locationUnavailable: Bool, wasStationary: Bool
     ) -> [LocationEvent] {
@@ -33,7 +35,7 @@ public enum LocationEvent: Sendable, Equatable {
         } else if locationUnavailable {
             events.append(.unavailable)
         }
-        if stationary, !wasStationary { events.append(.stationary(true)) }
+        if stationary, !wasStationary || location != nil { events.append(.stationary(true)) }
         return events
     }
 }
