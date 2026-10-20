@@ -452,4 +452,18 @@ public struct TelemetryEngine: Sendable {
         if !pauses.isEmpty { engine.noteStationary(true) }
         return engine
     }
+
+    /// Where iOS most likely paused updates because the phone was still,
+    /// for tracks stored without the recorder's markers (the server keeps
+    /// only the fixes): a silence longer than `gapThreshold` that starts at
+    /// a fix with a near-zero Doppler speed. A tunnel is entered at speed,
+    /// so it stays a signal gap.
+    public static func inferredStationaryPauses(_ samples: [LocationSample], configuration: Configuration = .init()) -> [Date] {
+        zip(samples, samples.dropFirst()).compactMap { previous, next in
+            guard next.timestamp.timeIntervalSince(previous.timestamp) > configuration.gapThreshold,
+                  previous.hasValidSpeed, previous.speed < configuration.stopMovingSpeed
+            else { return nil }
+            return previous.timestamp.addingTimeInterval(0.5)
+        }
+    }
 }

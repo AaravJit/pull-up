@@ -3,7 +3,7 @@
 
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(10);
+select plan(11);
 
 insert into auth.users (id, email, raw_user_meta_data) values
   ('db000000-0000-0000-0000-00000000000a', 'bounds-ann@example.com', '{"username":"bounds_ann"}');
@@ -62,7 +62,7 @@ select is((select validation_status from public.drives where id = 'db100000-0000
 select ok((select validation_notes = array['distance_drift'] from public.drives where id = 'db100000-0000-0000-0000-000000000003'),
   'the flag names distance_drift only');
 
--- 7–8: a relock jump adds nothing in the app, so the lower bound skips it
+-- 7–9: a relock jump adds nothing in the app, so the lower bound skips it
 -- too, whether it is a teleport (556 m in 1 s) or just further than the
 -- Doppler speed allows (556 m in 5 s at 3 m/s).
 select pg_temp.drive('db100000-0000-0000-0000-000000000004', 8, 898, true, 0);
@@ -71,8 +71,10 @@ select is((select validation_status from public.drives where id = 'db100000-0000
 select pg_temp.drive('db100000-0000-0000-0000-000000000005', 10, 898, true, 4);
 select is((select validation_status from public.drives where id = 'db100000-0000-0000-0000-000000000005'), 'validated',
   'a Doppler-implausible jump the app relocked across does not raise the lower bound');
+select ok((select server_distance_m < 3800 from public.drives where id = 'db100000-0000-0000-0000-000000000005'),
+  'nor is it counted in server_distance_m');
 
--- 9–10: inflated accuracy in the upload can't erase the lower bound.
+-- 10–11: inflated accuracy in the upload can't erase the lower bound.
 select pg_temp.drive('db100000-0000-0000-0000-000000000006', 12, 0, false, 0, true);
 select is((select validation_status from public.drives where id = 'db100000-0000-0000-0000-000000000006'), 'rejected',
   'a zero distance with ~5 km claimed accuracy is still rejected');

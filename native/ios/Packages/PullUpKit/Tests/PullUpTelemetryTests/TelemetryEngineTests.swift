@@ -107,6 +107,21 @@ struct TelemetryEngineTests {
         #expect(summary.distanceMeters < 800)
     }
 
+    @Test func historyReplayInfersStationaryPauses() {
+        // A minute stopped at a light (iOS paused updates), then a 30 s
+        // tunnel at speed. Only the tunnel is a signal gap.
+        var samples: [LocationSample] = []
+        for t in 0..<10 { samples.append(factory.sample(at: Double(t), northMeters: Double(t) * 10, speed: 10)) }
+        for t in 10..<15 { samples.append(factory.sample(at: Double(t), northMeters: 90, speed: 0)) }
+        for t in 74..<90 { samples.append(factory.sample(at: Double(t), northMeters: 90 + Double(t - 74) * 10, speed: 10)) }
+        for t in 119..<125 { samples.append(factory.sample(at: Double(t), northMeters: 540 + Double(t - 119) * 10, speed: 10)) }
+        let pauses = TelemetryEngine.inferredStationaryPauses(samples)
+        #expect(pauses.count == 1)
+        let summary = TelemetryEngine.replay(samples, startedAt: factory.start, stationaryPauses: pauses)
+            .summary(endedAt: factory.start.addingTimeInterval(124))
+        #expect(summary.longestSignalGap == 30)
+    }
+
     @Test func poorAccuracyFixesAreRejected() {
         var samples = factory.samples(speeds: [Double](repeating: 10, count: 10))
         samples[3].horizontalAccuracy = 65 // Wi-Fi fix

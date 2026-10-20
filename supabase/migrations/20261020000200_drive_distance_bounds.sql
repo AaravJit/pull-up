@@ -37,6 +37,7 @@ declare
   anchor_hacc double precision;
   from_anchor double precision;
   err double precision;
+  relocked boolean;
   seg double precision;
   dt double precision;
   max_doppler double precision := 0;
@@ -83,25 +84,26 @@ begin
         non_monotonic := non_monotonic + 1;
       else
         seg := public.haversine_m(prev_lat, prev_lon, rec.lat, rec.lon);
+        -- A step the app's own jump check rejects (faster than 120 m/s, or
+        -- further than the Doppler speeds allow) is where it relocked and
+        -- added nothing, so neither the raw sum nor the lower bound spans
+        -- it; the bound restarts there.
+        err := least(greatest(coalesce(rec.hacc, 0), 0), 35);
+        relocked := seg / dt > 120
+          or (coalesce(prev_spd, -1) >= 0 and coalesce(prev_sacc, -1) >= 0
+              and coalesce(rec.spd, -1) >= 0 and coalesce(rec.sacc, -1) >= 0 and dt <= 5
+              and seg > (greatest(prev_spd + prev_sacc, rec.spd + rec.sacc) + 2) * dt + prev_hacc + err);
         if seg / dt > 120 then
           jumps := jumps + 1; -- teleport; don't count it
-        else
+        elsif not relocked then
           dist := dist + seg;
         end if;
         -- Lower bound: hop from fix to fix once they are well apart, and
         -- credit each hop less both fixes' accuracy radii, which is the
         -- least the car can have moved between them. Radii are clamped to
         -- 0–35 m, the most the app accepts, so an inflated accuracy in the
-        -- upload can't wipe the bound out. A step the app's own jump check
-        -- rejects (faster than 120 m/s, or further than the Doppler speeds
-        -- allow) is where it relocked and added nothing, so the bound
-        -- restarts from there instead of spanning it.
-        err := least(greatest(coalesce(rec.hacc, 0), 0), 35);
-        if seg / dt > 120
-           or (coalesce(prev_spd, -1) >= 0 and coalesce(prev_sacc, -1) >= 0
-               and coalesce(rec.spd, -1) >= 0 and coalesce(rec.sacc, -1) >= 0 and dt <= 5
-               and seg > (greatest(prev_spd + prev_sacc, rec.spd + rec.sacc) + 2) * dt
-                         + prev_hacc + err) then
+        -- upload can't wipe the bound out.
+        if relocked then
           anchor_lat := rec.lat;
           anchor_lon := rec.lon;
           anchor_hacc := err;
