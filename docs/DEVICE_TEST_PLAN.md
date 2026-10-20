@@ -39,7 +39,7 @@ lower one.
 * **2 accounts** means two iPhones, each signed in to its own Apple ID, both
   in use at the same time for the live tests (D4.2, D4.4, D4.7a). Sign in
   with Apple always uses the phone's own Apple ID, so a second account on
-  the same phone (D5.5, D6.3) has to be an email account created in the
+  the same phone (E, used in D5.5 and section 6) has to be an email account created in the
   staging dashboard, used through "Other ways to sign in".
 * The only way to open another person's profile is to tap their name on a
   post in Feed. Before the 2-account tests, each account makes one Public
@@ -140,11 +140,12 @@ still pending, A unfollows and follows again).
 | D4.7d | A reports B from the chat | "Thanks for reporting" appears; B isn't told; a row appears in staging's `reports` table |
 | D4.7e | Run after section 5. A blocks B | The chat leaves A's inbox; B can't start a chat with A, find A or see A's profile. To undo, delete the row in staging's `blocks` table |
 | D4.8 | Send a photo that has a location (in Photos, swipe up shows a map). In the staging dashboard ▸ Storage ▸ dm-media, download that message's .jpg and check it with an EXIF viewer | No GPS fields; longest side 2048 px or less |
+| D4.9 | A: Feed ▸ New post ▸ Add ▸ pick a clip under 100 MB filmed on the phone ▸ Public ▸ Post. B turns Wi-Fi off (cellular only), opens Feed and plays A's video | The post appears with the video. On cellular it starts playing and plays to the end with the standard controls; note in the result how long it took to start |
 | D4.9 | Look through Feed, search, meets and leaderboards | No demo profiles; only real accounts. CI's API tests briefly create "Test …" users on staging and delete them again |
 
 ## 5. Notifications (2 accounts)
 
-Only after the APNs key is set on staging (`SUPABASE_SETUP.md` step 3).
+Only after staging has the APNs secrets and `PUSH_WEBHOOK_SECRET` (`SUPABASE_SETUP.md` step 3), `send-push` is deployed (step 4), and the database webhook on `public.notifications` is set up (step 5). Without the webhook, notifications still show in the app's bell but nothing is pushed.
 Pull Up shows no banner while it is open, so keep A's app in the background
 or the phone locked. Repeat follows and likes within 24 hours send no
 second push, by design. A message request's push always reads "… wants
@@ -157,7 +158,7 @@ to send you a message", with no text whatever the setting.
 | D5.2b | A turns on Show message text; B sends again | Push titled with B's name, showing the message text |
 | D5.3 | Tap a message push | It opens that chat |
 | D5.4 | Push me about ▸ Messages off; B sends in an accepted chat. Turn it back on; B sends again | No push the first time (the chat still updates); a push the second time |
-| D5.5 | On A's phone sign out and sign in to the second account (a staging email account), which makes one Public post. B likes A's post and sends A a message; then B follows the second account. Afterwards sign out and sign back in with Apple as A, for the tests that follow | Nothing arrives for A. The second account gets "… started following you" |
+| D5.5 | On A's phone sign out and sign in to E, a staging email account, which makes one Public post. B likes A's post and sends A a message; then B follows E. Afterwards sign out and sign back in with Apple as A, for the tests that follow | Nothing arrives for A. E gets "… started following you" |
 
 A push is verified only when it shows up on the device. A green server log
 doesn't count.
@@ -166,15 +167,21 @@ doesn't count.
 
 Only with sandbox testers in App Store Connect, and only after the products
 exist there and are approved by the owner. Prices stay proposals until
-then.
+then. Buy as E, the staging email account from D5.5, because it can sign in
+on either phone (D6.4). Both phones use the same sandbox tester (iOS
+Settings ▸ App Store ▸ Sandbox Account).
 
 | ID | Steps | Expected |
 | --- | --- | --- |
-| D6.1 | Buy monthly with a sandbox account | "You're Pro…" after the server confirms with Apple |
-| D6.2 | Delete and reinstall, sign in with the same Apple ID | Pro is back without tapping anything: Pull Up Settings ▸ Pull Up Pro says Active, and the Pro screen shows the plan with no Restore button |
-| D6.3 | Sign in to the second account on the same phone, open the Pro screen, tap Restore purchases | Pro is off; Restore says "This subscription belongs to a different Pull Up account. Sign in to that account to use it." |
-| D6.4 | Sign out and sign back in to the account that bought Pro in D6.1. Pro screen ▸ Manage subscription ▸ cancel; wait past the end date; reopen the Pro screen | Plans and Restore show again; Pro looks are locked |
-| D6.5 | Ask to Buy (sandbox child account), then approve | "Waiting for approval…", then Pro after the approval (reopen the Pro screen) |
+| D6.1 | Signed in as E, buy monthly | "You're Pro…" after the server confirms with Apple; the Pro screen shows Purchase: Test (sandbox) |
+| D6.2 | Leave it renewing. The sandbox renews a monthly plan every few minutes; after three renewals reopen the Pro screen | Still Pro, Renews shown. The developer checks on staging that E's row in `entitlements` has a later `expires_at` than right after D6.1 |
+| D6.3 | Delete and reinstall, sign in as E | Pro is back without tapping anything: Pull Up Settings ▸ Pull Up Pro says Active, and the Pro screen shows the plan with no Restore button |
+| D6.4 | On the second phone, sign out of B and sign in as E | Pro is Active there too, without tapping anything. Afterwards sign out and sign back in with Apple as B |
+| D6.5 | On the first phone, sign in with Apple as A, open the Pro screen, tap Restore purchases | Pro is off; Restore says "This subscription belongs to a different Pull Up account. Sign in to that account to use it." |
+| D6.6 | Sign out and sign back in as E. Pro screen ▸ Manage subscription ▸ cancel; wait past the end date; reopen the Pro screen | Plans and Restore show again; Pro looks are locked. Afterwards sign back in with Apple as A |
+| D6.7 | Ask to Buy (sandbox child account), then approve | "Waiting for approval…", then Pro after the approval (reopen the Pro screen) |
+
+A sandbox refund isn't in this list; see [Known gaps](#known-gaps).
 
 ## 7. Parts finder
 
@@ -189,8 +196,22 @@ then.
 | --- | --- | --- |
 | D8.1 | Largest accessibility text size; go through Start Drive, the live dashboard and the summary | Speed, recording time and every tile value fully visible (numbers may shrink); long vehicle names may end in "…"; the picker becomes a vertical list |
 | D8.2 | VoiceOver through Start Drive and the summary | Every control is named; speed and GPS signal are read out; Hold to stop has an action |
-| D8.3 | Dark and light appearance; Reduce Motion through Start Drive ▸ dashboard ▸ summary | Readable in both. With Reduce Motion, the stage change is a short crossfade and the REC dot doesn't pulse. See [Known gaps](#known-gaps) for other screens |
+| D8.3 | Dark and light appearance; Reduce Motion through Start Drive ▸ dashboard ▸ summary | Readable in both. With Reduce Motion, the stage change is a short crossfade, the picker's vehicle cards don't grow or shrink when you select one, the speedometer needle jumps to each new speed instead of springing, and the REC dot doesn't pulse. See [Known gaps](#known-gaps) for other screens |
 | D8.4 | Portrait and landscape during a drive; lock the phone | The dashboard isn't under the Dynamic Island or home indicator. The lock screen shows only iOS's location indicator; Pull Up has no Live Activity |
+
+## 9. CarPlay
+
+Only once Apple has granted the CarPlay Driving Task entitlement and the
+build includes it (`CARPLAY.md`). Needs a real CarPlay head unit; the
+simulator doesn't exercise the connection.
+
+| ID | Steps | Expected |
+| --- | --- | --- |
+| D9.1 | Signed out of Pull Up, connect the phone to the head unit and open Pull Up there | "Signed out: Open Pull Up on your iPhone to sign in." and no buttons |
+| D9.2 | Sign in on the phone, then on the head unit tap Start drive | "Choose vehicle" lists the garage vehicles and "Guest vehicle" |
+| D9.3 | Pick a vehicle and drive a keepable drive (the passenger checks the phone) | The phone records; the head unit shows the drive's status and "Stop and save" |
+| D9.4 | Tap Stop and save on the head unit | The drive is in Recent drives on the phone, logged to the vehicle picked in D9.3 |
+| D9.5 | Unplug the phone mid-drive, then plug it back in | Recording carries on on the phone; on reconnecting the head unit shows the same drive with "Stop and save" |
 
 ## Known gaps
 
@@ -210,6 +231,9 @@ fixed yet.
   two-account API tests; the developer checks the stored copy of the D3.18
   drive on staging.
 * **D4.1:** there is no way in the app to approve a follow request.
+* **Pro refund:** Pull Up has no in-app refund request, which is how Apple's
+  sandbox issues a refund, so a refund can't be run on a device yet. The
+  server's handling of Apple's refund notification has unit tests only.
 * **D8.3:** some selection animations ignore Reduce Motion: segmented
   switches, accent swatches, the speedometer picker in Settings, the vehicle
   editor, Pro plans and the map.
