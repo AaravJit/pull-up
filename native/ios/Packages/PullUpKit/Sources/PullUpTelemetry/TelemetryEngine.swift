@@ -205,9 +205,14 @@ public struct TelemetryEngine: Sendable {
         relocks += 1
         recentSpeeds.removeAll()
         if accepted.count == 1 {
-            // The only fix so far was the bad one: forget it entirely.
+            // The only fix so far was the bad one: forget it entirely,
+            // including what it fed into speeds and 0–60 runs.
             accepted.removeAll()
             speedSeries.removeAll()
+            rolling.removeAll()
+            accelerations = AccelerationDetector()
+            topSpeed = nil
+            currentSpeed = nil
             smoothedAltitude = nil
             elevationBaseline = nil
             minAltitude = nil

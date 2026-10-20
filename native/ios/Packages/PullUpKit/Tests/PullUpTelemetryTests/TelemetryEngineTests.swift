@@ -107,6 +107,20 @@ struct TelemetryEngineTests {
         #expect(summary.distanceMeters < 800)
     }
 
+    @Test func droppedFirstFixLeavesNoTrace() {
+        // The first fix is a stale reading 5 km away at a standstill; the
+        // car is really cruising at 25 m/s. Once the engine relocks onto
+        // the real fixes, the bad one must not drag the rolling average down.
+        var samples = factory.samples(speeds: [Double](repeating: 25, count: 20))
+        samples[0].latitude += 5_000 / TrackFactory.metersPerDegreeLatitude
+        samples[0].speed = 0
+        let engine = TelemetryEngine.replay(samples, startedAt: factory.start)
+        #expect(engine.relocks == 1)
+        let live = engine.live(at: factory.start.addingTimeInterval(19))
+        #expect(abs((live.rollingAverageSpeed ?? 0) - 25) < 0.05)
+        #expect(engine.summary(endedAt: factory.start.addingTimeInterval(19)).zeroToSixty == nil)
+    }
+
     @Test func historyReplayInfersStationaryPauses() {
         // A minute stopped at a light (iOS paused updates), then a 30 s
         // tunnel at speed, then a stop where the signal is lost and the car
