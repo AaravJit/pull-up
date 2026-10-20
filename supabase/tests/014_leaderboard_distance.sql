@@ -4,7 +4,7 @@
 
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(14);
+select plan(17);
 
 insert into auth.users (id, email, raw_user_meta_data) values
   ('dc000000-0000-0000-0000-00000000000a', 'ranked-ann@example.com', '{"username":"ranked_ann"}');
@@ -105,6 +105,24 @@ select ok((select value from public.leaderboard('distance', 'global', 'all_time'
 select pg_temp.act_as('dc000000-0000-0000-0000-00000000000a');
 select throws_ok($$ select * from private.drive_scores $$, '42501', null, 'clients cannot read leaderboard distances');
 select throws_ok($$ select private.track_coverage_m('[]') $$, '42501', null, 'clients cannot call the coverage helper');
+
+-- 15–16: hops across the antimeridian take the short way round.
+reset role;
+select ok(abs(private.track_coverage_m((
+    select jsonb_agg(jsonb_build_array(i, 0, 179.9865 + i * 0.0009 - case when 179.9865 + i * 0.0009 >= 180 then 360 else 0 end) order by i)
+    from generate_series(0, 30) as i)) - 3000) < 300,
+  'a 3 km drive east across the antimeridian covers about 3 km');
+select ok(private.track_coverage_m((
+    select jsonb_agg(jsonb_build_array(i, 38.58, case when i % 2 = 0 then 179.99 else -179.99 end) order by i)
+    from generate_series(0, 999) as i)) < 4500,
+  '1,000 passes over 1.7 km across the antimeridian count as about two');
+
+-- 17: the fill-in work is capped for the whole track, not only per hop:
+-- 250 hops of 111 km fill only the first 20,000 km or so.
+select ok(private.track_coverage_m((
+    select jsonb_agg(jsonb_build_array(i, 0, -120 + i) order by i)
+    from generate_series(0, 249) as i)) between 21500000 and 23000000,
+  'fill-in stops after 400,000 steps');
 
 select * from finish();
 rollback;

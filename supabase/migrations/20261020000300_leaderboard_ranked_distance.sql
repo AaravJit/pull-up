@@ -35,10 +35,12 @@ revoke all on private.drive_scores from public, anon, authenticated;
 
 -- Metres of ground a track covers: the ~100 m cells (0.0009 degrees of
 -- latitude, and of longitude scaled by the first fix's latitude) it passes
--- through, each
--- counted once per visit and at most twice. Hops are filled in every 50 m,
--- so a signal gap still covers the cells it crossed; at most 2,000 fills a
--- hop, which only ever lowers the figure.
+-- through, each counted once per visit and at most twice. Hops are filled
+-- in every 50 m, so a signal gap still covers the cells it crossed; at most
+-- 2,000 fills a hop, and 400,000 the whole track (20,000 km, beyond any real drive), after
+-- which each hop only counts its end. Both caps only ever lower the figure
+-- and keep the work proportional to the track's length. Longitude steps
+-- take the short way round, so a hop across the antimeridian stays local.
 create function private.track_coverage_m(pts jsonb)
 returns double precision
 language sql
@@ -51,19 +53,28 @@ as $$
     from jsonb_array_elements(pts) with ordinality as e(p, i)
   ),
   hops as (
-    select i, lat, lon, cos(radians(first_value(lat) over (order by i))) as xscale,
-           coalesce(lag(lat) over (order by i), lat) as plat,
-           coalesce(lag(lon) over (order by i), lon) as plon
-    from fixes
+    select i, lat, plat, plon, dlon - 360 * round(dlon / 360) as dlon, xscale,
+           least(2000, greatest(1, ceil(public.haversine_m(plat, plon, lat, lon) / 50)))::int as m
+    from (
+      select i, lat, lon, cos(radians(first_value(lat) over (order by i))) as xscale,
+             coalesce(lag(lat) over (order by i), lat) as plat,
+             coalesce(lag(lon) over (order by i), lon) as plon,
+             lon - coalesce(lag(lon) over (order by i), lon) as dlon
+      from fixes
+    ) as f
+  ),
+  budget as (
+    select h.*, greatest(1, least(h.m, 400000 - coalesce(sum(h.m) over (order by h.i rows between unbounded preceding and 1 preceding), 0)))::int as fill
+    from hops h
   ),
   steps as (
-    select h.i, k.k, h.xscale, h.plat + (h.lat - h.plat) * k.k / k.m::float8 as lat, h.plon + (h.lon - h.plon) * k.k / k.m::float8 as lon
-    from hops h
-    cross join lateral (select least(2000, greatest(1, ceil(public.haversine_m(h.plat, h.plon, h.lat, h.lon) / 50)))::int as m) as fill
-    cross join lateral (select g as k, fill.m from generate_series(1, fill.m) as g) as k
+    select b.i, k.k, b.xscale, b.plat + (b.lat - b.plat) * k.k / b.fill::float8 as lat,
+           b.plon + b.dlon * k.k / b.fill::float8 as lon
+    from budget b
+    cross join lateral generate_series(1, b.fill) as k(k)
   ),
   cells as (
-    select i, k, floor(lat / 0.0009)::bigint as cy, floor(lon * xscale / 0.0009)::bigint as cx
+    select i, k, floor(lat / 0.0009)::bigint as cy, floor((lon - 360 * floor((lon + 180) / 360)) * xscale / 0.0009)::bigint as cx
     from steps
   ),
   entries as (
