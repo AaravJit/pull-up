@@ -52,9 +52,9 @@ lower one.
 | --- | --- | --- |
 | D2.1 | Drive tab ▸ Start Drive ▸ pick a vehicle ▸ confirm | Location prompt appears only now |
 | D2.2 | Answer "Don't Allow" | Clear message with an Open Settings button; nothing recorded |
-| D2.3 | Allow with Precise Location off | Precise Location notice; recording doesn't start |
+| D2.3 | Allow with Precise Location off | iOS asks for Precise Location for this drive. Allowing it starts recording; declining shows the Precise Location notice and recording doesn't start |
 | D2.4 | Allow While Using, Precise on | Recording starts; blue location indicator appears when the app is in the background |
-| D2.5 | During a drive, turn Precise Location off in Settings | Recording stops; "Precise Location was turned off" notice; drive up to then is kept |
+| D2.5 | Drive at least 200 m and 30 seconds, then turn Precise Location off in Settings | Recording stops; "Precise Location was turned off" notice; drive up to then is kept (shorter drives are discarded by design) |
 
 ## 3. Recording drives
 
@@ -70,7 +70,7 @@ compared. Write down trip-meter distance at start and end.
 | D3.5 | Parked for 5 minutes with recording on | Distance doesn't grow; moving time doesn't grow |
 | D3.6 | Turn on Low Power Mode during a drive | Low Power Mode notice on the dashboard; recording continues |
 | D3.7 | Switch vehicle between two drives | Each drive is logged to the vehicle picked for it |
-| D3.8 | 0–60 mph result, only if it happened naturally and legally (for example a highway on-ramp) | Labelled an estimate unless the data supports it. Never test this on purpose |
+| D3.8 | 0–60 mph result, only if it happened naturally and legally (for example a highway on-ramp) | Always labelled an estimate (EST), even when the summary notes the data was consistent. Never test this on purpose |
 | D3.9 | Discard a drive | Nothing uploaded; it doesn't appear anywhere |
 
 ### Interruptions
@@ -149,7 +149,7 @@ then.
 | --- | --- | --- |
 | D8.1 | Largest Dynamic Type size | Every screen readable; nothing cut off on the live dashboard |
 | D8.2 | VoiceOver through Start Drive and the summary | Every control is named; speed and signal are read out |
-| D8.3 | Dark and light appearance, Reduce Motion | Readable; no animation with Reduce Motion |
+| D8.3 | Dark and light appearance, Reduce Motion | Readable. With Reduce Motion, the drive stage change is a short crossfade, and nothing morphs, springs, pulses or scales |
 | D8.4 | Dynamic Island and Always-On display during a drive | Nothing obscured |
 
 ## Reporting
