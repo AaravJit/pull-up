@@ -79,16 +79,15 @@ public final class CoreLocationProvider: NSObject, LocationProvider, CLLocationM
                                 continuation.yield(.accuracyReduced)
                                 continue
                             }
-                            if update.stationary != wasStationary {
-                                wasStationary = update.stationary
-                                continuation.yield(.stationary(wasStationary))
-                            }
-                            if let location = update.location {
-                                restartDelay = .seconds(1)
-                                continuation.yield(.sample(LocationSample(location)))
-                            } else if update.locationUnavailable {
-                                continuation.yield(.unavailable)
-                            }
+                            if update.location != nil { restartDelay = .seconds(1) }
+                            let events = LocationEvent.forUpdate(
+                                location: update.location.map { LocationSample($0) },
+                                stationary: update.stationary,
+                                locationUnavailable: update.locationUnavailable,
+                                wasStationary: wasStationary
+                            )
+                            wasStationary = update.stationary
+                            for event in events { continuation.yield(event) }
                         }
                     } catch {
                         continuation.yield(.unavailable)

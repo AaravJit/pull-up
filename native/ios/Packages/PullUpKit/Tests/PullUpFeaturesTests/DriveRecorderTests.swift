@@ -311,6 +311,22 @@ struct DriveRecorderTests {
         #expect(result.summary.endedAt.timeIntervalSince(started) <= DriveRecorder.maximumDuration)
         #expect(result.upload == .uploaded)
     }
+
+    /// Fixes iOS delivers after the limit are dropped, not uploaded.
+    @Test func fixesAfterTheLimitAreDropped() async throws {
+        let provider = InstantProvider(speeds: RecorderHarness.drive, startOffset: DriveRecorder.maximumDuration - 20)
+        let h = await RecorderHarness(provider: provider)
+        _ = await h.recorder.start(with: nil)
+        try await h.drain(expecting: RecorderHarness.drive.count)
+        let started = try #require(h.recorder.startedAt)
+        let result = try #require(await h.recorder.finish(now: started.addingTimeInterval(25 * 3600)))
+        let end = result.summary.endedAt
+        #expect(end.timeIntervalSince(started) <= DriveRecorder.maximumDuration)
+        #expect(!result.track.isEmpty)
+        #expect(result.track.allSatisfy { $0.timestamp <= end })
+        #expect(result.track.count < RecorderHarness.drive.count)
+        #expect(result.summary.movingSeconds <= result.summary.elapsedSeconds)
+    }
 }
 
 @MainActor
@@ -357,5 +373,30 @@ struct FormattingTests {
 
     @Test func zeroToSixtyLabelNeverChangesWithUnit() {
         #expect(Format.zeroToSixtyLabel == "0–60 mph")
+    }
+}
+
+@Suite("Location event order")
+struct LocationEventOrderTests {
+    let fix = LocationSample(
+        timestamp: Date(timeIntervalSince1970: 1_800_000_000), latitude: 38.58, longitude: -121.49,
+        altitude: 20, horizontalAccuracy: 5, verticalAccuracy: 4, speed: 0, speedAccuracy: 0.5, course: 0
+    )
+
+    /// iOS's last update before it pauses carries a fix and the stationary
+    /// flag; the pause must outlive that fix.
+    @Test func lastFixComesBeforeThePause() {
+        let events = LocationEvent.forUpdate(location: fix, stationary: true, locationUnavailable: false, wasStationary: false)
+        #expect(events == [.sample(fix), .stationary(true)])
+    }
+
+    @Test func pauseEndsBeforeTheNextFix() {
+        let events = LocationEvent.forUpdate(location: fix, stationary: false, locationUnavailable: false, wasStationary: true)
+        #expect(events == [.stationary(false), .sample(fix)])
+    }
+
+    @Test func unchangedFlagAddsNoMarker() {
+        #expect(LocationEvent.forUpdate(location: fix, stationary: true, locationUnavailable: false, wasStationary: true) == [.sample(fix)])
+        #expect(LocationEvent.forUpdate(location: nil, stationary: false, locationUnavailable: true, wasStationary: false) == [.unavailable])
     }
 }

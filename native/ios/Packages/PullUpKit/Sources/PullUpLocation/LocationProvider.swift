@@ -13,6 +13,25 @@ public enum LocationEvent: Sendable, Equatable {
     /// possible at ~1 km accuracy, so recording must stop and say why.
     case accuracyReduced
     case denied
+
+    /// The events for one Core Location update, in the order the recorder
+    /// needs them. iOS's last update before it pauses carries both a fix and
+    /// the stationary flag; the fix goes first, or ingesting it would clear
+    /// the pause and the stop would look like lost signal. When moving again,
+    /// the pause ends before the fix that follows it.
+    public static func forUpdate(
+        location: LocationSample?, stationary: Bool, locationUnavailable: Bool, wasStationary: Bool
+    ) -> [LocationEvent] {
+        var events: [LocationEvent] = []
+        if !stationary, wasStationary { events.append(.stationary(false)) }
+        if let location {
+            events.append(.sample(location))
+        } else if locationUnavailable {
+            events.append(.unavailable)
+        }
+        if stationary, !wasStationary { events.append(.stationary(true)) }
+        return events
+    }
 }
 
 public enum LocationPermission: Sendable, Equatable {

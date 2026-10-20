@@ -295,7 +295,7 @@ public final class DriveRecorder {
     /// otherwise discards the local copy.
     @discardableResult
     public func finish(now: Date = .now) async -> FinishedDrive? {
-        guard phase == .recording, let engine, var draft else { return nil }
+        guard phase == .recording, var engine, var draft else { return nil }
         phase = .finishing
         streamTask?.cancel()
         tickTask?.cancel()
@@ -305,6 +305,12 @@ public final class DriveRecorder {
         // iOS can suspend the app past the limit before the tick that stops
         // it runs; the server would then refuse the drive outright.
         let end = min(now, draft.startedAt.addingTimeInterval(Self.maximumDuration))
+        if draft.samples.contains(where: { $0.timestamp > end }) {
+            // Fixes delivered after the limit don't belong to this drive.
+            draft.samples.removeAll { $0.timestamp > end }
+            draft.stationaryPauses?.removeAll { $0 > end }
+            engine = TelemetryEngine.replay(draft.samples, startedAt: draft.startedAt, stationaryPauses: draft.stationaryPauses ?? [])
+        }
         draft.endedAt = end
         let summary = engine.summary(endedAt: end)
         var result = FinishedDrive(
