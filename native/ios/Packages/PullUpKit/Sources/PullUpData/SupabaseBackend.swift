@@ -593,6 +593,7 @@ public final class SupabaseBackend: BackendService, @unchecked Sendable {
             case "xcode_environment": throw SubscriptionError.testEnvironment
             case "other_account": throw SubscriptionError.otherAccount
             case "not_found": throw SubscriptionError.notFound
+            case "rate_limited": throw SubscriptionError.unavailable("too many attempts, try again in a minute")
             default: throw SubscriptionError.unavailable(reason ?? "HTTP \(code)")
             }
         } catch {
@@ -606,28 +607,57 @@ public final class SupabaseBackend: BackendService, @unchecked Sendable {
         let client = client
         return AsyncStream { continuation in
             let task = Task {
-                // Postgres Changes applies the tables' select policies, so this
-                // channel only ever carries rows the person could read anyway.
-                let channel = client.channel("dm-\(UUID().uuidString.lowercased())")
-                let messages = channel.postgresChange(AnyAction.self, schema: "public", table: "messages")
-                let reactions = channel.postgresChange(AnyAction.self, schema: "public", table: "message_reactions")
-                do {
-                    try await channel.subscribeWithError()
-                } catch {
-                    continuation.finish()
-                    return
-                }
-                await withTaskGroup(of: Void.self) { group in
-                    group.addTask {
-                        for await action in messages {
-                            continuation.yield(MessagingChange(conversationID: conversationID(of: action)))
+                // Realtime doesn't replay what happened while the phone was
+                // offline. Whenever the channel comes back after a drop (the
+                // client rejoins on its own when the socket reconnects), or
+                // has to be rebuilt, a change with no conversation tells the
+                // app to reload instead of trusting what it last heard.
+                var retry: Duration = .seconds(1)
+                var first = true
+                while !Task.isCancelled {
+                    // Postgres Changes applies the tables' select policies, so this
+                    // channel only ever carries rows the person could read anyway.
+                    let channel = client.channel("dm-\(UUID().uuidString.lowercased())")
+                    let messages = channel.postgresChange(AnyAction.self, schema: "public", table: "messages")
+                    let reactions = channel.postgresChange(AnyAction.self, schema: "public", table: "message_reactions")
+                    do {
+                        try await channel.subscribeWithError()
+                        retry = .seconds(1)
+                        if !first { continuation.yield(MessagingChange(conversationID: nil)) }
+                        first = false
+                        await withTaskGroup(of: Void.self) { group in
+                            group.addTask {
+                                for await action in messages {
+                                    continuation.yield(MessagingChange(conversationID: conversationID(of: action)))
+                                }
+                            }
+                            group.addTask {
+                                for await _ in reactions { continuation.yield(MessagingChange(conversationID: nil)) }
+                            }
+                            group.addTask {
+                                var dropped = false
+                                for await status in channel.statusChange {
+                                    switch status {
+                                    case .subscribed:
+                                        if dropped { continuation.yield(MessagingChange(conversationID: nil)) }
+                                        dropped = false
+                                    case .unsubscribed, .subscribing, .unsubscribing:
+                                        dropped = true
+                                    }
+                                }
+                            }
+                            // Any of the three ending means the channel is gone.
+                            _ = await group.next()
+                            group.cancelAll()
                         }
+                    } catch {
+                        // Couldn't join (offline, server restarting): try again.
                     }
-                    group.addTask {
-                        for await _ in reactions { continuation.yield(MessagingChange(conversationID: nil)) }
-                    }
+                    await client.removeChannel(channel)
+                    if Task.isCancelled { break }
+                    try? await Task.sleep(for: retry)
+                    retry = min(retry * 2, .seconds(60))
                 }
-                await client.removeChannel(channel)
                 continuation.finish()
             }
             continuation.onTermination = { _ in task.cancel() }

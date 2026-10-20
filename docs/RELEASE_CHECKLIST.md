@@ -6,6 +6,9 @@ alone. Items are in the order they unblock each other.
 
 ## 1. Supabase project
 
+The step-by-step version, with the GitHub deploy workflow that automates
+most of this, is `SUPABASE_SETUP.md`.
+
 - [ ] Create a Supabase project (or pick the existing one) and note the
       project ref and anon key (Project Settings ▸ API).
 - [ ] Link and push the schema from a machine with the Supabase CLI:
@@ -25,10 +28,10 @@ alone. Items are in the order they unblock each other.
       `x-pullup-webhook-secret: <same value>`. Requests without it are
       rejected. Without the webhook, notifications still appear in the app's
       bell; they just aren't pushed.
-- [ ] Auth ▸ Providers: enable Apple (see 3). Keep Email enabled only for
-      App Review and demo accounts, and turn **off** "Allow new users to sign
-      up" for email: the app offers email sign-in only, behind "Other sign-in
-      options".
+- [ ] Auth ▸ Providers: enable Apple (see 3). Keep Email enabled for the
+      App Review demo account; the app offers email sign-in only, behind
+      "Other sign-in options". Leave "Allow new users to sign up" on: it
+      covers every provider, Apple included.
 - [ ] Confirm the account-linking guard is installed (it stops Supabase
       from merging an Apple sign-in into an email account with the same
       address): `select tgname from pg_trigger where tgname =
