@@ -7,11 +7,16 @@ import PullUpFeatures
 struct PullUpApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var delegate
     @State private var model = AppModel(store: StoreKitClient())
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some Scene {
         WindowGroup {
             RootView(app: model)
                 .onOpenURL { url in Task { await model.open(url) } }
+        }
+        .onChange(of: scenePhase) { _, phase in
+            // Save the in-progress drive before iOS may suspend or end the app.
+            if phase == .background { Task { await model.recorder.flush() } }
         }
     }
 }

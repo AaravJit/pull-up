@@ -183,7 +183,7 @@ public final class AppModel {
         phase = .signedIn(user)
         recorder.ownerID = user
         await garage.setOwner(user)
-        await recorder.recoverInterrupted()
+        await recorder.recoverInterrupted(vehicles: garage.vehicles)
         await recorder.syncPending()
         await refreshNotifications()
         await refreshMessages()

@@ -373,7 +373,11 @@ struct DriveHistoryDetail: View {
     private func load() async {
         do {
             let track = try await app.backend.ownTrack(drive: drive.id)
-            let engine = TelemetryEngine.replay(track, startedAt: drive.startedAt)
+            // The server doesn't keep stationary markers; infer them so a
+            // stop at a light isn't shown as lost signal.
+            let engine = TelemetryEngine.replay(
+                track, startedAt: drive.startedAt, stationaryPauses: TelemetryEngine.inferredStationaryPauses(track)
+            )
             result = FinishedDrive(
                 drive: drive, summary: engine.summary(endedAt: drive.endedAt), track: track,
                 speedSeries: engine.speedSeries, vehicle: app.garage.vehicle(drive.vehicleID), upload: .uploaded

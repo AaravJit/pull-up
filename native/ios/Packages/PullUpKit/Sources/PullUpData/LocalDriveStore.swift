@@ -9,9 +9,17 @@ public struct DriveDraft: Codable, Sendable, Identifiable, Equatable {
     public var ownerID: UserID?
     /// `nil` = guest drive, not associated with a garage vehicle.
     public var vehicleID: UUID?
+    /// The vehicle as it was when recording started, so a drive resumed
+    /// offline (garage not loaded) still shows which car it is. Optional so
+    /// drafts saved by older builds still decode.
+    public var vehicle: Vehicle?
     public var startedAt: Date
     public var endedAt: Date?
     public var samples: [LocationSample]
+    /// When iOS paused updates because the phone was still, so a replay
+    /// (recovery, retried upload) treats those silences as stops, not lost
+    /// signal. Optional so drafts saved by older builds still decode.
+    public var stationaryPauses: [Date]?
     public var title: String
     public var audience: Audience
 
