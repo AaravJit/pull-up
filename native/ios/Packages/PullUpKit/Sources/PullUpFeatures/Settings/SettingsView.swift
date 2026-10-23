@@ -17,7 +17,7 @@ struct SettingsView: View {
         @Bindable var store = app.themeStore
         ScrollView {
             VStack(alignment: .leading, spacing: Space.xxl) {
-                proRow
+                if app.pro.showsEntryPoints { proRow }
                 appearance(theme: $store.theme)
                 dashboard(theme: $store.theme)
                 privacySection
@@ -30,10 +30,7 @@ struct SettingsView: View {
         }
         .canvasBackground()
         .clusterNavigation("Settings")
-        .task {
-            privacy = try? await app.backend.privacySettings()
-            savedPrivacy = privacy
-        }
+        .task { await loadPrivacy() }
         .onChange(of: privacy) { _, value in
             guard let value, value != savedPrivacy else { return }
             Task { await savePrivacy(value) }
@@ -95,7 +92,7 @@ struct SettingsView: View {
             }
             VStack(alignment: .leading, spacing: Space.s) {
                 Legend("Accent")
-                AccentSwatches(selection: theme.accent, choices: AccentChoice.allCases, locked: { $0.isPro && !app.pro.isPro }) {
+                AccentSwatches(selection: theme.accent, choices: app.pro.showsEntryPoints ? AccentChoice.allCases : AccentChoice.standard, locked: { $0.isPro && !app.pro.isPro }) {
                     openPro(.accentPalettes)
                 }
                 Text(theme.wrappedValue.accent.label).font(ClusterFont.body(.caption)).foregroundStyle(ClusterColor.inkSecondary)
@@ -103,7 +100,7 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: Space.s) {
                 Legend("Speedometer")
                 LazyVGrid(columns: [GridItem(.flexible(), spacing: Space.s), GridItem(.flexible(), spacing: Space.s)], spacing: Space.s) {
-                    ForEach(SpeedometerStyle.allCases) { style in
+                    ForEach(SpeedometerStyle.allCases.filter { !$0.isPro || app.pro.showsEntryPoints }) { style in
                         let locked = style.isPro && !app.pro.isPro
                         SpeedometerChoice(style: style, unit: theme.wrappedValue.unit, isSelected: theme.wrappedValue.speedometer == style, locked: locked) {
                             if locked {
@@ -152,7 +149,13 @@ struct SettingsView: View {
     private var privacySection: some View {
         VStack(alignment: .leading, spacing: Space.l) {
             SectionHeader("Privacy")
-            if let privacyError { ErrorLine(message: privacyError) }
+            if let privacyError {
+                if privacy == nil {
+                    ErrorLine(message: privacyError) { Task { await loadPrivacy() } }
+                } else {
+                    ErrorLine(message: privacyError)
+                }
+            }
             if let binding = Binding($privacy) {
                 AudiencePicker(title: "Profile", selection: binding.profileVisibility)
                 AudiencePicker(title: "New vehicles default to", selection: binding.defaultVehicleVisibility)
@@ -170,12 +173,11 @@ struct SettingsView: View {
                 }
                 PrivacyToggle(title: "Show me at meets by default", detail: "When on, new Going RSVPs list your name to other attendees. You can change it per meet.", isOn: binding.showEventAttendance)
                 PrivacyToggle(title: "Appear on leaderboards", detail: "Shows your username, vehicle and totals on the boards you qualify for.", isOn: binding.leaderboardOptIn)
-                PrivacyToggle(title: "Appear on closed-course boards", detail: "Only runs from verified closed-course events are ever ranked.", isOn: binding.performanceLeaderboardOptIn)
                 PrivacyToggle(title: "Approve new followers", detail: "People must request to follow you.", isOn: binding.requireFollowApproval)
                 MessagesFromPicker(selection: binding.messagesFrom)
                 PrivacyToggle(title: "Read receipts", detail: "Shows people when you've read their messages. Off: you won't see theirs either.", isOn: binding.dmReadReceipts)
                     .accessibilityIdentifier("read-receipts")
-            } else {
+            } else if privacyError == nil {
                 ProgressView()
             }
         }
@@ -221,6 +223,17 @@ struct SettingsView: View {
         .accessibilityIdentifier("open-privacy-zones")
     }
 
+    private func loadPrivacy() async {
+        privacyError = nil
+        do {
+            let loaded = try await app.backend.privacySettings()
+            savedPrivacy = loaded
+            privacy = loaded
+        } catch {
+            privacyError = error.localizedDescription
+        }
+    }
+
     private func savePrivacy(_ value: PrivacySettings) async {
         do {
             try await app.backend.updatePrivacySettings(value)
@@ -263,7 +276,21 @@ struct SettingsView: View {
             SpecRow(label: "Version", value: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "–")
             SpecRow(label: "Build", value: Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "–")
             SpecRow(label: "Data", value: app.isDemo ? "Demo (on this device only)" : serverName)
+            if let policy = ProLinks.privacy {
+                LinkRow(label: "Privacy Policy", destination: policy)
+                    .accessibilityIdentifier("privacy-policy")
+            }
+            if let support = Self.supportURL {
+                LinkRow(label: "Support", destination: support)
+                    .accessibilityIdentifier("support")
+            }
         }
+    }
+
+    /// Set per build (`PULLUP_SUPPORT_URL`, without the scheme), the same
+    /// way as the privacy policy; nil when unset.
+    static var supportURL: URL? {
+        ProLinks.privacyURL(from: Bundle.main.object(forInfoDictionaryKey: "PullUpSupportURL") as? String)
     }
 
     /// Staging builds say so, so testers know their data isn't production's.
@@ -289,6 +316,27 @@ struct MessagesFromPicker: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("messages-from")
+    }
+}
+
+/// An About row that opens a web page.
+struct LinkRow: View {
+    let label: String
+    let destination: URL
+
+    var body: some View {
+        Link(destination: destination) {
+            HStack(alignment: .firstTextBaseline) {
+                Legend(label, color: ClusterColor.ink)
+                Spacer()
+                Image(systemName: "arrow.up.right").foregroundStyle(ClusterColor.inkTertiary)
+            }
+            .padding(.vertical, Space.s)
+            .overlay(alignment: .bottom) { Hairline() }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(label)
     }
 }
 

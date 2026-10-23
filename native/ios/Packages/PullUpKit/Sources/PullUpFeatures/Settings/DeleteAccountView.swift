@@ -15,6 +15,9 @@ struct DeleteAccountView: View {
     @State private var confirmation = ""
     @State private var busy = false
     @State private var error: String?
+    /// The Apple prompt failed or was cancelled. Only then is deleting
+    /// without it offered, so revoking Apple's access isn't skipped by default.
+    @State private var appleFailed = false
 
     private var usesApple: Bool { app.account?.signInMethods.contains(.apple) ?? false }
     private var confirmed: Bool { confirmation.trimmingCharacters(in: .whitespaces).uppercased() == "DELETE" }
@@ -47,12 +50,19 @@ struct DeleteAccountView: View {
                         .clipShape(ChamferedRectangle(cut: Radius.chamferSmall))
                         .disabled(!confirmed || busy)
                         .opacity(confirmed ? 1 : 0.4)
-                        Button("Delete without confirming with Apple") {
-                            Task { await delete(appleCode: nil) }
+                        if appleFailed {
+                            Text("Your account is still deleted without Apple, but Pull Up stays connected to your Apple Account until you remove it in Settings ▸ your name ▸ Sign in with Apple.")
+                                .font(ClusterFont.body(.footnote))
+                                .foregroundStyle(ClusterColor.inkSecondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                            Button("Delete without confirming with Apple") {
+                                Task { await delete(appleCode: nil) }
+                            }
+                            .font(ClusterFont.body(.footnote))
+                            .foregroundStyle(ClusterColor.live)
+                            .disabled(!confirmed || busy)
+                            .accessibilityIdentifier("delete-without-apple")
                         }
-                        .font(ClusterFont.body(.footnote))
-                        .foregroundStyle(ClusterColor.live)
-                        .disabled(!confirmed || busy)
                     } else {
                         Button {
                             Task { await delete(appleCode: nil) }
@@ -85,6 +95,7 @@ struct DeleteAccountView: View {
             await delete(appleCode: code)
         case let .failure(failure):
             error = AuthMessages.apple(failure)
+            appleFailed = true
         }
     }
 
