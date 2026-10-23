@@ -8,8 +8,9 @@ Staging (`pull-up-staging`) is set up: all 24 migrations, the five edge
 functions and the four storage buckets were applied through the Supabase
 connector, and the pgTAP suite passed there (262 of 262 on 2026-10-20).
 `STAGING_DEPLOYMENT.md` is the record, including the dashboard steps still
-open. The deploy workflow hasn't run yet (its `staging` environment, step 3,
-isn't set up), and no production project has been created.
+open. The deploy workflow's `staging` environment is set up, but the
+workflow hasn't yet completed a run against staging, and no production
+project has been created.
 
 ## What lives where
 
