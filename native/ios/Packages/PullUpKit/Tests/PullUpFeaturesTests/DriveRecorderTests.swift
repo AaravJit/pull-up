@@ -71,6 +71,14 @@ final class ScriptedProvider: LocationProvider {
     func stop() {}
 }
 
+/// When the recorder asked for its provider. Scripted fixes are stamped from
+/// then, not from the test's own setup: on a busy runner the recorder can
+/// start seconds later, and fixes from before a drive began are dropped.
+@MainActor
+final class ScriptedClock {
+    var start = Date()
+}
+
 @MainActor
 final class Counter {
     var value = 0
@@ -368,12 +376,15 @@ struct DriveRecorderTests {
         let backend = DemoBackend()
         let suite = "recorder-tests-\(UUID().uuidString)"
         let store = LocalDriveStore(directory: FileManager.default.temporaryDirectory.appendingPathComponent(suite))
-        let start = Date()
-        let events = (0..<40).map { Self.fix(start, Double($0), north: Double($0) * 10, speed: 10) } + [.stationary(true)]
-        let provider = ScriptedProvider(events: events)
-        let recorder = DriveRecorder(backend: backend, store: store, defaults: UserDefaults(suiteName: suite)!) { provider }
+        let clock = ScriptedClock()
+        let recorder = DriveRecorder(backend: backend, store: store, defaults: UserDefaults(suiteName: suite)!) {
+            clock.start = Date()
+            let start = clock.start
+            return ScriptedProvider(events: (0..<40).map { Self.fix(start, Double($0), north: Double($0) * 10, speed: 10) } + [.stationary(true)])
+        }
         recorder.ownerID = await backend.currentUserID()
         _ = await recorder.start(with: nil)
+        let start = clock.start
         for _ in 0..<1000 where !recorder.isStationary { try await Task.sleep(for: .milliseconds(10)) }
         try #require(recorder.isStationary)
         let result = try #require(await recorder.finish(now: start.addingTimeInterval(400)))
@@ -387,16 +398,20 @@ struct DriveRecorderTests {
         let backend = DemoBackend()
         let suite = "recorder-tests-\(UUID().uuidString)"
         let store = LocalDriveStore(directory: FileManager.default.temporaryDirectory.appendingPathComponent(suite))
-        let start = Date()
-        func fix(_ t: Double, north: Double, speed: Double) -> LocationEvent { Self.fix(start, t, north: north, speed: speed) }
-        var events = (0..<40).map { fix(Double($0), north: Double($0) * 10, speed: 10) }
-        events += (40..<45).map { fix(Double($0), north: 390, speed: 0) }
-        events += [.stationary(true)] + middle
-        events += (105..<115).map { fix(Double($0), north: 990 + Double($0 - 105) * 10, speed: 10) }
-        let provider = ScriptedProvider(events: events)
-        let recorder = DriveRecorder(backend: backend, store: store, defaults: UserDefaults(suiteName: suite)!) { provider }
+        let clock = ScriptedClock()
+        let recorder = DriveRecorder(backend: backend, store: store, defaults: UserDefaults(suiteName: suite)!) {
+            clock.start = Date()
+            let start = clock.start
+            func fix(_ t: Double, north: Double, speed: Double) -> LocationEvent { Self.fix(start, t, north: north, speed: speed) }
+            var events = (0..<40).map { fix(Double($0), north: Double($0) * 10, speed: 10) }
+            events += (40..<45).map { fix(Double($0), north: 390, speed: 0) }
+            events += [.stationary(true)] + middle
+            events += (105..<115).map { fix(Double($0), north: 990 + Double($0 - 105) * 10, speed: 10) }
+            return ScriptedProvider(events: events)
+        }
         recorder.ownerID = await backend.currentUserID()
         _ = await recorder.start(with: nil)
+        let start = clock.start
         for _ in 0..<1000 where recorder.acceptedCount < 54 { try await Task.sleep(for: .milliseconds(10)) }
         #expect(recorder.isStationary == false)
         return try #require(await recorder.finish(now: start.addingTimeInterval(115))).summary
