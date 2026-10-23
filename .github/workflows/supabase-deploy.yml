@@ -15,6 +15,11 @@ name: Supabase deploy
 #
 # Staging runs also run the pgTAP suite and the two-account API tests
 # against the project. Production never runs tests that write data.
+#
+# Database commands connect through the project's shared pooler (Supavisor)
+# in session mode, which is reachable over IPv4. GitHub-hosted runners have
+# no IPv6, and the direct host db.<ref>.supabase.co is IPv6-only unless the
+# paid IPv4 add-on is on.
 
 on:
   workflow_dispatch:
@@ -50,7 +55,8 @@ jobs:
       - uses: actions/checkout@v4
       - uses: supabase/setup-cli@v1
         with:
-          version: latest
+          # Pinned so a CLI release can't change how this job connects.
+          version: 2.121.0
 
       - name: Check the environment is configured
         run: |
@@ -66,14 +72,55 @@ jobs:
       - name: Link the project
         run: supabase link --project-ref "$PROJECT_REF" --password "$SUPABASE_DB_PASSWORD"
 
+      # The connection string comes from the Management API, the same source
+      # `supabase link` uses, and is checked before use: the host must be a
+      # supabase.com pooler and the user must name this project. TLS is
+      # required (no fallback to an unencrypted connection). The URL holds the
+      # password, so it is masked and kept in a file only this job can read.
+      - name: Resolve the IPv4 session pooler
+        run: |
+          set -o pipefail
+          umask 077
+          configs=$(curl -fsS -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+            "https://api.supabase.com/v1/projects/$PROJECT_REF/config/database/pooler")
+          primary=$(jq -c 'first(.[] | select(.database_type == "PRIMARY")) // empty' <<<"$configs")
+          if [ -z "$primary" ]; then
+            echo "::error::The project reports no primary pooler, so there is no IPv4 route to its database."
+            exit 1
+          fi
+          mode=$(jq -r '.pool_mode' <<<"$primary")
+          url=$(jq -r '.connection_string' <<<"$primary")
+          url=${url//:\[YOUR-PASSWORD\]/}
+          # Session mode is on 5432; transaction mode (6543) can't run migrations.
+          [ "$mode" = "session" ] || url=${url//:6543\//:5432\/}
+          rest=${url#postgresql://}; [ "$rest" != "$url" ] || rest=${url#postgres://}
+          user=${rest%%@*}
+          hostport=${rest#*@}; hostport=${hostport%%/*}
+          host=${hostport%:*}
+          case "$host" in
+            *.pooler.supabase.com) ;;
+            *) echo "::error::Unexpected pooler host '$host'."; exit 1 ;;
+          esac
+          [ "$user" = "postgres.$PROJECT_REF" ] || { echo "::error::Pooler user '$user' doesn't belong to this project."; exit 1; }
+          password=$(jq -rn --arg p "$SUPABASE_DB_PASSWORD" '$p | @uri')
+          echo "::add-mask::$password"
+          case "$rest" in *\?*) sep='&' ;; *) sep='?' ;; esac
+          db_url="postgresql://$user:$password@${rest#*@}${sep}sslmode=require"
+          echo "::add-mask::$db_url"
+          printf '%s' "$db_url" > "$RUNNER_TEMP/db-url"
+          echo "Using the session pooler at $hostport ($mode mode reported) with TLS required."
+
       # db push refuses to run when the project has migrations this checkout
       # lacks (for example ones deployed to staging from a pull request that
       # isn't merged yet). Name them instead of failing on the CLI's error.
       - name: The checkout has every migration the project has applied
         run: |
           set -o pipefail
-          supabase migration list --password "$SUPABASE_DB_PASSWORD" | tee "$RUNNER_TEMP/migrations.txt"
-          missing=$(awk -F'|' '{ l=$1; r=$2; gsub(/ /, "", l); gsub(/ /, "", r) } l == "" && r ~ /^[0-9]+$/ && length(r) == 14 { print r }' "$RUNNER_TEMP/migrations.txt")
+          # --agent no keeps the text table this step parses, whatever the
+          # runner's environment looks like. CLI 2.121 wraps each cell in
+          # backticks; the awk below strips them along with the padding.
+          supabase migration list --agent no --db-url "$(cat "$RUNNER_TEMP/db-url")" | tee "$RUNNER_TEMP/migrations.txt"
+          missing=$(awk -F'|' '{ l=$1; r=$2; gsub(/[ `]/, "", l); gsub(/[ `]/, "", r) } l == "" && r ~ /^[0-9]+$/ && length(r) == 14 { print r }' "$RUNNER_TEMP/migrations.txt")
           if [ -n "$missing" ]; then
             echo "::error::${{ inputs.environment }} has migrations this checkout doesn't: $(echo $missing | tr '\n' ' '). Merge the pull requests that add them, then run from main."
             exit 1
@@ -83,7 +130,7 @@ jobs:
         id: pending
         run: |
           set -o pipefail
-          supabase db push --dry-run --password "$SUPABASE_DB_PASSWORD" 2>&1 | tee "$RUNNER_TEMP/dry-run.txt"
+          supabase db push --dry-run --agent no --db-url "$(cat "$RUNNER_TEMP/db-url")" 2>&1 | tee "$RUNNER_TEMP/dry-run.txt"
           pending=$({ grep -oE '[0-9]{14}_[a-z0-9_]+\.sql' "$RUNNER_TEMP/dry-run.txt" || true; } | sort -u | sed 's|^|supabase/migrations/|' | tr '\n' ' ')
           echo "files=$pending" >> "$GITHUB_OUTPUT"
           {
@@ -102,7 +149,7 @@ jobs:
 
       - name: Apply migrations
         if: inputs.apply
-        run: supabase db push --password "$SUPABASE_DB_PASSWORD"
+        run: supabase db push --db-url "$(cat "$RUNNER_TEMP/db-url")"
 
       - name: Copy function secrets from this environment
         if: inputs.apply
@@ -161,7 +208,7 @@ jobs:
 
       - name: Database tests (pgTAP, rolled back) on staging
         if: inputs.apply && inputs.environment == 'staging'
-        run: supabase test db --linked
+        run: supabase test db --db-url "$(cat "$RUNNER_TEMP/db-url")"
 
       - uses: denoland/setup-deno@v2
         if: inputs.apply && inputs.environment == 'staging'
@@ -186,3 +233,7 @@ jobs:
           PULLUP_API_TARGET=staging PULLUP_API_URL="https://$PROJECT_REF.supabase.co" \
           PULLUP_API_ANON_KEY="$anon" PULLUP_API_SERVICE_ROLE_KEY="$service" \
             deno test --config supabase/functions/deno.json --allow-env --allow-net supabase/tests/api/
+
+      - name: Remove the connection string
+        if: always()
+        run: rm -f "$RUNNER_TEMP/db-url"
