@@ -385,8 +385,9 @@ final class PullUpUITests: XCTestCase {
         snap("36-messages-sent")
 
         app.navigationBars.buttons.element(boundBy: 0).tap()
+        XCTAssertTrue(element(app, "inbox-row-maya.s15").waitForExistence(timeout: 10), "Back returns to the inbox")
         let requests = app.buttons.matching(NSPredicate(format: "label BEGINSWITH[c] 'Requests'")).firstMatch
-        XCTAssertTrue(requests.waitForExistence(timeout: 5))
+        XCTAssertTrue(requests.waitForExistence(timeout: 10), "The inbox offers Requests")
         requests.tap()
         let request = element(app, "inbox-row-sam.ek9")
         XCTAssertTrue(request.waitForExistence(timeout: 5))
@@ -398,11 +399,14 @@ final class PullUpUITests: XCTestCase {
         settle()
         snap("38-messages-request")
 
+        // Wait for each pop to finish: a Back tap during the previous pop's
+        // animation is dropped.
         app.navigationBars.buttons.element(boundBy: 0).tap()
-        settle(0.5)
+        XCTAssertTrue(element(app, "inbox-row-sam.ek9").waitForExistence(timeout: 10), "Back returns to Requests")
+        settle()
         app.navigationBars.buttons.element(boundBy: 0).tap()
         let author = element(app, "post-author-maya.s15")
-        XCTAssertTrue(author.waitForExistence(timeout: 5))
+        XCTAssertTrue(author.waitForExistence(timeout: 10), "Back from the inbox returns to the feed")
         author.tap()
         XCTAssertTrue(element(app, "message-profile").waitForExistence(timeout: 5))
         let vehicle = element(app, "glance-Silvia")
