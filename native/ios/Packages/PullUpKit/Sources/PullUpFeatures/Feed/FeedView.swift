@@ -15,6 +15,14 @@ public struct FeedView: View {
     @State private var composing = false
     @State private var commentsFor: Post?
     @State private var sharing: Post?
+    @State private var reporting: Post?
+    @State private var blockTarget: Post?
+    @State private var confirmingBlock = false
+    @State private var deleteTarget: Post?
+    @State private var confirmingDelete = false
+    /// Hidden at once after a block, before the server's next page agrees.
+    @State private var blockedAuthors: Set<UserID> = []
+    @State private var actionError: String?
     @State private var path = NavigationPath()
 
     public init() {}
@@ -35,8 +43,23 @@ public struct FeedView: View {
                             message: scope == .following ? "Follow people from Discover or a meet and their posts show up here." : "Public posts appear here."
                         )
                     }
+                    if let actionError {
+                        ErrorLine(message: actionError).padding(.horizontal, Space.gutter)
+                    }
                     ForEach(posts) { post in
-                        PostCard(post: post, onLike: { toggleLike(post) }, onComments: { commentsFor = post }, onShare: { sharing = post })
+                        PostCard(
+                            post: post, onLike: { toggleLike(post) }, onComments: { commentsFor = post }, onShare: { sharing = post },
+                            isMine: post.authorID == app.userID,
+                            onReport: { reporting = post },
+                            onBlock: {
+                                blockTarget = post
+                                confirmingBlock = true
+                            },
+                            onDelete: {
+                                deleteTarget = post
+                                confirmingDelete = true
+                            }
+                        )
                     }
                 }
                 .padding(.bottom, Space.xl)
@@ -56,10 +79,28 @@ public struct FeedView: View {
             }
             .sheet(isPresented: $composing, onDismiss: { Task { await load() } }) { PostComposerView() }
             .sheet(item: $commentsFor) { post in
-                CommentsView(post: post).presentationDetents([.medium, .large])
+                CommentsView(post: post, onBlocked: { hideAuthor($0) }).presentationDetents([.medium, .large])
             }
             .sheet(item: $sharing) { post in
                 ShareToMessageView(shared: SharedRef(kind: .post, id: post.id))
+            }
+            .sheet(item: $reporting) { post in
+                ReportPersonView(
+                    person: author(of: post),
+                    question: "What's wrong with this post?",
+                    subject: ReportDetails.subject("post", id: post.id, excerpt: post.caption),
+                    onBlocked: { hideAuthor(post.authorID) }
+                )
+            }
+            .confirmationDialog("Block \(handle(blockTarget?.author))?", isPresented: $confirmingBlock, titleVisibility: .visible, presenting: blockTarget) { post in
+                Button("Block", role: .destructive) { Task { await block(post.authorID) } }
+            } message: { _ in
+                Text("Their posts leave your feed, you won't see each other's profiles, and they can't message you. Pull Up doesn't tell them.")
+            }
+            .confirmationDialog("Delete this post?", isPresented: $confirmingDelete, titleVisibility: .visible, presenting: deleteTarget) { post in
+                Button("Delete", role: .destructive) { Task { await delete(post) } }
+            } message: { _ in
+                Text("It's removed for everyone, with its likes and comments.")
             }
         }
     }
@@ -95,12 +136,46 @@ public struct FeedView: View {
 
     private func load() async {
         do {
-            posts = try await app.backend.feed(scope, before: nil)
+            posts = try await app.backend.feed(scope, before: nil).filter { !blockedAuthors.contains($0.authorID) }
             error = nil
         } catch {
             self.error = error.localizedDescription
         }
         isLoaded = true
+    }
+
+    private func author(of post: Post) -> ProfileStub {
+        post.author ?? ProfileStub(id: post.authorID, username: "", displayName: "")
+    }
+
+    private func handle(_ author: ProfileStub?) -> String {
+        guard let username = author?.username, !username.isEmpty else { return "this person" }
+        return "@\(username)"
+    }
+
+    private func hideAuthor(_ id: UserID) {
+        blockedAuthors.insert(id)
+        posts.removeAll { $0.authorID == id }
+    }
+
+    private func block(_ id: UserID) async {
+        do {
+            try await app.backend.block(id)
+            hideAuthor(id)
+            actionError = nil
+        } catch {
+            actionError = error.localizedDescription
+        }
+    }
+
+    private func delete(_ post: Post) async {
+        do {
+            try await app.backend.deletePost(post.id)
+            posts.removeAll { $0.id == post.id }
+            actionError = nil
+        } catch {
+            actionError = error.localizedDescription
+        }
     }
 
     private func toggleLike(_ post: Post) {
@@ -130,6 +205,10 @@ struct PostCard: View {
     let onLike: () -> Void
     let onComments: () -> Void
     var onShare: (() -> Void)?
+    var isMine = false
+    var onReport: (() -> Void)?
+    var onBlock: (() -> Void)?
+    var onDelete: (() -> Void)?
 
     var body: some View {
         VStack(alignment: .leading, spacing: Space.m) {
@@ -158,24 +237,56 @@ struct PostCard: View {
     }
 
     private var authorRow: some View {
-        NavigationLink(value: ProfileRoute(id: post.authorID)) {
-            HStack(spacing: Space.m) {
-                Avatar(name: post.author?.displayName ?? "?", path: post.author?.avatarPath, size: 36)
-                VStack(alignment: .leading, spacing: 0) {
-                    Text(post.author?.displayName ?? "Unknown")
-                        .font(ClusterFont.headline(.subheadline))
-                        .foregroundStyle(ClusterColor.ink)
-                    Text("@\(post.author?.username ?? "") · \(Format.relative(post.createdAt))")
-                        .font(ClusterFont.body(.caption))
-                        .foregroundStyle(ClusterColor.inkSecondary)
+        HStack(spacing: Space.xs) {
+            NavigationLink(value: ProfileRoute(id: post.authorID)) {
+                HStack(spacing: Space.m) {
+                    Avatar(name: post.author?.displayName ?? "?", path: post.author?.avatarPath, size: 36)
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text(post.author?.displayName ?? "Unknown")
+                            .font(ClusterFont.headline(.subheadline))
+                            .foregroundStyle(ClusterColor.ink)
+                        Text("@\(post.author?.username ?? "") · \(Format.relative(post.createdAt))")
+                            .font(ClusterFont.body(.caption))
+                            .foregroundStyle(ClusterColor.inkSecondary)
+                    }
+                    Spacer()
+                    Legend(kindLabel)
                 }
-                Spacer()
-                Legend(kindLabel)
             }
+            .buttonStyle(.plain)
+            .accessibilityElement(children: .combine)
+            .accessibilityIdentifier("post-author-\(post.author?.username ?? "")")
+            optionsMenu
         }
-        .buttonStyle(.plain)
-        .accessibilityElement(children: .combine)
-        .accessibilityIdentifier("post-author-\(post.author?.username ?? "")")
+    }
+
+    /// Delete for your own posts; Report and Block for everyone else's.
+    @ViewBuilder
+    private var optionsMenu: some View {
+        if isMine ? onDelete != nil : (onReport != nil || onBlock != nil) {
+            Menu {
+                if isMine {
+                    if let onDelete {
+                        Button(role: .destructive, action: onDelete) { Label("Delete post", systemImage: "trash") }
+                    }
+                } else {
+                    if let onReport {
+                        Button(action: onReport) { Label("Report post", systemImage: "flag") }
+                    }
+                    if let onBlock {
+                        Button(role: .destructive, action: onBlock) { Label("Block @\(post.author?.username ?? "")", systemImage: "hand.raised") }
+                    }
+                }
+            } label: {
+                Image(systemName: "ellipsis")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(ClusterColor.ink)
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .accessibilityLabel("Post options")
+            .accessibilityIdentifier("post-options-\(post.author?.username ?? "")")
+        }
     }
 
     private var kindLabel: String {
@@ -272,9 +383,14 @@ struct StorageVideo: View {
 struct CommentsView: View {
     @Environment(AppModel.self) private var app
     let post: Post
+    /// Called with the author's ID after you block them from a comment.
+    var onBlocked: ((UserID) -> Void)?
     @State private var comments: [Comment] = []
     @State private var draft = ""
     @State private var error: String?
+    @State private var reporting: Comment?
+    @State private var blockTarget: Comment?
+    @State private var confirmingBlock = false
 
     var body: some View {
         NavigationStack {
@@ -294,8 +410,22 @@ struct CommentsView: View {
                                 Text(comment.body).font(ClusterFont.body(.subheadline))
                             }
                             .foregroundStyle(ClusterColor.ink)
+                            Spacer(minLength: 0)
+                        }
+                        .contentShape(Rectangle())
+                        .contextMenu {
+                            if comment.authorID != app.userID {
+                                Button { reporting = comment } label: { Label("Report comment", systemImage: "flag") }
+                                Button(role: .destructive) {
+                                    blockTarget = comment
+                                    confirmingBlock = true
+                                } label: {
+                                    Label("Block @\(comment.author?.username ?? "")", systemImage: "hand.raised")
+                                }
+                            }
                         }
                         .accessibilityElement(children: .combine)
+                        .accessibilityIdentifier("comment-\(comment.author?.username ?? "")")
                     }
                     if let error { ErrorLine(message: error) }
                 }
@@ -318,6 +448,34 @@ struct CommentsView: View {
                 .overlay(alignment: .top) { Hairline() }
             }
             .task { comments = (try? await app.backend.comments(post: post.id)) ?? [] }
+            .sheet(item: $reporting) { comment in
+                ReportPersonView(
+                    person: comment.author ?? ProfileStub(id: comment.authorID, username: "", displayName: ""),
+                    question: "What's wrong with this comment?",
+                    subject: ReportDetails.subject("comment", id: comment.id, excerpt: comment.body),
+                    onBlocked: { hideAuthor(comment.authorID) }
+                )
+            }
+            .confirmationDialog("Block @\(blockTarget?.author?.username ?? "")?", isPresented: $confirmingBlock, titleVisibility: .visible, presenting: blockTarget) { comment in
+                Button("Block", role: .destructive) { Task { await block(comment.authorID) } }
+            } message: { _ in
+                Text("Their posts and comments leave your feed, you won't see each other's profiles, and they can't message you. Pull Up doesn't tell them.")
+            }
+        }
+    }
+
+    private func hideAuthor(_ id: UserID) {
+        comments.removeAll { $0.authorID == id }
+        onBlocked?(id)
+    }
+
+    private func block(_ id: UserID) async {
+        do {
+            try await app.backend.block(id)
+            hideAuthor(id)
+            error = nil
+        } catch {
+            self.error = error.localizedDescription
         }
     }
 

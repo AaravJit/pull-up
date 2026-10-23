@@ -65,7 +65,9 @@ public struct MeetsView: View {
             .canvasBackground()
             .refreshable { await load() }
             .toolbar(.hidden, for: .navigationBar)
-            .navigationDestination(for: Meet.self) { meet in MeetDetailView(meetID: meet.id, initial: meet) }
+            .navigationDestination(for: Meet.self) { meet in
+                MeetDetailView(meetID: meet.id, initial: meet, onBlocked: { host in meets.removeAll { $0.hostID == host } })
+            }
             .sheet(isPresented: $creating, onDismiss: { Task { await load() } }) { MeetComposerView() }
             .task { await load() }
         }
@@ -155,7 +157,10 @@ struct MeetRow: View {
 struct MeetDetailView: View {
     @Environment(AppModel.self) private var app
     @Environment(\.clusterTheme) private var theme
+    @Environment(\.dismiss) private var dismiss
     let meetID: UUID
+    /// Called with the host's ID after you block them, so a list can drop their meets.
+    var onBlocked: ((UserID) -> Void)?
     @State private var meet: Meet
     @State private var attendees: [ProfileStub] = []
     @State private var showMe = false
@@ -163,15 +168,21 @@ struct MeetDetailView: View {
     @State private var busy = false
     @State private var confirmingCancel = false
     @State private var sharing = false
+    @State private var reporting = false
+    @State private var confirmingBlock = false
+    @State private var hostBlocked = false
 
-    init(meetID: UUID, initial: Meet) {
+    init(meetID: UUID, initial: Meet, onBlocked: ((UserID) -> Void)? = nil) {
         self.meetID = meetID
+        self.onBlocked = onBlocked
         _meet = State(initialValue: initial)
         _showMe = State(initialValue: initial.myRSVP?.showMe ?? false)
     }
 
     private var isHost: Bool { meet.hostID == app.userID }
     private var hasEnded: Bool { meet.endsAt < .now }
+    private var host: ProfileStub { meet.host ?? ProfileStub(id: meet.hostID, username: "", displayName: "") }
+    private var hostHandle: String { host.username.isEmpty ? "the host" : "@\(host.username)" }
 
     var body: some View {
         ScrollView {
@@ -217,7 +228,7 @@ struct MeetDetailView: View {
                 }
 
                 if meet.kind == .trackDay {
-                    NoticeStrip("Closed-course event. Drives recorded here can be submitted for verified performance runs if the organiser is verified and you RSVP'd going.", tone: .info)
+                    NoticeStrip("Closed-course event. Pull Up doesn't rank speed or acceleration.", tone: .info)
                 }
 
                 rsvpSection
@@ -242,9 +253,34 @@ struct MeetDetailView: View {
                         .accessibilityIdentifier("share-meet")
                 }
             }
+            if !isHost {
+                ToolbarItem(placement: .primaryAction) {
+                    Menu {
+                        Button { reporting = true } label: { Label("Report meet", systemImage: "flag") }
+                        Button(role: .destructive) { confirmingBlock = true } label: { Label("Block \(hostHandle)", systemImage: "hand.raised") }
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
+                    }
+                    .accessibilityLabel("Meet options")
+                    .accessibilityIdentifier("meet-options")
+                }
+            }
         }
         .sheet(isPresented: $sharing) {
             ShareToMessageView(shared: SharedRef(kind: .meet, id: meet.id))
+        }
+        .sheet(isPresented: $reporting, onDismiss: { if hostBlocked { dismiss() } }) {
+            ReportPersonView(
+                person: host,
+                question: "What's wrong with this meet?",
+                subject: ReportDetails.subject("meet", id: meet.id, excerpt: meet.title),
+                onBlocked: { hostWasBlocked() }
+            )
+        }
+        .confirmationDialog("Block \(hostHandle)?", isPresented: $confirmingBlock, titleVisibility: .visible) {
+            Button("Block", role: .destructive) { Task { await blockHost() } }
+        } message: {
+            Text("You won't see each other's meets, posts or profiles, and they can't message you. Pull Up doesn't tell them.")
         }
         .task { await loadAttendees() }
         .confirmationDialog("Cancel \(meet.title)?", isPresented: $confirmingCancel, titleVisibility: .visible) {
@@ -369,5 +405,20 @@ struct MeetDetailView: View {
 
     private func loadAttendees() async {
         attendees = (try? await app.backend.attendees(meet: meet.id)) ?? []
+    }
+
+    private func blockHost() async {
+        do {
+            try await app.backend.block(meet.hostID)
+            hostWasBlocked()
+            dismiss()
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
+    private func hostWasBlocked() {
+        hostBlocked = true
+        onBlocked?(meet.hostID)
     }
 }

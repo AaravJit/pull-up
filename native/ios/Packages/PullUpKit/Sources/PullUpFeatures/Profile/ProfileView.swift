@@ -19,8 +19,12 @@ struct ProfileView: View {
     @State private var conversation: ConversationTarget?
     @State private var glance: Vehicle?
     @State private var messageBusy = false
+    @State private var reporting = false
+    @State private var confirmingBlock = false
+    @State private var blocked = false
 
     private var isMe: Bool { userID == app.userID }
+    private var handle: String { page.map { "@\($0.profile.username)" } ?? "this person" }
 
     private var theme: ClusterTheme {
         var theme = appTheme
@@ -35,7 +39,9 @@ struct ProfileView: View {
 
     var body: some View {
         Group {
-            if let page {
+            if blocked {
+                EmptyState(title: "Blocked", message: "You won't see each other's profiles, posts or meets, and \(handle) can't message you. Pull Up doesn't tell them.")
+            } else if let page {
                 content(page)
             } else if let error {
                 ErrorLine(message: error) { Task { await load() } }.padding(Space.gutter)
@@ -55,9 +61,37 @@ struct ProfileView: View {
                         .accessibilityIdentifier("open-settings")
                 }
             }
+            if !isMe, page != nil, !blocked {
+                ToolbarItem(placement: .primaryAction) {
+                    Menu {
+                        Button { reporting = true } label: { Label("Report \(handle)", systemImage: "flag") }
+                        Button(role: .destructive) { confirmingBlock = true } label: { Label("Block", systemImage: "hand.raised") }
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
+                    }
+                    .accessibilityLabel("Profile options")
+                    .accessibilityIdentifier("profile-options")
+                }
+            }
         }
         .sheet(isPresented: $editing, onDismiss: { Task { await load() } }) {
             if let page { ProfileEditorView(page: page) }
+        }
+        .sheet(isPresented: $reporting) {
+            if let page {
+                ReportPersonView(
+                    person: stub(page),
+                    question: "What's wrong with \(handle)'s profile?",
+                    subject: ReportDetails.subject("profile", id: userID, excerpt: page.profile.bio),
+                    onBlocked: { blocked = true }
+                )
+                .clusterTheme(app.themeStore.theme)
+            }
+        }
+        .confirmationDialog("Block \(handle)?", isPresented: $confirmingBlock, titleVisibility: .visible) {
+            Button("Block", role: .destructive) { Task { await block() } }
+        } message: {
+            Text("You won't see each other's profiles, posts or meets, and they can't message you. Pull Up doesn't tell them.")
         }
         .sheet(item: $conversation) { target in
             NavigationStack { ThreadView(target: target, showsDone: true) }
@@ -96,6 +130,7 @@ struct ProfileView: View {
                             if page.profile.presentation.showStats { stats(big: false) }
                             garage(list: false, excluding: featured?.id)
                         }
+                        if !isMe, !drives.isEmpty { driveList(page) }
                     }
                 }
                 .padding(.horizontal, Space.gutter)
@@ -162,6 +197,7 @@ struct ProfileView: View {
                     messageButton(page)
                 }
             }
+            if let error { ErrorLine(message: error) }
         }
     }
 
@@ -197,6 +233,7 @@ struct ProfileView: View {
         defer { messageBusy = false }
         do {
             conversation = try await app.conversation(with: stub(page))
+            error = nil
         } catch {
             self.error = error.localizedDescription
         }
@@ -215,6 +252,29 @@ struct ProfileView: View {
             if drives.isEmpty {
                 Text(isMe ? "Your drives are private by default, so visitors see zeros unless you change drive visibility." : "No drives visible to you.")
                     .font(ClusterFont.body(.caption)).foregroundStyle(ClusterColor.inkTertiary)
+            }
+        }
+    }
+
+    /// Drives the server lets you see (RLS on `drives`). Each opens its
+    /// totals, and the trimmed route only if the driver shared it.
+    private func driveList(_ page: ProfilePage) -> some View {
+        let shown = drives.sorted { $0.startedAt > $1.startedAt }.prefix(20)
+        return VStack(alignment: .leading, spacing: Space.s) {
+            SectionHeader("Drives")
+            ForEach(shown) { drive in
+                NavigationLink {
+                    SharedDriveView(drive: drive, owner: stub(page), vehicle: vehicles.first { $0.id == drive.vehicleID })
+                } label: {
+                    SharedDriveRow(drive: drive)
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("profile-drive-\(drive.title)")
+            }
+            if drives.count > shown.count {
+                Text("Latest \(shown.count) of \(drives.count).")
+                    .font(ClusterFont.body(.caption))
+                    .foregroundStyle(ClusterColor.inkTertiary)
             }
         }
     }
@@ -290,6 +350,129 @@ struct ProfileView: View {
         } catch {
             self.error = error.localizedDescription
         }
+    }
+
+    private func block() async {
+        do {
+            try await app.backend.block(userID)
+            blocked = true
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+}
+
+/// Report a person for something they put in the app: a post, a comment,
+/// a meet or their profile. The same flow as reporting a message
+/// (`ReportView`); what was reported goes to staff in `details`.
+struct ReportPersonView: View {
+    @Environment(AppModel.self) private var app
+    @Environment(\.dismiss) private var dismiss
+    let person: ProfileStub
+    let question: String
+    /// What's reported, from `ReportDetails.subject`.
+    let subject: String
+    /// Called after "Also block" succeeds.
+    var onBlocked: (() -> Void)?
+
+    @State private var reason: ReportReason?
+    @State private var details = ""
+    @State private var alsoBlock = false
+    @State private var busy = false
+    @State private var sent = false
+    @State private var error: String?
+
+    private var handle: String { person.username.isEmpty ? "this person" : "@\(person.username)" }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: Space.l) {
+                    if sent {
+                        EmptyState(
+                            title: "Thanks for reporting",
+                            message: "Pull Up staff review reports. \(handle) isn't told who reported them."
+                        )
+                    } else {
+                        Text(question)
+                            .font(ClusterFont.headline())
+                            .foregroundStyle(ClusterColor.ink)
+                        VStack(spacing: 0) {
+                            ForEach(ReportReason.allCases) { option in
+                                Button {
+                                    reason = option
+                                } label: {
+                                    HStack {
+                                        Text(option.label).font(ClusterFont.body()).foregroundStyle(ClusterColor.ink)
+                                        Spacer()
+                                        if reason == option { Image(systemName: "checkmark").foregroundStyle(ClusterColor.verified) }
+                                    }
+                                    .frame(minHeight: 44)
+                                    .contentShape(Rectangle())
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityAddTraits(reason == option ? .isSelected : [])
+                                Hairline()
+                            }
+                        }
+                        FieldRow(label: "Anything else (optional)", text: $details, axis: .vertical)
+                        PrivacyToggle(title: "Also block \(handle)", detail: "You won't see each other's posts, meets or profiles, and they can't message you.", isOn: $alsoBlock)
+                        if let error { ErrorLine(message: error) }
+                        Button {
+                            Task { await submit() }
+                        } label: {
+                            Text(busy ? "Sending" : "Send report").frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.cluster)
+                        .disabled(reason == nil || busy)
+                        .accessibilityIdentifier("send-report")
+                    }
+                }
+                .padding(Space.gutter)
+            }
+            .canvasBackground()
+            .clusterNavigation("Report")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button(sent ? "Done" : "Cancel") { dismiss() } }
+            }
+        }
+    }
+
+    private func submit() async {
+        guard let reason else { return }
+        busy = true
+        defer { busy = false }
+        do {
+            try await app.backend.report(user: person.id, reason: reason, details: ReportDetails.combined(subject: subject, note: details), message: nil)
+            if alsoBlock {
+                try await app.backend.block(person.id)
+                onBlocked?()
+            }
+            sent = true
+            error = nil
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+}
+
+/// The `details` text of a report about content outside messages: what it
+/// is, its ID and a short excerpt, then the reporter's own note. The server
+/// keeps the first 1,000 characters.
+enum ReportDetails {
+    static let limit = 1000
+
+    /// "post:<id> "excerpt"" with the excerpt on one line, at most 120 characters.
+    static func subject(_ kind: String, id: UUID, excerpt: String) -> String {
+        let line = excerpt.split(whereSeparator: \.isNewline).joined(separator: " ").trimmingCharacters(in: .whitespaces)
+        let short = line.count > 120 ? String(line.prefix(119)) + "…" : line
+        let ref = "\(kind):\(id.uuidString.lowercased())"
+        return short.isEmpty ? ref : "\(ref) \"\(short)\""
+    }
+
+    static func combined(subject: String, note: String) -> String {
+        let note = note.trimmingCharacters(in: .whitespacesAndNewlines)
+        return String((note.isEmpty ? subject : "\(subject)\n\(note)").prefix(limit))
     }
 }
 
