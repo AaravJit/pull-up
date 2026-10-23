@@ -86,6 +86,7 @@ jobs:
       PROJECT_REF: ${{ vars.SUPABASE_PROJECT_REF }}
       ANON_KEY: ${{ vars.SUPABASE_ANON_KEY }}
       PRIVACY_POLICY: ${{ vars.PULLUP_PRIVACY_POLICY }}
+      SUPPORT_URL: ${{ vars.PULLUP_SUPPORT_URL }}
       EPN_CAMPAIGN_ID: ${{ vars.PULLUP_EPN_CAMPAIGN_ID }}
     steps:
       - uses: actions/checkout@v4
@@ -130,6 +131,7 @@ jobs:
             echo "PULLUP_SUPABASE_ANON_KEY = $ANON_KEY"
             echo "PULLUP_BACKEND_ENVIRONMENT = ${{ inputs.backend }}"
             [ -z "$PRIVACY_POLICY" ] || echo "PULLUP_PRIVACY_POLICY = $PRIVACY_POLICY"
+            [ -z "$SUPPORT_URL" ] || echo "PULLUP_SUPPORT_URL = $SUPPORT_URL"
             [ -z "$EPN_CAMPAIGN_ID" ] || echo "PULLUP_EPN_CAMPAIGN_ID = $EPN_CAMPAIGN_ID"
           } > Config/Secrets.xcconfig
           mkdir -p "$RUNNER_TEMP/private_keys"

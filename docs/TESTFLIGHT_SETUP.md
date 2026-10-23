@@ -76,6 +76,7 @@ same environments `SUPABASE_SETUP.md` creates):
 | Variable | `SUPABASE_ANON_KEY` | that project's anon (publishable) key; public by design |
 | Variable (optional) | `PULLUP_BUNDLE_ID` | only if not `app.pullup.ios` |
 | Variable | `PULLUP_PRIVACY_POLICY` | privacy policy URL without `https://`; optional for `staging`, required for `production` (the workflow refuses a production build without it) |
+| Variable (optional) | `PULLUP_SUPPORT_URL` | support page URL without `https://`; shown in Settings ▸ About when set |
 | Variable (optional) | `PULLUP_EPN_CAMPAIGN_ID` | eBay Partner Network campaign id |
 
 `SUPABASE_PROJECT_REF` is already there from the Supabase setup. Keep
