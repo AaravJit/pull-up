@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 import Testing
 @testable import PullUpFeatures
 import PullUpData
@@ -442,9 +443,37 @@ struct DriveRecorderTests {
             backend: backend, provider: InstantProvider(permission: .reducedAccuracy, speeds: RecorderHarness.drive), suite: suite
         )
         await relaunched.recorder.recoverInterrupted()
+        #expect(relaunched.provider.fullAccuracyRequests == 1, "asked for precise location again")
         #expect(relaunched.recorder.phase == .idle)
         #expect(relaunched.recorder.recoveredDrive != nil)
         #expect(relaunched.provider.startCount == 0)
+    }
+
+    /// Relaunched with Precise Location off: the precise location allowed
+    /// for the drive ended with the app. Allowed again, the drive resumes.
+    @Test func interruptedDriveResumesWhenPreciseLocationIsAllowedAgain() async throws {
+        let suite = "recorder-tests-\(UUID().uuidString)"
+        let backend = DemoBackend()
+        let first = await RecorderHarness(backend: backend, suite: suite)
+        _ = await first.recorder.start(with: nil)
+        try await first.drain(expecting: RecorderHarness.drive.count)
+        await first.recorder.flush()
+
+        let provider = InstantProvider(permission: .reducedAccuracy, speeds: RecorderHarness.drive, startOffset: 120)
+        provider.fullAccuracyOnRequest = .authorized
+        let relaunched = await RecorderHarness(backend: backend, provider: provider, suite: suite)
+        await relaunched.recorder.recoverInterrupted()
+        #expect(provider.fullAccuracyRequests == 1)
+        #expect(relaunched.recorder.phase == .recording)
+        #expect(relaunched.recorder.resumedDrive != nil)
+        #expect(relaunched.recorder.recoveredDrive == nil)
+
+        // Nothing opens a second recording or location stream.
+        await relaunched.recorder.recoverInterrupted()
+        #expect(await relaunched.recorder.start(with: nil) == .alreadyRecording)
+        #expect(provider.startCount == 1)
+        #expect(relaunched.providerRequests() == 1)
+        await relaunched.recorder.discard()
     }
 
     /// The server keeps drives up to 24 hours; recording stops before that.
@@ -566,5 +595,159 @@ struct LocationEventOrderTests {
     @Test func unchangedFlagAddsNoMarker() {
         #expect(LocationEvent.forUpdate(location: nil, stationary: true, locationUnavailable: false, wasStationary: true) == [])
         #expect(LocationEvent.forUpdate(location: nil, stationary: false, locationUnavailable: true, wasStationary: false) == [.unavailable])
+    }
+}
+
+/// Stands in for the server's upload: answers after `delay`, throwing
+/// `error` if one is set, and counts attempts and how many overlapped.
+final class FakeUploads: Sendable {
+    struct Log {
+        var calls = 0
+        var running = 0
+        var mostAtOnce = 0
+        var error: (any Error)?
+    }
+
+    private let log: Mutex<Log>
+    let delay: Duration
+
+    init(delay: Duration = .zero, error: (any Error)? = nil) {
+        self.delay = delay
+        log = Mutex(Log(error: error))
+    }
+
+    var calls: Int { log.withLock { $0.calls } }
+    var mostAtOnce: Int { log.withLock { $0.mostAtOnce } }
+    func fail(with error: (any Error)?) { log.withLock { $0.error = error } }
+
+    func send(_ drive: Drive) async throws -> Drive {
+        log.withLock { state in
+            state.calls += 1
+            state.running += 1
+            state.mostAtOnce = max(state.mostAtOnce, state.running)
+        }
+        defer { log.withLock { $0.running -= 1 } }
+        try? await Task.sleep(for: delay)
+        if let error = log.withLock({ $0.error }) { throw error }
+        var stored = drive
+        stored.validationStatus = .validated
+        return stored
+    }
+}
+
+struct RefusedByServer: SQLStateError {
+    let sqlState: String?
+}
+
+@MainActor
+@Suite("Drive upload recovery")
+struct UploadRecoveryTests {
+    private func harness(_ uploads: FakeUploads) async -> RecorderHarness {
+        let h = await RecorderHarness()
+        h.recorder.sendDrive = { drive, _ in try await uploads.send(drive) }
+        return h
+    }
+
+    private func recordAndFinish(_ h: RecorderHarness) async throws -> FinishedDrive {
+        _ = await h.recorder.start(with: nil)
+        try await h.drain(expecting: RecorderHarness.drive.count)
+        return try #require(await h.recorder.finish())
+    }
+
+    /// A finished drive waiting on disk, as a closed app leaves it.
+    private func savePendingDrive(_ h: RecorderHarness) async throws -> DriveDraft {
+        let me = try #require(await h.backend.currentUserID())
+        let start = Date().addingTimeInterval(-3600)
+        let samples = DemoTracks.track(start: start, speeds: RecorderHarness.drive, headingSeed: 0.2)
+        let draft = DriveDraft(ownerID: me, vehicleID: nil, startedAt: start, endedAt: samples.last?.timestamp, samples: samples)
+        try await h.store.save(draft)
+        return draft
+    }
+
+    /// Weak signal at the stop: the summary doesn't wait for the upload, the
+    /// drive is on disk, and the upload finishes on its own.
+    @Test func slowUploadIsSavedOfflineAndStillFinishes() async throws {
+        let uploads = FakeUploads(delay: .milliseconds(600))
+        let h = await harness(uploads)
+        h.recorder.uploadTimeout = .milliseconds(50)
+        let result = try await recordAndFinish(h)
+        #expect(result.upload == .savedOffline(reason: "The connection is too slow right now."))
+        #expect(await h.store.pendingUploads().map(\.id) == [result.drive.id])
+        #expect(h.recorder.pendingUploads == 1)
+
+        // Back in the foreground while it's still on its way: waited on,
+        // not sent a second time.
+        await h.recorder.syncPending()
+        for _ in 0..<500 where h.recorder.pendingUploads > 0 { try await Task.sleep(for: .milliseconds(10)) }
+        #expect(h.recorder.pendingUploads == 0)
+        #expect(await h.store.all().isEmpty)
+        #expect(uploads.calls == 1)
+    }
+
+    @Test func refusedDriveIsKeptAndNotRetried() async throws {
+        let uploads = FakeUploads(error: RefusedByServer(sqlState: "23514"))
+        let h = await harness(uploads)
+        let result = try await recordAndFinish(h)
+        #expect(result.upload == .rejected)
+        #expect(h.recorder.pendingUploads == 0)
+        #expect(h.recorder.rejectedUploads == 1)
+
+        await h.recorder.syncPending()
+        #expect(uploads.calls == 1)
+        #expect(await h.store.rejectedUploads().map(\.id) == [result.drive.id])
+
+        // Keep trying: sent once more, refused again, marked again.
+        await h.recorder.retryRejectedUploads()
+        #expect(uploads.calls == 2)
+        #expect(h.recorder.rejectedUploads == 1)
+
+        // Accepted after a server fix.
+        uploads.fail(with: nil)
+        await h.recorder.retryRejectedUploads()
+        #expect(uploads.calls == 3)
+        #expect(h.recorder.rejectedUploads == 0)
+        #expect(await h.store.all().isEmpty)
+    }
+
+    @Test func refusedDriveCanBeDeleted() async throws {
+        let uploads = FakeUploads(error: RefusedByServer(sqlState: "22023"))
+        let h = await harness(uploads)
+        _ = try await recordAndFinish(h)
+        #expect(h.recorder.rejectedUploads == 1)
+        await h.recorder.deleteRejectedUploads()
+        #expect(h.recorder.rejectedUploads == 0)
+        #expect(await h.store.all().isEmpty)
+    }
+
+    @Test func droppedConnectionIsRetried() async throws {
+        let uploads = FakeUploads(error: URLError(.notConnectedToInternet))
+        let h = await harness(uploads)
+        let result = try await recordAndFinish(h)
+        #expect(result.upload == .savedOffline(reason: "There's no connection right now."))
+        #expect(h.recorder.pendingUploads == 1)
+        #expect(h.recorder.rejectedUploads == 0)
+
+        uploads.fail(with: nil)
+        await h.recorder.syncPending()
+        #expect(uploads.calls == 2)
+        #expect(h.recorder.pendingUploads == 0)
+        #expect(await h.store.all().isEmpty)
+    }
+
+    /// Launch and the return to the foreground both sync: the drive is
+    /// sent once, never twice at the same time.
+    @Test func overlappingSyncsSendEachDriveOnce() async throws {
+        let uploads = FakeUploads(delay: .milliseconds(200))
+        let h = await harness(uploads)
+        _ = try await savePendingDrive(h)
+        let recorder = h.recorder
+        let launch = Task { await recorder.syncPending() }
+        let foreground = Task { await recorder.syncPending() }
+        await launch.value
+        await foreground.value
+        #expect(uploads.calls == 1)
+        #expect(uploads.mostAtOnce == 1)
+        #expect(recorder.pendingUploads == 0)
+        #expect(await h.store.all().isEmpty)
     }
 }

@@ -40,6 +40,7 @@ public struct RootView: View {
                 Task {
                     await app.verifyAppleCredential()
                     await app.catchUpMessages()
+                    await app.foregrounded()
                 }
             }
         }

@@ -22,6 +22,7 @@ struct DriveSummaryView: View {
     @State private var isSaving = false
     @State private var saveError: String?
     @State private var confirmingDelete = false
+    @State private var deleteError: String?
     @State private var sharingSummary = false
 
     init(result: FinishedDrive, isFresh: Bool) {
@@ -39,6 +40,12 @@ struct DriveSummaryView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: Space.xl) {
                 header
+                if let deleteError { ErrorLine(message: deleteError) }
+                // Why recording stopped on its own (Precise Location or
+                // location access turned off mid-drive, the 24-hour limit).
+                if isFresh, let interruption = app.recorder.interruption {
+                    NoticeStrip(interruption, tone: .caution)
+                }
                 uploadNotice
                 if result.track.count > 1 { routeMap }
                 heroNumbers
@@ -81,10 +88,7 @@ struct DriveSummaryView: View {
         }
         .confirmationDialog("Delete this drive?", isPresented: $confirmingDelete, titleVisibility: .visible) {
             Button("Delete", role: .destructive) {
-                Task {
-                    try? await app.backend.deleteDrive(drive.id)
-                    dismiss()
-                }
+                Task { await delete() }
             }
         } message: {
             Text("The drive, its track and any shared route are removed from the server.")
@@ -138,6 +142,8 @@ struct DriveSummaryView: View {
             }
         case let .savedOffline(reason):
             NoticeStrip("Saved on this device and will upload automatically. \(reason)", tone: .estimate)
+        case .rejected:
+            NoticeStrip("The server didn't accept this drive, so it's kept on this device and not retried. You can delete it or try again from the Drive tab.", tone: .caution)
         case .tooShort:
             NoticeStrip("Too short to save: a drive needs at least 30 clean GPS fixes and 200 m. Nothing was stored.", tone: .caution)
         }
@@ -252,7 +258,7 @@ struct DriveSummaryView: View {
             }
             Text(drive.zeroToSixtySeconds == nil
                  ? "No clean run from a standstill to 60 mph was detected."
-                 : "Estimated from phone GPS at about one fix per second\(drive.zeroToSixtyQuality == .consistent ? ", with consistent data" : ""). It is not a measured time and never counts for leaderboards. Performance boards accept only runs recorded at verified closed-course events.")
+                 : "Estimated from phone GPS at about one fix per second\(drive.zeroToSixtyQuality == .consistent ? ", with consistent data" : ""). It isn't a measured time. Pull Up doesn't rank speed or acceleration.")
                 .font(ClusterFont.body(.footnote))
                 .foregroundStyle(ClusterColor.inkSecondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -320,10 +326,7 @@ struct DriveSummaryView: View {
                 }
             } else {
                 Button {
-                    Task {
-                        try? await app.backend.unshareRoute(drive: drive.id)
-                        sharedRoute = nil
-                    }
+                    Task { await unshare() }
                 } label: {
                     Text("Stop sharing route").frame(maxWidth: .infinity)
                 }
@@ -354,6 +357,27 @@ struct DriveSummaryView: View {
             shareMessage = nil
         } catch {
             shareMessage = error.localizedDescription
+        }
+    }
+
+    /// The server decides: the route counts as unshared only once it says so.
+    private func unshare() async {
+        do {
+            try await app.backend.unshareRoute(drive: drive.id)
+            sharedRoute = nil
+            shareMessage = nil
+        } catch {
+            shareMessage = "Couldn't stop sharing, so the trimmed route is still visible to people who can see this drive. Try again."
+        }
+    }
+
+    private func delete() async {
+        do {
+            try await app.backend.deleteDrive(drive.id)
+            deleteError = nil
+            dismiss()
+        } catch {
+            deleteError = "Couldn't delete this drive. It's still saved. Try again."
         }
     }
 }

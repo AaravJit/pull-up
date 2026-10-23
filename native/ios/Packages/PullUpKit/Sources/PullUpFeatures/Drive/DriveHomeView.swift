@@ -15,6 +15,7 @@ struct DriveHomeView: View {
 
     @State private var drives: [Drive] = []
     @State private var loadError: String?
+    @State private var confirmingDeleteRejected = false
 
     private var preferredVehicle: Vehicle? {
         guard case let .vehicle(id) = app.recorder.preferredChoice(among: app.garage.active) else { return nil }
@@ -45,6 +46,16 @@ struct DriveHomeView: View {
         .navigationDestination(for: LeaderboardRoute.self) { _ in LeaderboardView() }
         .task(id: app.recorder.lastResult?.id) { await loadDrives() }
         .refreshable { await loadDrives() }
+        .confirmationDialog(
+            app.recorder.rejectedUploads == 1 ? "Delete this drive?" : "Delete these drives?",
+            isPresented: $confirmingDeleteRejected, titleVisibility: .visible
+        ) {
+            Button("Delete", role: .destructive) { Task { await app.recorder.deleteRejectedUploads() } }
+        } message: {
+            Text(app.recorder.rejectedUploads == 1
+                 ? "It's removed from this phone. The server never accepted it, so no other copy exists."
+                 : "They're removed from this phone. The server never accepted them, so no other copy exists.")
+        }
     }
 
     private func loadDrives() async {
@@ -70,6 +81,21 @@ struct DriveHomeView: View {
                 NoticeStrip("\(app.recorder.pendingUploads) drive\(app.recorder.pendingUploads == 1 ? "" : "s") saved on this device, waiting to upload.", tone: .estimate)
                 Button("Retry") { Task { await app.recorder.syncPending() } }.font(ClusterFont.headline(.footnote))
             }
+        }
+        if app.recorder.rejectedUploads > 0 {
+            let count = app.recorder.rejectedUploads
+            HStack(alignment: .top) {
+                NoticeStrip(count == 1
+                            ? "Couldn't upload a drive: the server didn't accept it. It's still on this phone."
+                            : "Couldn't upload \(count) drives: the server didn't accept them. They're still on this phone.",
+                            tone: .caution)
+                VStack(alignment: .trailing, spacing: Space.s) {
+                    Button("Delete", role: .destructive) { confirmingDeleteRejected = true }
+                    Button("Keep trying") { Task { await app.recorder.retryRejectedUploads() } }
+                }
+                .font(ClusterFont.headline(.footnote))
+            }
+            .accessibilityIdentifier("rejected-uploads")
         }
         if let interruption = app.recorder.interruption, app.recorder.lastResult == nil {
             NoticeStrip(interruption, tone: .caution)

@@ -4,6 +4,7 @@ import PullUpData
 import PullUpDomain
 import PullUpLocation
 import PullUpTelemetry
+import Synchronization
 
 /// A finished drive as the summary screen shows it.
 public struct FinishedDrive: Identifiable, Equatable, Sendable {
@@ -14,6 +15,9 @@ public struct FinishedDrive: Identifiable, Equatable, Sendable {
         case savedOffline(reason: String)
         /// Fewer than 30 clean fixes or under 200 m. Nothing was saved.
         case tooShort
+        /// The server refused the drive's data for good. Kept on this device,
+        /// but not retried until the person asks.
+        case rejected
     }
 
     public var id: UUID { drive.id }
@@ -79,6 +83,8 @@ public final class DriveRecorder {
     public private(set) var interruption: String?
     public private(set) var lastResult: FinishedDrive?
     public private(set) var pendingUploads = 0
+    /// Finished drives the server refused, kept on this device.
+    public private(set) var rejectedUploads = 0
     public private(set) var recoveredDrive: Date?
     /// The app was closed mid-drive and recording picked up where it left
     /// off. The time it wasn't running counts as a signal gap.
@@ -106,6 +112,15 @@ public final class DriveRecorder {
     private var tickTask: Task<Void, Never>?
     private var unsavedSamples = 0
     private var lastSave: Task<Void, Never>?
+    /// Uploads under way, by drive.
+    @ObservationIgnored private var uploads: [UUID: Task<Sent, Never>] = [:]
+    @ObservationIgnored private var syncing: Task<Void, Never>?
+    @ObservationIgnored private var syncAgain = false
+    /// How a drive reaches the server. Tests swap in a slow or refusing one.
+    @ObservationIgnored var sendDrive: @Sendable (Drive, [LocationSample]) async throws -> Drive
+    /// How long the summary waits for an upload before saying it's saved on
+    /// this device. The upload itself carries on.
+    @ObservationIgnored var uploadTimeout: Duration = .seconds(15)
 
     static let minimumSamples = 30
     static let minimumDistance = 200.0
@@ -126,6 +141,7 @@ public final class DriveRecorder {
         self.defaults = defaults
         self.usesReplay = usesReplay
         self.makeProvider = makeProvider
+        sendDrive = { [backend] drive, track in try await backend.upload(drive: drive, track: track) }
     }
 
     // MARK: Vehicle preference
@@ -358,6 +374,7 @@ public final class DriveRecorder {
         )
 
         if Self.isWorthKeeping(summary) {
+            // On disk before the upload, so a slow or lost upload loses nothing.
             try? await store.save(draft)
             let (state, uploaded) = await upload(draft, drive: result.drive)
             result.upload = state
@@ -441,19 +458,107 @@ public final class DriveRecorder {
 
     // MARK: Upload and recovery
 
+    /// One upload's outcome.
+    private enum Sent: Sendable {
+        case uploaded(Drive)
+        case failed(reason: String)
+        case rejected
+    }
+
     private func upload(_ draft: DriveDraft, drive: Drive) async -> (FinishedDrive.Upload, Drive?) {
         guard backend.mode != .unconfigured else { return (.savedOffline(reason: "No server is configured in this build."), nil) }
-        do {
-            let stored = try await backend.upload(drive: drive, track: draft.samples)
-            await store.delete(draft.id)
-            return (.uploaded, stored)
-        } catch {
-            return (.savedOffline(reason: error.localizedDescription), nil)
+        // A drive already on its way (an upload nobody waited for to the
+        // end) is waited on again, never sent a second time alongside it.
+        let attempt = uploads[draft.id] ?? send(draft, drive: drive)
+        switch await Self.outcome(of: attempt, within: uploadTimeout) {
+        case let .uploaded(stored)?: return (.uploaded, stored)
+        case let .failed(reason)?: return (.savedOffline(reason: reason), nil)
+        case .rejected?: return (.rejected, nil)
+        case nil: return (.savedOffline(reason: "The connection is too slow right now."), nil)
         }
     }
 
-    /// Uploads finished drives that couldn't be sent earlier.
+    /// Sends one drive and records how it went on disk: removed once the
+    /// server has it, marked when the server refuses it for good. It runs to
+    /// the end even if nobody is waiting for it any more. The server keeps
+    /// one copy however often a drive is sent.
+    private func send(_ draft: DriveDraft, drive: Drive) -> Task<Sent, Never> {
+        let id = draft.id
+        let attempt = Task<Sent, Never> { [store, sendDrive] in
+            let sent: Sent
+            do {
+                let stored = try await sendDrive(drive, draft.samples)
+                await store.delete(id)
+                sent = .uploaded(stored)
+            } catch {
+                if DriveDraft.isPermanentRejection(error) {
+                    try? await store.markRejected(id, at: .now)
+                    sent = .rejected
+                } else {
+                    sent = .failed(reason: Self.plainReason(error))
+                }
+            }
+            self.uploads[id] = nil
+            await self.refreshPendingCount()
+            return sent
+        }
+        uploads[id] = attempt
+        return attempt
+    }
+
+    /// The upload's outcome, or `nil` once `timeout` has passed.
+    private static func outcome(of attempt: Task<Sent, Never>, within timeout: Duration) async -> Sent? {
+        await withCheckedContinuation { (continuation: CheckedContinuation<Sent?, Never>) in
+            let first = FirstValue(continuation)
+            let timer = Task {
+                try? await Task.sleep(for: timeout)
+                first.resume(returning: nil)
+            }
+            Task {
+                let sent = await attempt.value
+                first.resume(returning: sent)
+                timer.cancel()
+            }
+        }
+    }
+
+    /// Why an upload didn't go through, in plain words.
+    static func plainReason(_ error: any Error) -> String {
+        if let error = error as? URLError {
+            switch error.code {
+            case .notConnectedToInternet, .networkConnectionLost, .dataNotAllowed, .internationalRoamingOff,
+                 .cannotFindHost, .cannotConnectToHost, .dnsLookupFailed:
+                return "There's no connection right now."
+            case .timedOut:
+                return "The connection is too slow right now."
+            default:
+                break
+            }
+        }
+        return "The upload didn't go through this time."
+    }
+
+    /// Uploads finished drives that couldn't be sent earlier. Never runs
+    /// twice at once: a call while a sync is under way waits for it, and one
+    /// more pass follows for drives saved meanwhile.
     public func syncPending() async {
+        syncAgain = true
+        if let syncing {
+            await syncing.value
+            return
+        }
+        let sync = Task {
+            while self.syncAgain {
+                self.syncAgain = false
+                await self.syncOnce()
+            }
+            self.syncing = nil
+        }
+        syncing = sync
+        await sync.value
+    }
+
+    private func syncOnce() async {
         guard let ownerID, phase == .idle else { return }
         for var draft in await store.pendingUploads() where draft.ownerID == ownerID {
             guard let recorded = draft.endedAt else { continue }
@@ -473,21 +578,45 @@ public final class DriveRecorder {
         await refreshPendingCount()
     }
 
+    /// Removes from this device the drives the server refused.
+    public func deleteRejectedUploads() async {
+        guard let ownerID else { return }
+        for draft in await store.rejectedUploads() where draft.ownerID == ownerID { await store.delete(draft.id) }
+        await refreshPendingCount()
+    }
+
+    /// Sends the drives the server refused once more, e.g. after an update.
+    /// One refused again is marked again.
+    public func retryRejectedUploads() async {
+        guard let ownerID else { return }
+        for draft in await store.rejectedUploads() where draft.ownerID == ownerID { try? await store.markRejected(draft.id, at: nil) }
+        await refreshPendingCount()
+        await syncPending()
+    }
+
     /// Handles a recording that was cut short because the app was closed
     /// (iOS ended it, it crashed, or the person force-quit it).
     ///
-    /// If the last fix is recent and precise location is still allowed,
-    /// recording resumes on the same drive; the time the app wasn't running
-    /// is a signal gap, bridged and disclosed like any other. Otherwise the
-    /// drive is finished at its last fix so it uploads instead of
-    /// disappearing. `vehicles` resolves the drive's vehicle for display.
+    /// If the last fix is recent and precise location is still allowed (or
+    /// allowed again at the prompt), recording resumes on the same drive; the
+    /// time the app wasn't running is a signal gap, bridged and disclosed like
+    /// any other. Otherwise the drive is finished at its last fix so it
+    /// uploads instead of disappearing. `vehicles` resolves the drive's
+    /// vehicle for display.
     public func recoverInterrupted(vehicles: [Vehicle] = [], now: Date = .now) async {
-        guard phase == .idle, var draft = await store.interrupted(), draft.ownerID == ownerID else { return }
+        guard phase == .idle, ownerID != nil else { return }
+        guard var draft = await store.interrupted(), draft.ownerID == ownerID, phase == .idle else { return }
         let lastFix = draft.samples.last?.timestamp ?? draft.startedAt
         if now.timeIntervalSince(lastFix) <= Self.resumeWindow,
            now.timeIntervalSince(draft.startedAt) < Self.maximumDuration {
+            // Held while iOS asks, so no other drive starts meanwhile.
+            phase = .starting
             let provider = makeProvider()
-            if provider.permission == .authorized {
+            var permission = provider.permission
+            // Precise location allowed for one drive ends with the app, so
+            // it's asked for again before the drive is given up.
+            if permission == .reducedAccuracy { permission = await provider.requestFullAccuracy() }
+            if permission == .authorized {
                 // A pause still open when the app closed doesn't explain the
                 // silence that followed; drop it so later replays agree.
                 draft.stationaryPauses?.removeAll { $0 >= lastFix }
@@ -500,6 +629,7 @@ public final class DriveRecorder {
                 await persistDraft()
                 return
             }
+            phase = .idle
         }
         let end = min(lastFix, Self.limit(of: draft))
         Self.trimToLimit(&draft)
@@ -514,9 +644,11 @@ public final class DriveRecorder {
     private func refreshPendingCount() async {
         guard let ownerID else {
             pendingUploads = 0
+            rejectedUploads = 0
             return
         }
         pendingUploads = await store.pendingUploads().filter { $0.ownerID == ownerID }.count
+        rejectedUploads = await store.rejectedUploads().filter { $0.ownerID == ownerID }.count
     }
 
     /// Updates title and audience after the summary screen edits them.
@@ -526,5 +658,23 @@ public final class DriveRecorder {
         result.drive.title = title
         result.drive.visibility = audience
         lastResult = result
+    }
+}
+
+/// Resumes a continuation with whichever value arrives first.
+private final class FirstValue<Value: Sendable>: Sendable {
+    private let continuation: CheckedContinuation<Value, Never>
+    private let resumed = Mutex(false)
+
+    init(_ continuation: CheckedContinuation<Value, Never>) {
+        self.continuation = continuation
+    }
+
+    func resume(returning value: Value) {
+        let isFirst = resumed.withLock { done -> Bool in
+            defer { done = true }
+            return !done
+        }
+        if isFirst { continuation.resume(returning: value) }
     }
 }
