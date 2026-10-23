@@ -5,8 +5,9 @@ branch `claude/pull-up-phase-2` (PR #3, stacked on PR #2), 2026-10-17, then a
 Phase 3 re-check of `main` after PR #2 merged (`515ec98`), 2026-10-18.
 
 **Passing tests don't make the app secure.** They show that the specific
-weaknesses below are closed on the local stack. Nothing here has been run
-against a hosted Supabase project or on a phone.
+weaknesses below are closed on the local stack and, for the database, on
+the hosted staging project (docs/STAGING_DEPLOYMENT.md). Nothing here has
+been run on a phone.
 
 ## Phase 3 re-check (Milestone 10)
 
@@ -49,7 +50,8 @@ Also re-checked:
   `is_blocked_between` look open; both already answer only when the caller
   is one of the two (SEC-02), on staging too.
 * **Staging.** All of the above is applied to `pull-up-staging`; 190
-  database checks passed there (docs/STAGING_DEPLOYMENT.md).
+  database checks passed there on 2026-10-18, and all 14 pgTAP files,
+  262 of 262, on 2026-10-20 at `41cf1d5` (docs/STAGING_DEPLOYMENT.md).
 
 
 ## Scope and method
@@ -224,9 +226,10 @@ and each new export replaces the previous one. Not verified on a device.
 
 ## Still to do (needs people or systems outside CI)
 
-* Run the full suites against staging from the `Supabase deploy` workflow
-  (004, 009, 010 and the two-account API tests haven't run there since the
-  fixes, see docs/STAGING_DEPLOYMENT.md).
+* Rerun the two-account API tests against staging from the `Supabase
+  deploy` workflow: they haven't run there since the fixes. The pgTAP
+  files, 004, 009 and 010 included, all passed on staging on 2026-10-20
+  (docs/STAGING_DEPLOYMENT.md).
 * On a device: confirm the session is in the Keychain, exported files are
   protected while locked, and pushes show no message text by default.
 * Check G8 against a real App Store Server Notification (Apple's TEST

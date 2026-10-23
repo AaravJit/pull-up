@@ -9,28 +9,39 @@ alone. Items are in the order they unblock each other.
 The step-by-step version, with the GitHub deploy workflow that automates
 most of this, is `SUPABASE_SETUP.md`.
 
+Staging is done for the first four items (`STAGING_DEPLOYMENT.md`);
+production is still to do.
+
 - [ ] Create a Supabase project (or pick the existing one) and note the
-      project ref and anon key (Project Settings ▸ API).
-- [ ] Link and push the schema from a machine with the Supabase CLI:
+      project ref and anon key (Project Settings ▸ API). Staging
+      (`pull-up-staging`) exists; production hasn't been created.
+- [ ] Apply the schema: the `Supabase deploy` workflow does this
+      (`SUPABASE_SETUP.md` §4), or by hand with the Supabase CLI:
       `supabase link --project-ref <ref>` then `supabase db push`.
-      All thirteen migrations are additive. Each has a matching file in
+      All 24 migrations are additive. Each has a matching file in
       `supabase/rollback/` (CI rolls every one back and re-applies it), and
       rollbacks that would drop data refuse to run unless
-      `pullup.allow_destructive_rollback` is set for the session.
+      `pullup.allow_destructive_rollback` is set for the session. Staging
+      has all 24.
 - [ ] Run `supabase test db` against a staging project (the same pgTAP
-      suite CI runs).
+      suite CI runs). Done on staging: 262 of 262 on 2026-10-20. The
+      two-account API suite hasn't been rerun there since 2026-10-18.
 - [ ] Deploy edge functions: `supabase functions deploy delete-account send-push
-      dm-retention verify-subscription app-store-notifications`.
+      dm-retention verify-subscription app-store-notifications`. All five
+      are on staging.
 - [ ] Generate a random push webhook secret (`openssl rand -hex 32`) and
       set it: `supabase secrets set PUSH_WEBHOOK_SECRET=<value>`.
-- [ ] Database ▸ Webhooks: on INSERT into `public.notifications`, call the
-      `send-push` function with the HTTP header
-      `x-pullup-webhook-secret: <same value>`. Requests without it are
+- [ ] Database ▸ Webhooks: enable webhooks (installs the `pg_net`
+      extension), then on INSERT into `public.notifications`, call the
+      `send-push` function with the HTTP headers
+      `x-pullup-webhook-secret: <same value>` and
+      `Authorization: Bearer <anon key>` (the function keeps Supabase's JWT
+      check). Requests without the secret are
       rejected. Without the webhook, notifications still appear in the app's
       bell; they just aren't pushed.
 - [ ] Auth ▸ Providers: enable Apple (see 3). Keep Email enabled for the
       App Review demo account; the app offers email sign-in only, behind
-      "Other sign-in options". Leave "Allow new users to sign up" on: it
+      "Other ways to sign in". Leave "Allow new users to sign up" on: it
       covers every provider, Apple included.
 - [ ] Confirm the account-linking guard is installed (it stops Supabase
       from merging an Apple sign-in into an email account with the same
@@ -50,8 +61,9 @@ most of this, is `SUPABASE_SETUP.md`.
       if `app.pullup.ios` is taken, `PULLUP_BUNDLE_ID`.
       The anon key is public by design; authorization is enforced by RLS.
       The service-role key must never go in the app.
-- [ ] For CI-signed builds, store the same values as repository secrets and
-      write `Secrets.xcconfig` in the workflow before `xcodegen generate`.
+- [x] For CI-signed builds, the TestFlight workflow (`testflight.yml`)
+      writes `Secrets.xcconfig` before `xcodegen generate`, from the GitHub
+      environment's secrets and variables (`TESTFLIGHT_SETUP.md`).
 - [ ] A build without these values shows a "Server not configured" screen
       with an explicit demo-data option. It never shows fake data silently.
 
@@ -74,11 +86,14 @@ most of this, is `SUPABASE_SETUP.md`.
 
 - [ ] Create the app record in App Store Connect with the bundle ID.
 - [ ] Archive: either on a Mac (`xcodegen generate`, open `PullUp.xcodeproj`,
-      Product ▸ Archive), or add a CI job using an App Store Connect API key
-      stored as repository secrets (`xcodebuild archive` + `-exportArchive`
-      with `-allowProvisioningUpdates`). No signing material is in the repo.
-- [ ] App Privacy answers: precise location (app functionality, linked to
-      user), photos/videos (user content), email, user ID. No tracking.
+      Product ▸ Archive), or run Actions ▸ TestFlight, which archives with
+      an App Store Connect API key and `-allowProvisioningUpdates`
+      (`TESTFLIGHT_SETUP.md`; it hasn't made a signed upload yet). No
+      signing material is in the repo.
+- [ ] App Privacy answers, matching `PrivacyInfo.xcprivacy`: precise
+      location, photos or videos, email, name, user ID, device ID (push
+      token), messages, other user content and purchase history, all linked
+      to the user, for app functionality. No tracking.
 - [ ] Review notes: explain background location (only while a drive is
       recording, started by the user; When In Use only, never Always),
       account deletion (Settings ▸ Account ▸ Delete account, server side), and
@@ -95,12 +110,17 @@ Messages
       migration adds them and prints a notice if the publication is missing.)
 - [ ] Generate `CRON_SECRET` (`openssl rand -hex 32`), set it with
       `supabase secrets set CRON_SECRET=<value>`, and schedule
-      `dm-retention` daily (Integrations ▸ Cron, HTTP request to the function
-      with headers `x-pullup-cron-secret: <value>` and
-      `Authorization: Bearer <anon key>`).
+      `dm-retention` daily: enable Integrations ▸ Cron (installs `pg_cron`)
+      and Database ▸ Webhooks (installs `pg_net`, which makes the HTTP
+      call), store the secret in Vault rather than pasting it into the
+      job, and have the job send headers `x-pullup-cron-secret: <value>`
+      (read from Vault) and `Authorization: Bearer <anon key>`. The SQL is
+      in `SUPABASE_SETUP.md` §5.
 - [ ] Decide who reviews reports (`public.reports`) and how quickly.
       Suspensions are set by the service role on
-      `profiles.messaging_suspended_until`.
+      `profiles.messaging_suspended_until`. Nothing alerts anyone to a new
+      report yet: `report_user` only sends `pg_notify('pullup_reports', …)`,
+      which nothing listens to.
 
 Sign in with Apple token revocation (account deletion)
 
@@ -126,13 +146,16 @@ Pull Up Pro (nothing here is done; prices are placeholders)
       `https://<project-ref>.supabase.co/functions/v1/app-store-notifications`,
       Version 2. Send a test notification and check the function log shows it.
 - [ ] Publish a privacy policy and set `PULLUP_PRIVACY_POLICY` (without
-      `https://`) in `Secrets.xcconfig`. The paywall links Apple's standard
-      Terms of Use.
+      `https://`): in `Secrets.xcconfig` for your own build, or as the
+      GitHub environment variable of the same name for TestFlight builds.
+      App Store Connect asks for a privacy policy URL for every app, not
+      only for Pro. The paywall links Apple's standard Terms of Use.
 - [ ] Sandbox test on a device with a sandbox Apple Account: buy, renew,
       cancel, refund (via the sandbox settings), Ask to Buy, and restore on a
       second phone. Only then submit the products with the app version.
-- [ ] Add the per-user rate limit on `verify-subscription`
-      (`SECURITY_REPORT.md` R-4).
+- [x] Add the per-user rate limit on `verify-subscription`
+      (`SECURITY_REPORT.md` R-4). Done in migration `20261018000200`
+      (PR #7).
 
 Notifications
 
@@ -159,14 +182,18 @@ Parts finder
 
 Security
 
-- [ ] Run `supabase test db` against staging, including
-      `006_security_surface.sql`, and work through "Still to do" in
-      `SECURITY_REPORT.md`.
+- [x] Run `supabase test db` against staging, including
+      `006_security_surface.sql`: all 14 files, 262 of 262, on 2026-10-20
+      (`STAGING_DEPLOYMENT.md`).
+- [ ] Work through "Still to do" in `SECURITY_REPORT.md`.
 
 ## 5. CarPlay
 
 See `docs/CARPLAY.md`. Request the Driving Task entitlement, enable it on
-the App ID, set `PULLUP_ENTITLEMENTS = PullUp/PullUp-CarPlay.entitlements`.
+the App ID, set `PULLUP_ENTITLEMENTS = PullUp/PullUp-CarPlay.entitlements`
+in `Secrets.xcconfig`. The TestFlight workflow doesn't write that setting,
+so its builds use `PullUp/PullUp.entitlements` (no CarPlay) until a pull
+request changes the workflow or `Base.xcconfig`.
 
 ## 6. Physical-device testing (cannot be done in a simulator)
 
@@ -190,5 +217,7 @@ the App ID, set `PULLUP_ENTITLEMENTS = PullUp/PullUp-CarPlay.entitlements`.
       the stored file and inspect it).
 - [ ] Video post playback over cellular.
 - [ ] CarPlay on a head unit once the entitlement is granted.
-- [ ] Share a route and check from a second account that it starts and ends
-      away from home (privacy zone + trim).
+- [ ] Share a route and check that it starts and ends away from home
+      (privacy zone + trim). The app has no screen that shows another
+      person's shared route, so the developer checks the stored copy on
+      staging (`DEVICE_TEST_PLAN.md` D3.18).

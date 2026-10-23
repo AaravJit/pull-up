@@ -4,8 +4,12 @@ How to connect Pull Up to hosted Supabase projects. Steps marked **You**
 need the project owner's Supabase or GitHub account; everything else is
 done by the "Supabase deploy" workflow.
 
-Nothing here has been run against a hosted project yet. The migrations,
-functions and tests have only run on the local Supabase stack in CI.
+Staging (`pull-up-staging`) is set up: all 24 migrations, the five edge
+functions and the four storage buckets were applied through the Supabase
+connector, and the pgTAP suite passed there (262 of 262 on 2026-10-20).
+`STAGING_DEPLOYMENT.md` is the record, including the dashboard steps still
+open. The deploy workflow hasn't run yet (its `staging` environment, step 3,
+isn't set up), and no production project has been created.
 
 ## What lives where
 
@@ -104,11 +108,33 @@ These aren't in migrations because they hold per-project values:
   refuses links the person didn't start).
 * **Auth ▸ URL Configuration:** site URL and redirect URL
   `pullup://auth-callback`.
-* **Database ▸ Webhooks:** on INSERT into `public.notifications`, POST to
-  the `send-push` function with header
-  `x-pullup-webhook-secret: <PUSH_WEBHOOK_SECRET>`.
-* **Integrations ▸ Cron:** daily POST to `dm-retention` with header
-  `x-pullup-cron-secret: <CRON_SECRET>`.
+* **Database ▸ Webhooks:** enable webhooks first; that installs the
+  `pg_net` extension, which sends the requests. Then on INSERT into
+  `public.notifications`, POST to the `send-push` function with headers
+  `x-pullup-webhook-secret: <PUSH_WEBHOOK_SECRET>` (the function refuses
+  any request without it) and `Authorization: Bearer <anon key>`
+  (`send-push` and `dm-retention` keep Supabase's JWT check, see
+  `supabase/config.toml`, so a call without a valid JWT never reaches
+  them).
+* **Integrations ▸ Cron:** enable it; that installs the `pg_cron`
+  extension (the job's HTTP call also needs `pg_net`, above). Keep
+  `CRON_SECRET` in Vault (Integrations ▸ Vault, named for example
+  `pullup_cron_secret`) instead of pasting it into the job's SQL, and have
+  the job read it. A daily job that POSTs to `dm-retention`, which checks
+  the `x-pullup-cron-secret` header against `CRON_SECRET`:
+
+  ```sql
+  select cron.schedule('pullup-dm-retention', '30 3 * * *', $$
+    select net.http_post(
+      url := 'https://<ref>.supabase.co/functions/v1/dm-retention',
+      headers := jsonb_build_object(
+        'Content-Type', 'application/json',
+        'Authorization', 'Bearer <anon key>',
+        'x-pullup-cron-secret', (select decrypted_secret
+          from vault.decrypted_secrets where name = 'pullup_cron_secret')),
+      body := '{}'::jsonb);
+  $$);
+  ```
 * Check the account-linking guard is installed (SQL editor):
   `select tgname from pg_trigger where tgname = 'pullup_identity_link_guard';`
   must return one row.

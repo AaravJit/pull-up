@@ -41,9 +41,9 @@ commit and its MD5 checked against the reviewed file before it ran.
 | 20261018000400 – 000600 drive privacy, notification limits, storage moves | PR #14, M10 |
 | 20261018000700 explicit API grants | this PR (#4, M1), new |
 
-Staging therefore runs code that isn't on `main` yet. If one of those PRs
-changes a migration before it merges, staging has to be re-applied from the
-new version.
+On 2026-10-18 staging therefore ran code that wasn't on `main` yet.
+Superseded: all of those PRs have since merged, and after the third
+deployment (below) staging has 24 migrations, all on `main`.
 
 After applying, a fingerprint of every function, policy, column, trigger,
 bucket and grant in `public`, `private` and `storage` matched the same
@@ -167,7 +167,8 @@ one transaction that always rolled back, the test extensions included.
   Neither could be called from here; both answer 503 until their secrets
   exist, so their new code paths haven't run on staging.
 * Every migration on staging now matches the repository byte for byte
-  (MD5 of all 21 compared with the merged branches).
+  (MD5 of all 21 compared with the merged branches; 24 after the third
+  deployment below).
   `supabase/applied/staging.sha256` records them, and backend CI refuses a
   change to any of them or a new migration numbered below the newest one
   applied (`supabase/scripts/check-applied-migrations.sh`).
@@ -181,9 +182,13 @@ from this session. Files 004, 009 and 010, check 22 of 012, and the
 two-account API suite (which has to remove its accounts afterwards) need
 that. All of them pass locally on a copy with staging's default privileges,
 and they ran on staging in the first deployment except 012. They run in full
-from the `Supabase deploy` workflow once the repository's `staging`
-environment has `SUPABASE_ACCESS_TOKEN` and `SUPABASE_DB_PASSWORD` and the
-workflow is on `main`.
+from the `Supabase deploy` workflow (on `main`, started by hand) once the
+repository's `staging` environment has `SUPABASE_ACCESS_TOKEN` and
+`SUPABASE_DB_PASSWORD`.
+
+Superseded for pgTAP: the third deployment below ran all 14 files on
+staging, 004, 009, 010 and check 22 of 012 included. Only the two-account
+API suite is still to be rerun.
 
 Advisors after: no security errors; `rls_auto_enable` no longer listed.
 
@@ -238,14 +243,25 @@ Not doable from the connector, or they need secrets that don't exist yet:
 
 1. Auth ▸ Hooks: enable **Before User Created** with
    `public.hook_before_user_created` (blocks public email and phone sign-ups).
+   Until then anyone with the anon key can create an email account on
+   staging, since email sign-in is on and public sign-up isn't disabled.
 2. Auth ▸ Sign In / Providers: turn on **Allow manual linking**.
 3. Auth ▸ URL Configuration: add redirect URL `pullup://auth-callback`.
 4. Auth ▸ Providers ▸ Apple: needs the Services ID and Sign in with Apple
    key.
 5. Function secrets `PUSH_WEBHOOK_SECRET` and `CRON_SECRET`, then the
    Database Webhook (INSERT on `public.notifications` → `send-push`) and the
-   daily Cron job (→ `dm-retention`).
+   daily Cron job (→ `dm-retention`). Enabling Database ▸ Webhooks installs
+   `pg_net` (both need it) and enabling Integrations ▸ Cron installs
+   `pg_cron`. `send-push` checks the `x-pullup-webhook-secret` header
+   against `PUSH_WEBHOOK_SECRET`, `dm-retention` checks
+   `x-pullup-cron-secret` against `CRON_SECRET`, and both keep JWT
+   verification on, so each call also sends `Authorization: Bearer <anon
+   key>`. Keep `CRON_SECRET` in Vault and have the job read it rather than
+   pasting it into the SQL (`SUPABASE_SETUP.md` §5 has the job).
 6. Function secrets from Apple: `APNS_*`, `APPLE_*`, `APPSTORE_*`.
 7. GitHub environment `staging` with `SUPABASE_PROJECT_REF`,
    `SUPABASE_ACCESS_TOKEN` and `SUPABASE_DB_PASSWORD`, so later deploys and
-   the full Deno API suite run from the workflow.
+   the full Deno API suite run from the workflow. It never runs on its own:
+   someone with write access to the repository then runs Actions ▸
+   Supabase deploy ▸ `staging`, a dry run first, then with apply ticked.
