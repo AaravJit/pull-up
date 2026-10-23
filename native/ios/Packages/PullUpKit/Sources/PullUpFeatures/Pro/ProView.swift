@@ -10,6 +10,7 @@ struct ProView: View {
     @Environment(AppModel.self) private var app
     @Environment(\.clusterTheme) private var theme
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var highlight: ProFeature?
     @State private var plan: ProPlan = .yearly
@@ -120,7 +121,7 @@ struct ProView: View {
                 HStack(spacing: Space.m) {
                     ForEach(pro.offers) { offer in
                         PlanCard(offer: offer, saving: offer.plan == .yearly ? pro.yearlySaving() : nil, isSelected: plan == offer.plan) {
-                            withAnimation(Motion.select) { plan = offer.plan }
+                            withAnimation(Motion.resolved(Motion.select, reduceMotion: reduceMotion)) { plan = offer.plan }
                         }
                     }
                 }

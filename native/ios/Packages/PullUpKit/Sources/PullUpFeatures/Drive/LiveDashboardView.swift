@@ -6,54 +6,53 @@ import PullUpDomain
 import PullUpTelemetry
 
 /// Full-screen instrument cluster while a drive records.
+///
+/// The layout comes from the space the dashboard has (`DashboardLayout`), so
+/// a rotation, Split View or a foldable opening or closing only rearranges
+/// it. Nothing here owns the recording: the recorder, its location stream and
+/// its timers live in `AppModel`, so this view can be rebuilt at any size
+/// without touching the drive. Discard and Hold to stop sit in a bottom inset
+/// and stay on screen however large the text is; the rest scrolls.
 struct LiveDashboardView: View {
     @Environment(AppModel.self) private var app
     @Environment(\.clusterTheme) private var theme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.verticalSizeClass) private var verticalSizeClass
+    @Environment(\.dynamicTypeSize) private var typeSize
     let stage: Namespace.ID
 
     @State private var confirmingDiscard = false
+    @State private var size: CGSize = .zero
 
     private var recorder: DriveRecorder { app.recorder }
     private var live: LiveTelemetry { recorder.live }
 
+    private var layout: DashboardLayout {
+        DashboardLayout(size: size, isAccessibilitySize: typeSize.isAccessibilitySize, analogGauge: theme.speedometer == .analog)
+    }
+
     var body: some View {
-        Group {
-            if verticalSizeClass == .compact {
-                HStack(spacing: Space.xl) {
-                    VStack(spacing: Space.m) {
-                        statusBar
-                        speedometer
-                    }
-                    VStack(spacing: Space.m) {
-                        notices
-                        metricsGrid(columns: 2)
-                        Spacer(minLength: 0)
-                        controls
-                    }
-                }
-            } else {
-                VStack(spacing: Space.l) {
-                    statusBar
-                    notices
-                    speedometer
-                    metricsGrid(columns: 3)
-                    if recorder.route.count > 1 { miniMap }
-                    Spacer(minLength: 0)
-                    controls
-                }
-            }
+        let layout = self.layout
+        ScrollView {
+            content(layout)
+                .padding(.horizontal, Space.gutter)
+                .padding(.vertical, Space.m)
+                .frame(maxWidth: layout.maxContentWidth)
+                .frame(maxWidth: .infinity)
         }
-        .padding(.horizontal, Space.gutter)
-        .padding(.vertical, Space.m)
+        .scrollBounceBehavior(.basedOnSize)
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            controlsBar(layout)
+        }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .onGeometryChange(for: CGSize.self) { $0.size } action: { size = $0 }
         .background {
             Rectangle()
                 .fill(ClusterColor.canvas)
                 .stageGeometry("stage", in: stage, enabled: !reduceMotion)
                 .ignoresSafeArea()
         }
+        // On the outermost view, which keeps its identity when the layout
+        // changes, so a resize never runs these again.
         .onAppear { UIApplication.shared.isIdleTimerDisabled = true }
         .onDisappear { UIApplication.shared.isIdleTimerDisabled = false }
         .confirmationDialog("Discard this drive?", isPresented: $confirmingDiscard, titleVisibility: .visible) {
@@ -63,6 +62,33 @@ struct LiveDashboardView: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("live-dashboard")
+    }
+
+    @ViewBuilder
+    private func content(_ layout: DashboardLayout) -> some View {
+        switch layout.arrangement {
+        case .sideBySide:
+            HStack(alignment: .top, spacing: Space.xl) {
+                VStack(spacing: Space.m) {
+                    statusBar
+                    speedometer(height: layout.gaugeHeight)
+                }
+                .frame(maxWidth: .infinity)
+                VStack(spacing: Space.m) {
+                    notices
+                    metricsGrid(columns: layout.metricColumns)
+                }
+                .frame(maxWidth: .infinity)
+            }
+        case .stacked:
+            VStack(spacing: Space.l) {
+                statusBar
+                notices
+                speedometer(height: layout.gaugeHeight)
+                metricsGrid(columns: layout.metricColumns)
+                if recorder.route.count > 1 { miniMap }
+            }
+        }
     }
 
     // MARK: Status
@@ -83,6 +109,7 @@ struct LiveDashboardView: View {
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("Recording")
             .accessibilityValue(Format.spokenDuration(live.elapsedSeconds))
+            .accessibilityIdentifier("live-elapsed")
 
             Spacer(minLength: Space.s)
 
@@ -146,7 +173,7 @@ struct LiveDashboardView: View {
 
     // MARK: Gauge
 
-    private var speedometer: some View {
+    private func speedometer(height: CGFloat) -> some View {
         let reading = SpeedometerReading(
             speed: live.currentSpeed.map { theme.unit.speed(fromMetersPerSecond: $0) },
             topSpeed: live.topSpeed.map { theme.unit.speed(fromMetersPerSecond: $0) },
@@ -155,7 +182,7 @@ struct LiveDashboardView: View {
         )
         return Speedometer(reading, style: theme.speedometer)
             .frame(maxWidth: 360)
-            .frame(height: theme.speedometer == .analog ? 300 : 210)
+            .frame(height: height)
             .frame(maxWidth: .infinity)
             .animation(reduceMotion ? nil : Motion.needle, value: reading)
             .accessibilityIdentifier("live-speedometer")
@@ -196,6 +223,27 @@ struct LiveDashboardView: View {
     }
 
     // MARK: Controls
+
+    /// Pinned below the scrolling content. Side by side, it sits under the
+    /// right-hand column so Hold to stop isn't stretched across the window.
+    private func controlsBar(_ layout: DashboardLayout) -> some View {
+        Group {
+            switch layout.arrangement {
+            case .sideBySide:
+                HStack(spacing: Space.xl) {
+                    Color.clear.frame(maxWidth: .infinity, maxHeight: 0)
+                    controls.frame(maxWidth: .infinity)
+                }
+            case .stacked:
+                controls
+            }
+        }
+        .padding(.horizontal, Space.gutter)
+        .padding(.vertical, Space.m)
+        .frame(maxWidth: layout.maxContentWidth)
+        .frame(maxWidth: .infinity)
+        .background(ClusterColor.canvas)
+    }
 
     private var controls: some View {
         HStack(spacing: Space.m) {
@@ -272,28 +320,35 @@ struct HoldToStopButton: View {
     private let holdDuration = 1.0
 
     var body: some View {
-        ZStack(alignment: .leading) {
-            ChamferedRectangle(cut: Radius.chamferSmall).fill(ClusterColor.live.opacity(0.18))
-            GeometryReader { proxy in
-                ChamferedRectangle(cut: Radius.chamferSmall)
-                    .fill(ClusterColor.live)
-                    .frame(width: max(0, proxy.size.width * progress))
+        HStack(spacing: Space.s) {
+            if isBusy {
+                ProgressView().tint(.white)
+            } else {
+                Image(systemName: "stop.fill")
             }
-            HStack(spacing: Space.s) {
-                if isBusy {
-                    ProgressView().tint(.white)
-                } else {
-                    Image(systemName: "stop.fill")
-                }
-                Text(isBusy ? "Saving" : progress > 0 ? "Keep holding" : "Hold to stop")
-            }
-            .font(ClusterFont.headline())
-            .textCase(.uppercase)
-            .tracking(1.2)
-            .foregroundStyle(progress > 0.5 ? .white : ClusterColor.ink)
-            .frame(maxWidth: .infinity)
+            Text(isBusy ? "Saving" : progress > 0 ? "Keep holding" : "Hold to stop")
+                .lineLimit(2)
+                .minimumScaleFactor(0.7)
+                .multilineTextAlignment(.center)
         }
-        .frame(height: 54)
+        .font(ClusterFont.headline())
+        .textCase(.uppercase)
+        .tracking(1.2)
+        .foregroundStyle(progress > 0.5 ? .white : ClusterColor.ink)
+        .padding(.horizontal, Space.m)
+        .padding(.vertical, Space.s)
+        // Grows with the text instead of clipping it at large sizes.
+        .frame(maxWidth: .infinity, minHeight: 54)
+        .background {
+            ZStack(alignment: .leading) {
+                ChamferedRectangle(cut: Radius.chamferSmall).fill(ClusterColor.live.opacity(0.18))
+                GeometryReader { proxy in
+                    ChamferedRectangle(cut: Radius.chamferSmall)
+                        .fill(ClusterColor.live)
+                        .frame(width: max(0, proxy.size.width * progress))
+                }
+            }
+        }
         .contentShape(Rectangle())
         .onLongPressGesture(minimumDuration: holdDuration, maximumDistance: 40) {
             fired += 1
