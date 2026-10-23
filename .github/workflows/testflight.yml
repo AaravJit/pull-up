@@ -102,6 +102,18 @@ jobs:
             echo "::error::The ${{ inputs.backend }} environment is missing:${missing%,}. See docs/TESTFLIGHT_SETUP.md."
             exit 1
           fi
+      - name: Check a production build is fit for review
+        if: inputs.backend == 'production'
+        run: |
+          # A production build is the one App Review and the public get, so it
+          # must come from main, must never talk to staging, and must link a
+          # privacy policy (App Store Review Guideline 5.1.1).
+          [ "$GITHUB_REF" = "refs/heads/main" ] || { echo "::error::Production builds run from main, not $GITHUB_REF."; exit 1; }
+          [ "$PROJECT_REF" != "hllfsfbuexuniosdewob" ] || { echo "::error::The production environment points at the staging project."; exit 1; }
+          # Written without "https://" because xcconfig reads "//" as a comment.
+          case "$PRIVACY_POLICY" in
+            ""|*://*|*" "*) echo "::error::Set the production environment's PULLUP_PRIVACY_POLICY variable to the privacy policy URL without https:// (for example yourdomain.example/privacy)."; exit 1 ;;
+          esac
       - uses: maxim-lobanov/setup-xcode@v1
         with:
           xcode-version: latest-stable
