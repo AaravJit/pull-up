@@ -402,7 +402,7 @@ struct DriveRecorderTests {
         let recorder = DriveRecorder(backend: backend, store: store, defaults: UserDefaults(suiteName: suite)!) {
             clock.start = Date()
             let start = clock.start
-            func fix(_ t: Double, north: Double, speed: Double) -> LocationEvent { Self.fix(start, t, north: north, speed: speed) }
+            @MainActor func fix(_ t: Double, north: Double, speed: Double) -> LocationEvent { Self.fix(start, t, north: north, speed: speed) }
             var events = (0..<40).map { fix(Double($0), north: Double($0) * 10, speed: 10) }
             events += (40..<45).map { fix(Double($0), north: 390, speed: 0) }
             events += [.stationary(true)] + middle
