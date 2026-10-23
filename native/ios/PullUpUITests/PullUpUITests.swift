@@ -321,8 +321,9 @@ final class PullUpUITests: XCTestCase {
         snap("36-messages-sent")
 
         app.navigationBars.buttons.element(boundBy: 0).tap()
+        XCTAssertTrue(element(app, "inbox-row-maya.s15").waitForExistence(timeout: 10), "Back returns to the inbox")
         let requests = app.buttons.matching(NSPredicate(format: "label BEGINSWITH[c] 'Requests'")).firstMatch
-        XCTAssertTrue(requests.waitForExistence(timeout: 5))
+        XCTAssertTrue(requests.waitForExistence(timeout: 10), "The inbox offers Requests")
         requests.tap()
         let request = element(app, "inbox-row-sam.ek9")
         XCTAssertTrue(request.waitForExistence(timeout: 5))
