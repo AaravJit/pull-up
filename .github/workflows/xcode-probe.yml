@@ -1,0 +1,31 @@
+name: Xcode probe
+
+# Temporary: lists the Xcode versions and simulator device types on the
+# macos-26 runner, to see whether Xcode 27.1 (iPhone Duo SDK) is available.
+on:
+  push:
+    branches: ["claude/xcode-probe"]
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: macos-26
+    timeout-minutes: 10
+    steps:
+      - name: Installed Xcodes
+        run: |
+          ls -d /Applications/Xcode* || true
+          sw_vers
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+      - name: Selected toolchain and SDKs
+        run: |
+          xcodebuild -version
+          xcodebuild -showsdks | grep -i ios || true
+      - name: Simulator runtimes and device types
+        run: |
+          xcrun simctl list runtimes
+          xcrun simctl list devicetypes | grep -iE "iphone" || true
