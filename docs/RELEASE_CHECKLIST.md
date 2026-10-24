@@ -89,7 +89,7 @@ still to do.
       in Client IDs. The app signs in natively (`signInWithIdToken`), which
       accepts only token audiences listed there. A Services ID and secret
       key are only needed for web sign-in. The deploy workflow's "Report
-      the sign-in settings" step (coming in #22) prints whether the bundle
+      the sign-in settings" step prints whether the bundle
       ID is listed. The app sends a SHA-256 nonce; Supabase verifies it.
 - [ ] APNs: create an APNs auth key (.p8). Add `APNS_KEY_ID`,
       `APNS_TEAM_ID`, `APNS_TOPIC` (the bundle ID) and `APNS_PRIVATE_KEY`

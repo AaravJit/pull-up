@@ -262,9 +262,10 @@ device, and none exists yet.
    `app.pullup.ios` (or `PULLUP_BUNDLE_ID`) in Client IDs. The app signs in
    natively (`signInWithIdToken`), which accepts only token audiences listed
    there. A Services ID and secret key are only needed for web sign-in.
-   **Done 2026-10-23 (owner, dashboard), not verified end to end** (no
-   signed build or device test yet). The deploy workflow's "Report the
-   sign-in settings" step (coming in #22) prints whether the bundle ID is
+   **Done 2026-10-23 (owner, dashboard); on 2026-10-24 the owner confirmed
+   `app.pullup.ios` is in Client IDs. Not verified end to end** (no signed
+   build or device test yet). The deploy workflow's "Report the
+   sign-in settings" step prints whether the bundle ID is
    listed.
 5. Function secrets `PUSH_WEBHOOK_SECRET` and `CRON_SECRET`: add each as a
    secret in the `staging` GitHub environment (`SUPABASE_SETUP.md` §3); the
@@ -294,6 +295,6 @@ device, and none exists yet.
      ran, because the `staging` environment only allows deployments from
      `main`.
 
-   Remaining: merge #22, then run Supabase deploy ▸ `staging` from `main`,
+   #22 merged 2026-10-24 (`1a59010`). Remaining: run Supabase deploy ▸ `staging` from `main`,
    a dry run first, then with apply ticked. The workflow never runs on its
    own; someone with write access to the repository starts it.

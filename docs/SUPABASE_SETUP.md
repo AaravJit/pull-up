@@ -15,8 +15,8 @@ dashboard; none of these has been checked end to end yet.
 open.
 
 The deploy workflow's `staging` environment is set up, but no run has
-completed: until #22 merges, a run from `main` fails connecting to the
-database over IPv6 (step 4). No production project has been created.
+completed yet. #22 (merged 2026-10-24) connects through the IPv4 session
+pooler, and the next run from `main` is its first real test (step 4). No production project has been created.
 
 ## What lives where
 
@@ -78,9 +78,10 @@ Actions ▸ **Supabase deploy** ▸ Run workflow, with "Use workflow from" on
 `main`. A run from another branch is refused before it starts, because
 the environments allow deployments from `main` only (step 3).
 
-Until #22 merges, a run from `main` fails at the migration-list step:
+The first run from `main`, before #22, failed at the migration-list step:
 GitHub's runners have no IPv6, and the direct database host is IPv6-only.
-#22 connects through the IPv4 session pooler instead.
+#22, merged 2026-10-24, connects through the IPv4 session pooler instead;
+no run has used it yet.
 
 1. `staging`, **apply unticked**. This is a dry run: it lists the migrations
    staging doesn't have yet and refuses any that could drop data or that
@@ -118,7 +119,7 @@ These aren't in migrations because they hold per-project values:
   `app.pullup.ios` (or `PULLUP_BUNDLE_ID`) in Client IDs. The app signs in
   natively (`signInWithIdToken`), which accepts only token audiences listed
   there. A Services ID and secret key are only needed for web sign-in. The
-  deploy workflow's "Report the sign-in settings" step (coming in #22)
+  deploy workflow's "Report the sign-in settings" step
   prints whether the bundle ID is listed.
 * **Auth ▸ Sign In / Providers:** "Allow manual linking" on (the database
   refuses links the person didn't start).
