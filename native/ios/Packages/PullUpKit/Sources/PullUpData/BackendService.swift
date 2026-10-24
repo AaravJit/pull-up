@@ -41,6 +41,11 @@ public protocol BackendService: AnyObject, Sendable {
     func updateProfile(_ update: ProfileUpdate) async throws
     func follow(_ id: UserID) async throws
     func unfollow(_ id: UserID) async throws
+    /// People waiting for you to approve their follow, when "Approve new
+    /// followers" is on.
+    func followRequests() async throws -> [ProfileStub]
+    /// Accepting turns the request into a follow; declining deletes it.
+    func answerFollowRequest(from id: UserID, accept: Bool) async throws
     func searchProfiles(_ query: String) async throws -> [ProfileStub]
 
     // Privacy
@@ -363,4 +368,6 @@ public enum TrackEncoding {
 
 public extension BackendService {
     func handleAuthCallback(_ url: URL) async throws {}
+    func followRequests() async throws -> [ProfileStub] { throw BackendError.notConfigured }
+    func answerFollowRequest(from id: UserID, accept: Bool) async throws { throw BackendError.notConfigured }
 }

@@ -2,8 +2,7 @@
 # Checked by supabase/scripts/check-applied-migrations.sh. Record a migration here in its pull
 # request, before deploying it; the deploy workflow refuses migrations that aren't recorded:
 #   (cd supabase/migrations && sha256sum *.sql) > supabase/applied/staging.sha256  (keep these comments)
-# Last deployed 2026-10-18: main plus PRs #4, #6, #7, #10 and #14.
-# Recorded, not yet deployed: 20261020000100 (#6), 20261020000200 (#13), 20261020000300 (leaderboard distance).
+# Last deployed 2026-10-20: main at 41cf1d5 (24 migrations).
 aa88cb0f46014a39f39a720690d03a053f12ebb72160c3e7928a1857707bf65d  20261016000100_core_identity.sql
 e3b2bcf5e705c09d5b17b1366e0e17187b8997c2bbd38a9a57d62670cd716940  20261016000200_garage.sql
 fb987a63893b1a7459e2ea3376dc4519878bb0d7e9a4f45f7d7f2424ab1e6cf5  20261016000300_drives.sql
