@@ -252,7 +252,7 @@ struct DriveSummaryView: View {
             }
             Text(drive.zeroToSixtySeconds == nil
                  ? "No clean run from a standstill to 60 mph was detected."
-                 : "Estimated from phone GPS at about one fix per second\(drive.zeroToSixtyQuality == .consistent ? ", with consistent data" : ""). It is not a measured time and never counts for leaderboards. Performance boards accept only runs recorded at verified closed-course events.")
+                 : "Estimated from phone GPS at about one fix per second\(drive.zeroToSixtyQuality == .consistent ? ", with consistent data" : ""). It is not a measured time and never counts for leaderboards.")
                 .font(ClusterFont.body(.footnote))
                 .foregroundStyle(ClusterColor.inkSecondary)
                 .fixedSize(horizontal: false, vertical: true)

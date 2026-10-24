@@ -5,18 +5,16 @@ import PullUpDomain
 
 /// Rankings. Cars and motorcycles are always ranked separately. Everything
 /// is computed and validated by the server (`public.leaderboard`); the
-/// client only chooses the board.
+/// client only chooses the board. Only driving boards are shown: Pull Up
+/// doesn't rank speed or acceleration.
 struct LeaderboardView: View {
     @Environment(AppModel.self) private var app
     @Environment(\.clusterTheme) private var theme
 
-    enum Board: String, CaseIterable, Identifiable {
-        case driving, performance
-        var id: String { rawValue }
-        var label: String { self == .driving ? "Driving" : "Closed course" }
-    }
+    /// Distance, drives, explorer and community. The server's speed metrics
+    /// are never offered.
+    static let metrics = LeaderboardMetric.allCases.filter { !$0.isPerformance }
 
-    @State private var board: Board = .driving
     @State private var metric: LeaderboardMetric = .distance
     @State private var scope: LeaderboardScope = .global
     @State private var period: LeaderboardPeriod = .month
@@ -26,57 +24,35 @@ struct LeaderboardView: View {
     @State private var isLoading = false
     @State private var error: String?
 
-    private var metrics: [LeaderboardMetric] {
-        LeaderboardMetric.allCases.filter { $0.isPerformance == (board == .performance) }
-    }
-
     private var query: LeaderboardQuery {
         LeaderboardQuery(metric: metric, scope: scope, period: period, vehicleKind: kind)
     }
 
-    private var optedIn: Bool {
-        guard let privacy else { return false }
-        return board == .performance ? privacy.performanceLeaderboardOptIn : privacy.leaderboardOptIn
-    }
+    private var optedIn: Bool { privacy?.leaderboardOptIn ?? false }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: Space.l) {
-                SwitchBank(Board.allCases, selection: $board) { $0.label }
-                if board == .performance { performanceNotice }
                 filters
                 optInStrip
                 rankings
+                Text("Pull Up doesn't rank speed or acceleration.")
+                    .font(ClusterFont.body(.caption))
+                    .foregroundStyle(ClusterColor.inkTertiary)
             }
             .padding(.horizontal, Space.gutter)
             .padding(.vertical, Space.l)
         }
         .canvasBackground()
         .clusterNavigation("Leaderboards")
-        .onChange(of: board) { _, _ in metric = metrics.first ?? .distance }
         .task(id: query) { await load() }
         .task { privacy = try? await app.backend.privacySettings() }
         .accessibilityIdentifier("leaderboards")
     }
 
-    private var performanceNotice: some View {
-        VStack(alignment: .leading, spacing: Space.s) {
-            Label("No street racing", systemImage: "exclamationmark.octagon")
-                .font(ClusterFont.headline())
-                .foregroundStyle(ClusterColor.caution)
-            Text("These boards only accept runs recorded at verified closed-course events (track days, autocross) by attendees who RSVP'd. Speeds from public roads are never ranked, whatever the app measured.")
-                .font(ClusterFont.body(.footnote))
-                .foregroundStyle(ClusterColor.inkSecondary)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(Space.m)
-        .plate(stroke: ClusterColor.caution.opacity(0.6))
-    }
-
     private var filters: some View {
         VStack(alignment: .leading, spacing: Space.m) {
-            SwitchBank(metrics, selection: $metric) { $0.label }
+            SwitchBank(Self.metrics, selection: $metric) { $0.label }
             SwitchBank(VehicleKind.allCases, selection: $kind) { $0.pluralLabel }
             HStack(spacing: Space.m) {
                 Menu {
@@ -113,9 +89,7 @@ struct LeaderboardView: View {
     private var optInStrip: some View {
         if privacy != nil, !optedIn {
             HStack(alignment: .top, spacing: Space.m) {
-                Text(board == .performance
-                     ? "You're not on performance boards. Joining lists your verified closed-course runs with your username and vehicle."
-                     : "You're not on leaderboards. Joining shows your username, vehicle and totals to everyone who can see the board.")
+                Text("You're not on leaderboards. Joining shows your username, vehicle and totals to everyone who can see the board.")
                     .font(ClusterFont.body(.footnote))
                     .foregroundStyle(ClusterColor.inkSecondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -135,10 +109,8 @@ struct LeaderboardView: View {
             ProgressView().frame(maxWidth: .infinity, minHeight: 200)
         } else if entries.isEmpty {
             EmptyState(
-                title: board == .performance ? "No verified runs yet" : "No rankings yet",
-                message: board == .performance
-                    ? "When a verified organiser runs a closed-course event, attendees' validated runs appear here."
-                    : "Nobody in this scope has opted in for this period.",
+                title: "No rankings yet",
+                message: "Nobody in this scope has opted in for this period.",
                 style: kind == .car ? .coupe : .sport
             )
         } else {
@@ -156,16 +128,13 @@ struct LeaderboardView: View {
         case .drives: "drives"
         case .exploration: "areas"
         case .community: "meets"
-        case .zeroToSixty: "s"
-        case .topSpeed: theme.unit.label
+        case .zeroToSixty, .topSpeed: "" // never offered
         }
     }
 
     private func formatted(_ value: Double) -> String {
         switch metric {
         case .distance: Format.distance(value, theme.unit)
-        case .zeroToSixty: Format.zeroToSixty(value)
-        case .topSpeed: Format.speed(value, theme.unit)
         default: Int(value).formatted()
         }
     }
@@ -183,7 +152,7 @@ struct LeaderboardView: View {
 
     private func optIn() async {
         guard var settings = privacy else { return }
-        if board == .performance { settings.performanceLeaderboardOptIn = true } else { settings.leaderboardOptIn = true }
+        settings.leaderboardOptIn = true
         do {
             try await app.backend.updatePrivacySettings(settings)
             privacy = settings
