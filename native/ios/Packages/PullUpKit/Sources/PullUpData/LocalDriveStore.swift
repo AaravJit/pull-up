@@ -1,5 +1,6 @@
 import Foundation
 import PullUpDomain
+import Supabase
 
 /// A drive on this device: either still recording (crash-recovery copy) or
 /// finished and waiting to upload. Raw samples never leave the device except
@@ -22,6 +23,10 @@ public struct DriveDraft: Codable, Sendable, Identifiable, Equatable {
     public var stationaryPauses: [Date]?
     public var title: String
     public var audience: Audience
+    /// When the server refused this drive for good (its data, not the
+    /// connection). It's then kept but not retried on its own. Optional so
+    /// drafts saved by older builds still decode.
+    public var rejectedAt: Date?
 
     public init(id: UUID = UUID(), ownerID: UserID?, vehicleID: UUID?, startedAt: Date, endedAt: Date? = nil,
                 samples: [LocationSample] = [], title: String = "", audience: Audience = .private) {
@@ -36,6 +41,27 @@ public struct DriveDraft: Codable, Sendable, Identifiable, Equatable {
     }
 
     public var isFinished: Bool { endedAt != nil }
+    public var isRejected: Bool { rejectedAt != nil }
+
+    /// Whether the server refused an upload for good, so sending the same
+    /// drive again can never work: Postgres data exceptions (class 22, such
+    /// as a track that's too large) and integrity violations (class 23, such
+    /// as the distance bounds check). A duplicate key (23505) only means an
+    /// earlier attempt got there first, so that's retried like a lost
+    /// connection.
+    public static func isPermanentRejection(_ error: any Error) -> Bool {
+        guard let code = (error as? any SQLStateError)?.sqlState, code != "23505" else { return false }
+        return code.hasPrefix("22") || code.hasPrefix("23")
+    }
+}
+
+/// A server error that carries a Postgres error code (SQLSTATE).
+public protocol SQLStateError: Error {
+    var sqlState: String? { get }
+}
+
+extension PostgrestError: SQLStateError {
+    public var sqlState: String? { code }
 }
 
 /// Persists drafts as one JSON file each. Writes are atomic and the files use
@@ -94,8 +120,21 @@ public actor LocalDriveStore {
             .sorted { $0.startedAt < $1.startedAt }
     }
 
-    /// Finished drives not yet confirmed by the server.
-    public func pendingUploads() -> [DriveDraft] { all().filter(\.isFinished) }
+    /// Finished drives not yet confirmed by the server, other than those it
+    /// refused.
+    public func pendingUploads() -> [DriveDraft] { all().filter { $0.isFinished && !$0.isRejected } }
+
+    /// Finished drives the server refused. Kept until the person deletes
+    /// them or asks to try again.
+    public func rejectedUploads() -> [DriveDraft] { all().filter { $0.isFinished && $0.isRejected } }
+
+    /// Marks a finished drive as refused by the server, or clears the mark
+    /// (`nil`) so it's retried. Does nothing if the drive is gone.
+    public func markRejected(_ id: UUID, at date: Date?) throws {
+        guard var draft = load(id), draft.isFinished else { return }
+        draft.rejectedAt = date
+        try save(draft)
+    }
 
     /// A recording that never finished, e.g. the app was killed mid-drive.
     public func interrupted() -> DriveDraft? { all().last { !$0.isFinished } }

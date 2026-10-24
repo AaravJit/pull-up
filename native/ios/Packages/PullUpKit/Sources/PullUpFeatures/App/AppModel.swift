@@ -247,6 +247,13 @@ public final class AppModel {
         await refreshMessages()
     }
 
+    /// Back in the foreground: drives that couldn't upload earlier (no
+    /// signal, or the app closed mid-upload) are sent again.
+    func foregrounded() async {
+        guard case .signedIn = phase else { return }
+        await recorder.syncPending()
+    }
+
     /// Called by onboarding once the server has marked it complete.
     func finishOnboarding() async {
         guard case let .onboarding(user) = phase else { return }
@@ -401,6 +408,7 @@ final class UnconfiguredBackend: BackendService, Sendable {
     func unreadMessages() async throws -> UnreadMessages { throw BackendError.notConfigured }
     func sharedPreview(_ ref: SharedRef) async throws -> SharedPreview { throw BackendError.notConfigured }
     func report(user: UserID, reason: ReportReason, details: String, message: UUID?) async throws { throw BackendError.notConfigured }
+    func report(_ content: ReportedContent, author: UserID, reason: ReportReason, note: String) async throws { throw BackendError.notConfigured }
     func block(_ user: UserID) async throws { throw BackendError.notConfigured }
     func messagingChanges() -> AsyncStream<MessagingChange> { AsyncStream { $0.finish() } }
     func entitlement() async throws -> Entitlement { throw BackendError.notConfigured }

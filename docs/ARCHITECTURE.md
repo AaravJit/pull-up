@@ -15,9 +15,13 @@ native/ios/
   Packages/PullUpKit/      Everything else, as a local Swift package
   scripts/                 CI helpers (simulator picker, readable xcodebuild output)
 supabase/
-  migrations/              Forward migrations (7 from Phase 1, 5 from Phase 2)
+  migrations/              Forward migrations (24: 8 from Phase 1, 5 from Phase 2, 11 from Phase 3)
   rollback/                Matching down migrations, destructive steps guarded
-  tests/                   pgTAP suites: RLS, privacy, accounts, messages, Pro, push, security
+  tests/                   15 pgTAP files (001–015): RLS, privacy, accounts, messages, Pro, push,
+                           security, sign-up guard, push guard, drive privacy, notification
+                           limits, storage moves, open findings, distance bounds, leaderboard
+                           distance, follow requests; api/ has the two-account API tests.
+                           Staging has run 001–014 (2026-10-20), not 015
   functions/               Edge functions: delete-account, send-push (APNs), dm-retention,
                            verify-subscription, app-store-notifications; _shared/ has Deno tests
 ```
@@ -151,7 +155,7 @@ security boundary.
 ## Accounts and sign-in
 
 * Sign in with Apple is the main path; email sign-in stays behind "Other
-  sign-in options" for review and demo accounts. A new Apple account gets a
+  ways to sign in" for review and demo accounts. A new Apple account gets a
   placeholder username and goes through onboarding, which claims a real one
   (`claim_username`: reserved and staff-like names refused, case-insensitive
   uniqueness).

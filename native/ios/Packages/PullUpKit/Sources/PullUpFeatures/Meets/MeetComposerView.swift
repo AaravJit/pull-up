@@ -57,7 +57,7 @@ struct MeetComposerView: View {
                     FieldRow(label: "Capacity", text: $capacityText, prompt: "No limit", keyboard: .numberPad)
                     AudiencePicker(title: "Who can see this meet", selection: $audience, allowed: [.public, .friends])
                     if kind == .trackDay {
-                        NoticeStrip("Performance runs from track days count only when the host is a verified organiser. Street events never feed performance leaderboards.")
+                        NoticeStrip("Closed-course events only. Pull Up doesn't rank speed or acceleration.")
                     }
                     if let error { ErrorLine(message: error) }
                 }
