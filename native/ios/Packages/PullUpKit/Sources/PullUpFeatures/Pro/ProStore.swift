@@ -41,8 +41,10 @@ public final class ProStore {
         if store is DemoStoreClient { return true }
         return Self.offered(from: Bundle.main.object(forInfoDictionaryKey: "PullUpProOffered") as? String)
     }
-    /// Show Pro UI: on sale, or this person already has Pro (keep honouring it).
-    public var showsEntryPoints: Bool { isOffered || isPro }
+    /// Show Pro UI: on sale, or this person already has Pro (keep honouring
+    /// it). The cached flag covers a launch without a connection, when the
+    /// entitlement can't be fetched yet; sign-out clears it.
+    public var showsEntryPoints: Bool { isOffered || isPro || theme.proUnlocked }
 
     /// "YES", "1" or "true"; anything else, including an unset build
     /// setting, means Pro isn't offered.

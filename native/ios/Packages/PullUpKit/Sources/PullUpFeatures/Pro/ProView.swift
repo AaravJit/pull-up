@@ -216,7 +216,9 @@ enum ProLinks {
     static func privacyURL(from value: String?) -> URL? {
         guard let value = value?.trimmingCharacters(in: .whitespaces), !value.isEmpty, !value.hasPrefix("$(") else { return nil }
         let url = URL(string: value.contains("://") ? value : "https://\(value)")
-        return url?.scheme == "https" && url?.host() != nil ? url : nil
+        // A dotted host: "https://pullup.app/x" left in an xcconfig reads as
+        // "https:" ("//" starts a comment there) and would become "https://https:".
+        return url?.scheme == "https" && (url?.host()?.contains(".") ?? false) ? url : nil
     }
 }
 
