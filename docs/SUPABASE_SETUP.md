@@ -83,6 +83,15 @@ workflow only once it is on `main`, so this appears after PR #2 is merged.)
 3. `production`: dry run first, then apply. It waits for your approval and
    runs no tests that write data.
 
+The workflow reaches the database through the project's session pooler
+(Supavisor, port 5432), because GitHub's runners have no IPv6 and the
+direct host `db.<ref>.supabase.co` is IPv6-only on projects without the
+paid IPv4 add-on. It reads the pooler address from the Management API with
+`SUPABASE_ACCESS_TOKEN`, checks the host and user belong to the project,
+and requires TLS for the migration commands. The pgTAP run gets only the
+host, user and password from the CLI, so it uses libpq's default, which
+tries TLS first. No IPv4 add-on is needed.
+
 ## 5. Dashboard settings per project (**You**)
 
 These aren't in migrations because they hold per-project values:
