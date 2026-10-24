@@ -179,7 +179,7 @@ select throws_ok(
 -- 38–40: leaderboards ---------------------------------------------------------
 select pg_temp.act_as('11111111-1111-1111-1111-111111111111');
 select is((select count(*)::int from public.leaderboard('distance', 'global', 'all_time')), 0, 'no entries while nobody has opted in');
-update public.privacy_settings set leaderboard_opt_in = true, performance_leaderboard_opt_in = true;
+update public.privacy_settings set leaderboard_opt_in = true;
 select ok((select value > 4000 from public.leaderboard('distance', 'global', 'all_time') where is_me), 'opted-in validated distance is ranked');
 select is((select count(*)::int from public.leaderboard('top_speed', 'global', 'all_time')), 0, 'road drives never reach performance boards');
 

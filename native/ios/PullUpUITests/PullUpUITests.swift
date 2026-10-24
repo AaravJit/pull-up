@@ -141,9 +141,8 @@ final class PullUpUITests: XCTestCase {
         XCTAssertTrue(element(app, "leaderboards").waitForExistence(timeout: 5))
         settle(1.5)
         snap("11-leaderboards")
-        app.buttons.matching(NSPredicate(format: "label ==[c] %@", "Closed course")).firstMatch.tap()
-        settle()
-        snap("12-leaderboards-closed-course")
+        XCTAssertFalse(app.buttons.matching(NSPredicate(format: "label ==[c] %@", "Closed course")).firstMatch.exists, "No speed boards")
+        XCTAssertFalse(app.buttons.matching(NSPredicate(format: "label ==[c] %@", "Top speed")).firstMatch.exists, "No speed boards")
 
         tab(app, "Map")
         settle(4)
@@ -180,6 +179,71 @@ final class PullUpUITests: XCTestCase {
         settle()
         XCTAssertTrue(element(app, "rsvp-show-me").waitForExistence(timeout: 5), "Going should offer the opt-in attendee toggle")
         snap("20-meet-rsvp")
+    }
+
+    /// Posts by others can be reported and their author blocked (their posts
+    /// leave the feed at once); your own posts can be deleted. Profiles and
+    /// meets by others offer Report and Block too.
+    func testFeedModeration() throws {
+        let app = launch(["-PullUpTab", "feed"])
+        let gone = NSPredicate(format: "exists == false")
+
+        let mayaOptions = app.buttons["post-options-maya.s15"]
+        XCTAssertTrue(mayaOptions.waitForExistence(timeout: 10))
+        mayaOptions.tap()
+        let report = app.buttons["Report post"]
+        XCTAssertTrue(report.waitForExistence(timeout: 5))
+        settle()
+        snap("58-post-options")
+        report.tap()
+        let send = app.buttons["send-report"]
+        XCTAssertTrue(send.waitForExistence(timeout: 5))
+        XCTAssertFalse(send.isEnabled, "A reason comes first")
+        app.buttons["Spam"].tap()
+        settle()
+        snap("59-report-post")
+        send.tap()
+        XCTAssertTrue(app.staticTexts["Thanks for reporting"].waitForExistence(timeout: 5))
+        app.buttons["Done"].tap()
+        settle()
+
+        mayaOptions.tap()
+        let blockItem = app.buttons["Block @maya.s15"]
+        XCTAssertTrue(blockItem.waitForExistence(timeout: 5))
+        blockItem.tap()
+        let confirmBlock = app.buttons.matching(NSPredicate(format: "label ==[c] %@", "Block")).firstMatch
+        XCTAssertTrue(confirmBlock.waitForExistence(timeout: 5))
+        confirmBlock.tap()
+        expectation(for: gone, evaluatedWith: element(app, "post-author-maya.s15"))
+        waitForExpectations(timeout: 5)
+
+        let mine = app.buttons["post-options-you"]
+        XCTAssertTrue(mine.waitForExistence(timeout: 5))
+        mine.tap()
+        XCTAssertFalse(app.buttons["Report post"].exists, "Your own post offers Delete, not Report")
+        let deleteItem = app.buttons["Delete post"]
+        XCTAssertTrue(deleteItem.waitForExistence(timeout: 5))
+        deleteItem.tap()
+        let confirmDelete = app.buttons.matching(NSPredicate(format: "label ==[c] %@", "Delete")).firstMatch
+        XCTAssertTrue(confirmDelete.waitForExistence(timeout: 5))
+        confirmDelete.tap()
+        expectation(for: gone, evaluatedWith: element(app, "post-author-you"))
+        waitForExpectations(timeout: 5)
+        settle()
+        snap("60-feed-after-moderation")
+
+        let kenji = element(app, "post-author-kenji.dc2")
+        for _ in 0..<4 where !kenji.isHittable { app.swipeUp() }
+        kenji.tap()
+        XCTAssertTrue(app.buttons["profile-options"].waitForExistence(timeout: 5), "Someone else's profile offers Report and Block")
+        settle()
+        snap("61-profile-options")
+
+        tab(app, "Meets")
+        let meet = element(app, "meet-row-Sac Nights")
+        XCTAssertTrue(meet.waitForExistence(timeout: 5))
+        meet.tap()
+        XCTAssertTrue(app.buttons["meet-options"].waitForExistence(timeout: 5), "A meet by someone else can be reported")
     }
 
     func testPickerCanBeDismissedWithoutRecording() throws {
@@ -321,8 +385,9 @@ final class PullUpUITests: XCTestCase {
         snap("36-messages-sent")
 
         app.navigationBars.buttons.element(boundBy: 0).tap()
+        XCTAssertTrue(element(app, "inbox-row-maya.s15").waitForExistence(timeout: 10), "Back returns to the inbox")
         let requests = app.buttons.matching(NSPredicate(format: "label BEGINSWITH[c] 'Requests'")).firstMatch
-        XCTAssertTrue(requests.waitForExistence(timeout: 5))
+        XCTAssertTrue(requests.waitForExistence(timeout: 10), "The inbox offers Requests")
         requests.tap()
         let request = element(app, "inbox-row-sam.ek9")
         XCTAssertTrue(request.waitForExistence(timeout: 5))
@@ -334,11 +399,14 @@ final class PullUpUITests: XCTestCase {
         settle()
         snap("38-messages-request")
 
+        // Wait for each pop to finish: a Back tap during the previous pop's
+        // animation is dropped.
         app.navigationBars.buttons.element(boundBy: 0).tap()
-        settle(0.5)
+        XCTAssertTrue(element(app, "inbox-row-sam.ek9").waitForExistence(timeout: 10), "Back returns to Requests")
+        settle()
         app.navigationBars.buttons.element(boundBy: 0).tap()
         let author = element(app, "post-author-maya.s15")
-        XCTAssertTrue(author.waitForExistence(timeout: 5))
+        XCTAssertTrue(author.waitForExistence(timeout: 10), "Back from the inbox returns to the feed")
         author.tap()
         XCTAssertTrue(element(app, "message-profile").waitForExistence(timeout: 5))
         let vehicle = element(app, "glance-Silvia")

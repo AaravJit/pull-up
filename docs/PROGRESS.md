@@ -1,27 +1,40 @@
 # Progress
 
-Native iOS rebuild of Pull Up. Phase 1 is on branch `claude/native-ios-85igsc`
-(PR #2); Phase 2 is on `claude/pull-up-phase-2` (PR #3, stacked on PR #2).
+Native iOS rebuild of Pull Up. Phases 1 to 3 are merged into `main`
+(Phase 1 and 2 through PR #2 and PR #3, Phase 3 through PRs #4 to #21).
 The Expo app at the repository root is unchanged.
 
 ## Phase 3
 
-Plan and milestone order: `PHASE3_PLAN.md`. As in Phase 2, nothing has run
-on a real device, a hosted Supabase project, Apple's servers or eBay unless
-a row says so.
+Plan and milestone order: `PHASE3_PLAN.md`. Nothing has run on a real
+device, Apple's servers or eBay unless a row says so. The hosted staging
+project has (`STAGING_DEPLOYMENT.md`), see the Staging row.
 Device checks: `DEVICE_TEST_PLAN.md`, failures reported with the **Device
 test result** issue template. No physical-device test has been run yet.
 
 | Milestone | Work | Status | Evidence / remaining action |
 | --- | --- | --- | --- |
 | M1 | Two-account API tests over the full local stack (auth, REST, realtime, storage, edge functions) | Working (local stack in CI) | `supabase/tests/api/two_accounts_test.ts`, 13 areas, green in backend CI on `f3d9d18` |
-| M1 | Staging and production deploy workflow with a destructive-migration guard | Written, not run | Needs the hosted projects and GitHub environments (`SUPABASE_SETUP.md` steps 1–3); hand-run workflows appear once on `main` |
-| M2 | Public email and phone sign-ups refused on the server (Apple only) | Working (local stack in CI) | Auth hook, migration `20261018000100`; pgTAP `007`; API test "nobody can register with email from outside". Enable the hook on hosted projects (`SUPABASE_SETUP.md` step 5) |
-| M2 | Live Sign in with Apple | Needs Apple | Not run: needs the Services ID, key and a device |
+| M1 | Staging and production deploy workflow with a destructive-migration guard | Set up for staging, no run completed | On `main`; runs only when started by hand. The `staging` GitHub environment has `SUPABASE_PROJECT_REF` (variable), `SUPABASE_ACCESS_TOKEN` and `SUPABASE_DB_PASSWORD` (secrets). First run (from `main`, `bc124d8`) failed at the migration-list step: GitHub's runners have no IPv6 and the direct database host is IPv6-only; PR #22 connects through the IPv4 session pooler. Second run (from #22's branch, 2026-10-24) was refused before any step ran: `staging` only allows deployments from `main`. #22 merged 2026-10-24. Remaining: run Supabase deploy ▸ `staging` from `main`, a dry run first, then with apply ticked (`STAGING_DEPLOYMENT.md` step 7). No production project exists yet |
+| M1 | Hosted staging (`pull-up-staging`) | Deployed, through the Supabase connector | 24 migrations (all on `main`) applied through the connector, last on 2026-10-20; 5 edge functions, 4 buckets; pgTAP files 001–014, 262 of 262 (2026-10-20), 015 not run there yet; two-account API checks 133 of 133 (2026-10-18). Dashboard: sign-up hook, redirect URL and Apple provider done 2026-10-23 (owner), not verified end to end; other steps still open: `STAGING_DEPLOYMENT.md` |
+| M2 | Public email and phone sign-ups refused on the server (Apple only) | Working (local stack in CI) / enabled on staging, not verified end to end | Auth hook, migration `20261018000100`; pgTAP `007`; API test "nobody can register with email from outside". Hook enabled on staging 2026-10-23 (owner, dashboard). `public.hook_before_user_created(jsonb)` exists there and only `supabase_auth_admin` can execute it (checked 2026-10-24 by SQL). That a public sign-up is refused there hasn't been checked yet (`STAGING_DEPLOYMENT.md` step 1) |
+| M2 | Live Sign in with Apple | Needs a signed build and a device | Apple provider configured on staging 2026-10-23 (owner, dashboard), not verified end to end. Native sign-in needs the bundle ID in the provider's Client IDs (`SUPABASE_SETUP.md` step 5); the owner confirmed it is there on 2026-10-24 |
 | M5 | Per-account rate limit on `verify-subscription` (10 a minute, 60 an hour) | Working (local stack in CI) | Migration `20261018000200`; API test calls it 12 times. Pro state comes only from the server's entitlement; local StoreKit state never grants it |
-| M5 | Pro prices ($3.99 a month, $29.99 a year) | Proposed | Not set up in App Store Connect; no products exist |
+| M5 | Pro prices ($3.99 a month, $29.99 a year) | Proposed; Pro deferred | Pro is hidden unless `PULLUP_PRO_OFFERED = YES` or the account already has Pro (#20). Not set up in App Store Connect; no products exist |
 | M4 | Messages recover after going offline: channel rebuilt with backoff, chats and inbox reload on reconnect and on returning to the foreground | Working (local stack in CI) / app side unverified on a device | API test takes a client offline and checks the reload and resumed delivery; `DEVICE_TEST_PLAN.md` D4.3–D4.4 |
 | M1 | Build label for the staging backend | Working | Settings ▸ About shows "Pull Up server (staging)" when `PULLUP_BACKEND_ENVIRONMENT = staging` |
+
+### TestFlight (M9)
+
+Each stage is tracked on its own. `TESTFLIGHT_SETUP.md` has the steps.
+
+| Stage | Status | Evidence / remaining action |
+| --- | --- | --- |
+| Unsigned Release archive | Passing | CI builds it on pull requests that touch the app |
+| Signed archive | Done 2026-10-24 | Pull Up 0.1.0 (233), `main` at `5e494b9`, staging backend, [run 40077637603](https://github.com/AaravJit/pull-up/actions/runs/40077637603): archive with Apple cloud signing and App Store export succeeded |
+| Upload accepted by App Store Connect | Done 2026-10-24 | Same run: altool reported "UPLOAD SUCCEEDED with no errors" (delivery e7fd6f3e-0604-4092-b073-2d4a02c11e5c) |
+| App Store Connect processing finished | Not confirmed | Check App Store Connect ▸ TestFlight ▸ iOS Builds for 0.1.0 (233) |
+| Installed on a device from TestFlight | Not done | Needs a processed build |
 
 ### Physical-device tests passed
 
@@ -36,13 +49,15 @@ None yet.
 ## Phase 2
 
 Plan: `PHASE2_PLAN.md`. Status uses the legend below. Nothing in Phase 2 has
-run on a real device, against a hosted Supabase project, against Apple's
-servers or with eBay; those steps are in `RELEASE_CHECKLIST.md` §4a and §6.
+run on a real device, against Apple's servers or with eBay; those steps are
+in `RELEASE_CHECKLIST.md` §4a and §6. Its migrations and functions are on
+the hosted staging project, where their pgTAP files and the two-account API
+checks passed (`STAGING_DEPLOYMENT.md`).
 
 | Milestone | Feature | Status | Evidence / remaining action |
 | --- | --- | --- | --- |
-| M1 | Sign in with Apple first, onboarding (username, photo, privacy), email behind "Other options" | Working (demo data) / needs Apple | UI tests `testSignedOutShowsAuth`, `testNewAccountOnboarding` (screenshots 28–33); real Apple sign-in needs a device |
-| M1 | No account merge on matching email; explicit linking only | Working (backend) | pgTAP `002_accounts.sql`; confirm the trigger on the hosted project (checklist §1) |
+| M1 | Sign in with Apple first, onboarding (username, photo, privacy), email behind "Other ways to sign in" | Working (demo data) / needs Apple | UI tests `testSignedOutShowsAuth`, `testNewAccountOnboarding` (screenshots 28–33); real Apple sign-in needs a device |
+| M1 | No account merge on matching email; explicit linking only | Working (backend) | pgTAP `002_accounts.sql`; trigger confirmed installed on staging (`STAGING_DEPLOYMENT.md`), production pending (checklist §1) |
 | M1 | Apple revocation sign-out, deletion with token revocation | Needs Apple | `APPLE_*` secrets (checklist §4a) |
 | M2 | One-to-one messages: inbox, requests, read receipts, photos, reactions, unsend, report, block, sharing | Working (demo data), rules enforced in backend | pgTAP `003_direct_messages.sql` (44); UI `testDirectMessages` (34–40). Realtime not yet run against a live server |
 | M3 | Pull Up Pro paywall, Ring face, Papaya/Acid accents, speed-band analytics, GPX/CSV export | Working (demo store, no payment) | `ProFlowTests`, UI `testProSubscription` (41–44) |
@@ -50,7 +65,7 @@ servers or with eBay; those steps are in `RELEASE_CHECKLIST.md` §4a and §6.
 | M3 | Server-verified entitlements | Working (backend, Apple stubbed) | pgTAP `004` (20), Deno tests; never called Apple's real API |
 | M4 | Parts finder: vehicle-aware eBay search links, no listings | Working | `PartsTests`, UI `testPartsFinderBuildsAVehicleSearch` (45). No eBay API access; listings need eBay approval |
 | M5 | Per-category push preferences, previews off by default, token rotation, push-tap routing | Working (backend, demo UI) / needs Apple for delivery | pgTAP `005` (24), Deno `push_test.ts`, `PushFlowTests`, UI tests (46–47) |
-| M6 | Security assessment | Done for the local stack | `SECURITY_REPORT.md`; pgTAP `006` (20); 4 database fixes |
+| M6 | Security assessment | Done for the local stack and staging | `SECURITY_REPORT.md`; pgTAP `006` (20); 4 database fixes; Phase 3 re-check fixes applied to staging, pgTAP passed there |
 | M7 | Phase 2 screens in dark mode and Accessibility L | Working | UI tours (48–57) |
 
 Phase 2 CI, green on `99f9b66`: [iOS run 39](https://github.com/AaravJit/pull-up/actions/runs/39005443175)
@@ -82,8 +97,9 @@ Legend:
   strip.
 * **Needs backend**: the client and the server code both exist and the
   server side is tested, but it only runs against a live Supabase project
-  once `Secrets.xcconfig` is filled in (see `RELEASE_CHECKLIST.md`). Not yet
-  run against a hosted project.
+  once `Secrets.xcconfig` is filled in (see `RELEASE_CHECKLIST.md`). The
+  server side is on hosted staging and tested there through its APIs
+  (`STAGING_DEPLOYMENT.md`); no app build has used it yet.
 * **Needs device / Apple**: can't be verified in a simulator, or needs an
   entitlement or key only the Apple Developer account holder can create.
 
@@ -111,9 +127,9 @@ Legend:
 | Profile | Layouts, featured vehicle, accent, follow/unfollow, editor | Demo data | Screenshot 15 |
 | Settings | Appearance, accent, speedometer, units, dashboard tiles | Working (device-local) | Screenshots 16, 23–26 |
 | Settings | Privacy toggles, privacy zones | Demo data in UI, enforced in backend | pgTAP checks zone redaction |
-| Account | Email sign-in/up, email confirmation link | Needs backend | `pullup://auth-callback` handled |
-| Account | Sign in with Apple | Needs Apple | Services ID + key in Supabase (checklist §3) |
-| Account | Delete account (server side) | Needs backend | `delete-account` edge function, type-checked in CI |
+| Account | Email sign-in (review and staff accounts; the app has no email sign-up), email confirmation link | Needs backend | `pullup://auth-callback` handled; added as a redirect URL on staging 2026-10-23, not verified end to end |
+| Account | Sign in with Apple | Needs Apple | Bundle ID in Supabase ▸ Auth ▸ Apple ▸ Client IDs (checklist §3); provider configured on staging 2026-10-23, not verified end to end |
+| Account | Delete account (server side) | Needs backend | `delete-account` edge function; exercised on staging through the API (5 deletion and 2 clean-up checks, 2026-10-18) |
 | Notifications | In-app list and unread badge | Demo data | Bell on Drive tab |
 | Notifications | APNs push | Needs Apple | `send-push` function; APNs key + webhook (checklist §1, §3) |
 | CarPlay | Driving-task scene: status, choose vehicle, start, stop | Needs Apple | Compiles in CI; entitlement request (`CARPLAY.md`) |
@@ -159,7 +175,10 @@ Still open:
 
 ## Known gaps
 
-* Not yet run against a hosted Supabase project; all server behaviour is
-  verified on the local Supabase stack in CI.
+* No production Supabase project yet. On staging, some dashboard steps in
+  `STAGING_DEPLOYMENT.md` are still open: manual identity linking, the
+  function secrets, the push webhook and the daily DM clean-up job (they
+  need the `pg_net` and `pg_cron` extensions), and a completed deploy
+  workflow run.
 * No snapshot tests; visual review is done from CI screenshots.
 * App icon is a generated placeholder gauge.

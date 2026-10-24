@@ -35,6 +35,13 @@ struct ProOfferedTests {
         #expect(pro.showsEntryPoints, "people who already have Pro keep seeing it")
     }
 
+    @Test func cachedProKeepsEntryPointsBeforeTheServerAnswers() {
+        theme.proUnlocked = true
+        let pro = ProStore(store: FakeStore(), backend: backend, theme: theme)
+        #expect(!pro.isPro, "no entitlement fetched yet, as on a launch without a connection")
+        #expect(pro.showsEntryPoints)
+    }
+
     @Test func demoModeAlwaysOffersPro() async {
         let pro = ProStore(store: DemoStoreClient(delay: .zero), backend: backend, theme: theme)
         await pro.start(account: DemoSeed.meID)

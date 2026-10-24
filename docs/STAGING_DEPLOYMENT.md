@@ -2,8 +2,9 @@
 
 First deployment of the Pull Up backend to the hosted staging project,
 2026-10-18 (UTC). Done through the Supabase connector, not the
-`Supabase deploy` workflow: the repository has no Supabase access token or
-database password yet (`SUPABASE_SETUP.md` §2–3). The workflow can take over
+`Supabase deploy` workflow: the repository had no Supabase access token or
+database password then (`SUPABASE_SETUP.md` §2–3; it has them now, but no
+workflow run has completed, see step 7 below). The workflow can take over
 from here, because every migration was recorded under its own version in
 `supabase_migrations.schema_migrations`, exactly as `supabase db push` does.
 
@@ -41,9 +42,9 @@ commit and its MD5 checked against the reviewed file before it ran.
 | 20261018000400 – 000600 drive privacy, notification limits, storage moves | PR #14, M10 |
 | 20261018000700 explicit API grants | this PR (#4, M1), new |
 
-Staging therefore runs code that isn't on `main` yet. If one of those PRs
-changes a migration before it merges, staging has to be re-applied from the
-new version.
+On 2026-10-18 staging therefore ran code that wasn't on `main` yet.
+Superseded: all of those PRs have since merged, and after the third
+deployment (below) staging has 24 migrations, all on `main`.
 
 After applying, a fingerprint of every function, policy, column, trigger,
 bucket and grant in `public`, `private` and `storage` matched the same
@@ -110,11 +111,12 @@ had 0 auth users and 0 stored files.
 **Not covered here:**
 
 * Realtime delivery of messages. It needs a WebSocket client; the Deno suite
-  covers it and runs against staging from the deploy workflow once the
-  repository has staging credentials.
+  covers it and runs against staging from the deploy workflow once a run
+  there completes (step 7 below).
 * "Nobody can register with email from outside". The before-user-created hook
-  isn't enabled on staging yet (dashboard step below), and a public sign-up
-  attempt would have sent a confirmation email.
+  wasn't enabled on staging then, and a public sign-up attempt would have
+  sent a confirmation email. The owner enabled the hook on 2026-10-23
+  (step 1 below); this check hasn't been run on staging since.
 * Sign in with Apple, APNs delivery, App Store purchases: no Apple
   credentials exist yet.
 
@@ -167,7 +169,8 @@ one transaction that always rolled back, the test extensions included.
   Neither could be called from here; both answer 503 until their secrets
   exist, so their new code paths haven't run on staging.
 * Every migration on staging now matches the repository byte for byte
-  (MD5 of all 21 compared with the merged branches).
+  (MD5 of all 21 compared with the merged branches; 24 after the third
+  deployment below).
   `supabase/applied/staging.sha256` records them, and backend CI refuses a
   change to any of them or a new migration numbered below the newest one
   applied (`supabase/scripts/check-applied-migrations.sh`).
@@ -181,9 +184,13 @@ from this session. Files 004, 009 and 010, check 22 of 012, and the
 two-account API suite (which has to remove its accounts afterwards) need
 that. All of them pass locally on a copy with staging's default privileges,
 and they ran on staging in the first deployment except 012. They run in full
-from the `Supabase deploy` workflow once the repository's `staging`
-environment has `SUPABASE_ACCESS_TOKEN` and `SUPABASE_DB_PASSWORD` and the
-workflow is on `main`.
+from the `Supabase deploy` workflow (on `main`, started by hand). The
+`staging` environment has its credentials now, but no run has completed yet
+(step 7 below).
+
+Superseded for pgTAP: the third deployment below ran all 14 files on
+staging, 004, 009, 010 and check 22 of 012 included. Only the two-account
+API suite is still to be rerun.
 
 Advisors after: no security errors; `rls_auto_enable` no longer listed.
 
@@ -204,10 +211,11 @@ under its own version. Staging now has 24 migrations, all on `main`, and
 none from open pull requests. Staging held no users, drives or files, so
 000300's backfill had nothing to score.
 
-**Database tests on staging: 262 of 262 passed** (rolled back): all 14 files,
-`supabase/tests/001` to `014` at `41cf1d5`, fetched by commit and checked by
-MD5. This includes 004, 009, 010 and check 22 of 012, which the connector
-ran this time.
+**Database tests on staging: 262 of 262 passed** (rolled back): all 14 files
+on `main` then, `supabase/tests/001` to `014` at `41cf1d5`, fetched by
+commit and checked by MD5. This includes 004, 009, 010 and check 22 of 012,
+which the connector ran this time. `015_follow_requests.sql`, added later
+by #21, hasn't run on staging.
 
 **API smoke checks, signed out, through the real REST API:** the leaderboard
 and `drives` refuse with 401, while `drive_scores`, `track_coverage_m` and
@@ -228,24 +236,65 @@ are left. Security advisors: no errors, and the same intended warnings as
 before (38 app RPCs callable by signed-in users, two service-role tables
 with no policies).
 
-Auth settings read from `/auth/v1/settings`: Apple is **off**, email sign-in
-is on and public sign-up is not disabled. Dashboard steps 1 and 4 below are
-still open, and the first TestFlight run waits on them.
+Auth settings read from `/auth/v1/settings` that day: Apple was **off**,
+email sign-in on and public sign-up not disabled. Steps 1, 3 and 4 below
+were done in the dashboard on 2026-10-23 and haven't been verified end to
+end.
 
-## Dashboard steps still needed (`SUPABASE_SETUP.md` §5)
+## Dashboard steps (`SUPABASE_SETUP.md` §5)
 
-Not doable from the connector, or they need secrets that don't exist yet:
+Not doable from the connector, or they need secrets that don't exist yet.
+"Not verified end to end" means the setting is saved but nobody has yet
+seen it work in practice; for sign-in that needs a signed build on a
+device, and none exists yet.
 
 1. Auth ▸ Hooks: enable **Before User Created** with
    `public.hook_before_user_created` (blocks public email and phone sign-ups).
-2. Auth ▸ Sign In / Providers: turn on **Allow manual linking**.
+   **Done 2026-10-23 (owner, dashboard), not verified end to end.** The
+   function `public.hook_before_user_created(jsonb)` exists on staging and
+   only `supabase_auth_admin` can execute it (checked 2026-10-24 by SQL).
+   Still to check: a public email sign-up with the anon key fails with "New
+   Pull Up accounts are created with Sign in with Apple."
+2. Auth ▸ Sign In / Providers: turn on **Allow manual linking**. Still open.
 3. Auth ▸ URL Configuration: add redirect URL `pullup://auth-callback`.
-4. Auth ▸ Providers ▸ Apple: needs the Services ID and Sign in with Apple
-   key.
-5. Function secrets `PUSH_WEBHOOK_SECRET` and `CRON_SECRET`, then the
-   Database Webhook (INSERT on `public.notifications` → `send-push`) and the
-   daily Cron job (→ `dm-retention`).
-6. Function secrets from Apple: `APNS_*`, `APPLE_*`, `APPSTORE_*`.
-7. GitHub environment `staging` with `SUPABASE_PROJECT_REF`,
-   `SUPABASE_ACCESS_TOKEN` and `SUPABASE_DB_PASSWORD`, so later deploys and
-   the full Deno API suite run from the workflow.
+   **Done 2026-10-23 (owner, dashboard), not verified end to end.**
+4. Auth ▸ Providers ▸ Apple: enable it and put the app's bundle ID
+   `app.pullup.ios` (or `PULLUP_BUNDLE_ID`) in Client IDs. The app signs in
+   natively (`signInWithIdToken`), which accepts only token audiences listed
+   there. A Services ID and secret key are only needed for web sign-in.
+   **Done 2026-10-23 (owner, dashboard); on 2026-10-24 the owner confirmed
+   `app.pullup.ios` is in Client IDs. Not verified end to end** (no signed
+   build or device test yet). The deploy workflow's "Report the
+   sign-in settings" step prints whether the bundle ID is
+   listed.
+5. Function secrets `PUSH_WEBHOOK_SECRET` and `CRON_SECRET`: add each as a
+   secret in the `staging` GitHub environment (`SUPABASE_SETUP.md` §3); the
+   next Supabase deploy run with apply ticked copies it to the project.
+   Then the Database Webhook (INSERT on `public.notifications` →
+   `send-push`) and the daily Cron job (→ `dm-retention`). Enabling
+   Database ▸ Webhooks installs `pg_net` (both need it) and enabling
+   Integrations ▸ Cron installs `pg_cron`. `send-push` checks the `x-pullup-webhook-secret` header
+   against `PUSH_WEBHOOK_SECRET`, `dm-retention` checks
+   `x-pullup-cron-secret` against `CRON_SECRET`, and both keep JWT
+   verification on, so each call also sends `Authorization: Bearer <anon
+   key>`. Keep `CRON_SECRET` in Vault and have the job read it rather than
+   pasting it into the SQL (`SUPABASE_SETUP.md` §5 has the job).
+6. Function secrets from Apple: `APNS_*`, `APPLE_*`, `APPSTORE_*`, the same
+   way as step 5. Not with `supabase secrets set`: a deploy removes any
+   function secret that isn't in the environment.
+7. GitHub environment `staging`, so later deploys and the full Deno API
+   suite run from the workflow. Set up: `SUPABASE_PROJECT_REF` (variable),
+   `SUPABASE_ACCESS_TOKEN` and `SUPABASE_DB_PASSWORD` (secrets). No run has
+   completed, so staging's 24 migrations were all applied through the
+   Supabase connector, the last on 2026-10-20.
+   * First run (from `main`, `bc124d8`): failed at the migration-list step.
+     GitHub's runners have no IPv6, and the direct database host is
+     IPv6-only. PR #22 fixes that by connecting through the IPv4 session
+     pooler.
+   * Second run (from #22's branch, 2026-10-24): refused before any step
+     ran, because the `staging` environment only allows deployments from
+     `main`.
+
+   #22 merged 2026-10-24 (`1a59010`). Remaining: run Supabase deploy ▸ `staging` from `main`,
+   a dry run first, then with apply ticked. The workflow never runs on its
+   own; someone with write access to the repository starts it.

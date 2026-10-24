@@ -54,11 +54,14 @@ Buy API approval and no eBay Partner Network (EPN) campaign.
   `X-EBAY-C-ENDUSERCTX: affiliateCampaignId=<10 digits>[,affiliateReferenceId=…]`.
 * Disclosure must be clear and conspicuous, as close to the links as
   possible and, in an app, above the fold. A link to a separate disclosure
-  page is not enough. Pull Up's wording, shown at the top of every results
-  list: "Links to eBay are affiliate links. Pull Up may earn a commission.
-  It never affects the order of results."
-* Commission never influences ranking: ranking code receives no affiliate
-  data at all (enforced by type: `PartResult` has no commission field).
+  page is not enough. Pull Up's wording (`AffiliateCampaign.disclosure` in
+  `Parts.swift`), shown above the eBay search button whenever a campaign
+  ID is set: "Links to eBay are affiliate links. Pull Up may earn a
+  commission when you buy, at no extra cost to you. It never changes what
+  you see."
+* Commission never influences ranking: ranking code will receive no
+  affiliate data at all (to be enforced by type once Stage B adds a
+  result type; no `PartResult` exists yet).
 
 ## What Pull Up builds
 
@@ -114,8 +117,12 @@ Buy API approval and no eBay Partner Network (EPN) campaign.
 
 1. Create an eBay developer account and a production keyset.
 2. Apply for Buy API (Browse) access, describing Pull Up's affiliate model.
-3. Join EPN and create a campaign; put the 10-digit campaign ID in the
-   `EBAY_CAMPAIGN_ID` function secret.
+3. Join EPN and create a campaign. The campaign ID is a build setting,
+   not a server setting: set `PULLUP_EPN_CAMPAIGN_ID` as the GitHub
+   environment variable the TestFlight workflow writes into
+   `Secrets.xcconfig` (or in your own `Secrets.xcconfig`). It reaches the
+   app as `PullUpEPNCampaignID` in `Info.plist`. Only the future
+   `parts-search` function (Stage B) would need it on the server too.
 4. If a derived seller-confidence signal is wanted, request eBay's written
    permission under §8.1(d)(ii).
 5. Store `EBAY_CLIENT_ID` / `EBAY_CLIENT_SECRET` as Supabase function secrets

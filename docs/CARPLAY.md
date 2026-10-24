@@ -43,11 +43,18 @@ signed build.
    Describe Pull Up as drive logging: start/stop recording and choose the
    vehicle the drive is logged to.
 2. When granted, enable "CarPlay Driving Task" on the App ID in
-   Certificates, Identifiers & Profiles and regenerate the provisioning
-   profile.
+   Certificates, Identifiers & Profiles. Signing is automatic (Xcode
+   locally, `-allowProvisioningUpdates` in the TestFlight workflow), so the
+   next signed build picks up the capability; there is no profile to
+   regenerate by hand.
 3. Set `PULLUP_ENTITLEMENTS = PullUp/PullUp-CarPlay.entitlements` in
-   `Config/Secrets.xcconfig` (or the CI secret that writes it). That file
-   already contains the entitlement key.
+   `Config/Secrets.xcconfig`. That file already contains the entitlement
+   key. This covers builds made on a Mac only: the TestFlight workflow
+   writes `Secrets.xcconfig` without `PULLUP_ENTITLEMENTS`, and no CI
+   secret or variable sets it, so workflow builds always use
+   `PullUp/PullUp.entitlements` (`Base.xcconfig`). A CarPlay TestFlight
+   build needs a pull request that adds the setting to the workflow or
+   changes `Base.xcconfig` first.
 4. Test on a real head unit or a CarPlay-capable aftermarket unit; the
    simulator doesn't exercise the real connection lifecycle.
 
