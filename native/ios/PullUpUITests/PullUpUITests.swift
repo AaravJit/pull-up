@@ -60,6 +60,10 @@ final class PullUpUITests: XCTestCase {
     @discardableResult
     private func openPicker(_ app: XCUIApplication, until shown: XCUIElement) -> Bool {
         let start = app.buttons["start-drive"]
+        // Let the Drive screen settle after launch first: in CI a tap made
+        // straight after launch once opened Leaderboards instead of the picker.
+        _ = start.waitForExistence(timeout: 10)
+        settle()
         start.tap()
         if shown.waitForExistence(timeout: 10) { return true }
         if start.isHittable { start.tap() }
