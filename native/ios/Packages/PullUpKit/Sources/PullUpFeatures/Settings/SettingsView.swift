@@ -173,11 +173,6 @@ struct SettingsView: View {
                 }
                 PrivacyToggle(title: "Show me at meets by default", detail: "When on, new Going RSVPs list your name to other attendees. You can change it per meet.", isOn: binding.showEventAttendance)
                 PrivacyToggle(title: "Appear on leaderboards", detail: "Shows your username, vehicle and totals on the boards you qualify for.", isOn: binding.leaderboardOptIn)
-                if binding.wrappedValue.performanceLeaderboardOptIn {
-                    // Closed-course boards are no longer offered; this lets anyone
-                    // who joined one leave it.
-                    PrivacyToggle(title: "Appear on closed-course boards", detail: "Turn off to leave the closed-course boards you joined.", isOn: binding.performanceLeaderboardOptIn)
-                }
                 PrivacyToggle(title: "Approve new followers", detail: "People must request to follow you.", isOn: binding.requireFollowApproval)
                 MessagesFromPicker(selection: binding.messagesFrom)
                 PrivacyToggle(title: "Read receipts", detail: "Shows people when you've read their messages. Off: you won't see theirs either.", isOn: binding.dmReadReceipts)
