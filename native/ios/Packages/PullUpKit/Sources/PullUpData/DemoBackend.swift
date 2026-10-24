@@ -700,6 +700,14 @@ public final class DemoBackend: BackendService, Sendable {
         }
     }
 
+    public func report(_ content: ReportedContent, author: UserID, reason: ReportReason, note: String) async throws {
+        let me = try me()
+        try state.withLock { s in
+            guard author != me else { throw BackendError.server("That can't be reported.") }
+            s.reports += 1
+        }
+    }
+
     public func block(_ user: UserID) async throws {
         let me = try me()
         state.withLock { s in

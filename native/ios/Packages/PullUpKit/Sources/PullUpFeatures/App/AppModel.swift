@@ -401,6 +401,7 @@ final class UnconfiguredBackend: BackendService, Sendable {
     func unreadMessages() async throws -> UnreadMessages { throw BackendError.notConfigured }
     func sharedPreview(_ ref: SharedRef) async throws -> SharedPreview { throw BackendError.notConfigured }
     func report(user: UserID, reason: ReportReason, details: String, message: UUID?) async throws { throw BackendError.notConfigured }
+    func report(_ content: ReportedContent, author: UserID, reason: ReportReason, note: String) async throws { throw BackendError.notConfigured }
     func block(_ user: UserID) async throws { throw BackendError.notConfigured }
     func messagingChanges() -> AsyncStream<MessagingChange> { AsyncStream { $0.finish() } }
     func entitlement() async throws -> Entitlement { throw BackendError.notConfigured }

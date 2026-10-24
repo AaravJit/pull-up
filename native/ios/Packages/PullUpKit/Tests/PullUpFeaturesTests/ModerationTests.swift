@@ -17,32 +17,20 @@ struct ModerationTests {
         #expect(LeaderboardView.metrics.first == .distance)
     }
 
-    @Test func reportDetailsNameTheContent() {
-        let id = UUID(uuidString: "00000000-0000-4000-8000-0000000000f1")!
-        #expect(ReportDetails.subject("post", id: id, excerpt: "  Night run\nat the lot ") == "post:00000000-0000-4000-8000-0000000000f1 \"Night run at the lot\"")
-        #expect(ReportDetails.subject("profile", id: id, excerpt: "") == "profile:00000000-0000-4000-8000-0000000000f1")
-        let long = ReportDetails.subject("comment", id: id, excerpt: String(repeating: "a", count: 300))
-        #expect(long.hasSuffix("…\""))
-        #expect(long.count < 200)
-    }
-
-    @Test func reportDetailsKeepTheNoteWithinTheServerLimit() {
-        #expect(ReportDetails.combined(subject: "post:x", note: "  ") == "post:x")
-        #expect(ReportDetails.combined(subject: "post:x", note: " spam link ") == "post:x\nspam link")
-        let capped = ReportDetails.combined(subject: "post:x", note: String(repeating: "b", count: 2_000))
-        #expect(capped.count == ReportDetails.limit)
-        #expect(capped.hasPrefix("post:x\n"))
+    @Test func reportNotesAreTrimmedToTheServerLimit() {
+        #expect(ReportDetails.note("  ") == "")
+        #expect(ReportDetails.note(" spam link \n") == "spam link")
+        #expect(ReportDetails.note(String(repeating: "b", count: 2_000)).count == ReportDetails.limit)
     }
 
     @Test func reportingAPostNamesItsAuthorAndYourOwnIsRefused() async throws {
         let feed = try await backend.feed(.discover, before: nil)
         let post = try #require(feed.first { $0.authorID == DemoSeed.mayaID })
-        try await backend.report(
-            user: post.authorID, reason: .spam,
-            details: ReportDetails.combined(subject: ReportDetails.subject("post", id: post.id, excerpt: post.caption), note: ""),
-            message: nil
-        )
-        await #expect(throws: BackendError.self) { try await backend.report(user: DemoSeed.meID, reason: .spam, details: "", message: nil) }
+        try await backend.report(ReportedContent(.post, id: post.id), author: post.authorID, reason: .spam, note: "")
+        let mine = try #require(feed.first { $0.authorID == DemoSeed.meID })
+        await #expect(throws: BackendError.self) {
+            try await backend.report(ReportedContent(.post, id: mine.id), author: DemoSeed.meID, reason: .spam, note: "")
+        }
     }
 
     @Test func deletingYourPostRemovesItFromTheFeed() async throws {

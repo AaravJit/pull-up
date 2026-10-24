@@ -567,6 +567,15 @@ public final class SupabaseBackend: BackendService, @unchecked Sendable {
         }
     }
 
+    public func report(_ content: ReportedContent, author: UserID, reason: ReportReason, note: String) async throws {
+        struct Params: Encodable { let p_kind: String; let p_id: UUID; let p_reason: String; let p_details: String }
+        do {
+            try await client.rpc("report_content", params: Params(p_kind: content.kind.rawValue, p_id: content.id, p_reason: reason.rawValue, p_details: note)).execute()
+        } catch let error as PostgrestError {
+            throw BackendError.server(Self.messagingMessage(error))
+        }
+    }
+
     public func block(_ user: UserID) async throws {
         let me = try await uid()
         try await client.from("blocks")
@@ -672,6 +681,7 @@ public final class SupabaseBackend: BackendService, @unchecked Sendable {
     static func messagingMessage(_ error: PostgrestError) -> String {
         switch error.code {
         case "54000":
+            if error.message.contains("reports") { return "You've sent a lot of reports today. Try again tomorrow." }
             return error.message.contains("accept") ? "Wait for them to accept your request before sending more." : "You're sending a lot right now. Try again in a minute."
         case "42501":
             if error.message.contains("paused") { return "Messaging is paused on your account." }

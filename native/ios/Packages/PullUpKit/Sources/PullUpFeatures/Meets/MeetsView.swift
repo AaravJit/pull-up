@@ -273,7 +273,7 @@ struct MeetDetailView: View {
             ReportPersonView(
                 person: host,
                 question: "What's wrong with this meet?",
-                subject: ReportDetails.subject("meet", id: meet.id, excerpt: meet.title),
+                content: ReportedContent(.meet, id: meet.id),
                 onBlocked: { hostWasBlocked() }
             )
         }

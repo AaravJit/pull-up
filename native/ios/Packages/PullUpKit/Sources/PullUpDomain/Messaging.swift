@@ -372,6 +372,20 @@ public enum ReportReason: String, Codable, Sendable, CaseIterable, Identifiable 
     }
 }
 
+/// What a report from outside Messages is about. The server looks it up as
+/// the reporter sees it and keeps a copy for staff (`report_content`).
+public struct ReportedContent: Hashable, Sendable {
+    public enum Kind: String, Sendable { case post, comment, meet, profile }
+
+    public var kind: Kind
+    public var id: UUID
+
+    public init(_ kind: Kind, id: UUID) {
+        self.kind = kind
+        self.id = id
+    }
+}
+
 /// Badge counts for the Messages button.
 public struct UnreadMessages: Codable, Hashable, Sendable {
     public var conversations: Int

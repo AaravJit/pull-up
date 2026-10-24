@@ -82,7 +82,7 @@ struct ProfileView: View {
                 ReportPersonView(
                     person: stub(page),
                     question: "What's wrong with \(handle)'s profile?",
-                    subject: ReportDetails.subject("profile", id: userID, excerpt: page.profile.bio),
+                    content: ReportedContent(.profile, id: userID),
                     onBlocked: { blocked = true }
                 )
                 .clusterTheme(app.themeStore.theme)
@@ -370,8 +370,8 @@ struct ReportPersonView: View {
     @Environment(\.dismiss) private var dismiss
     let person: ProfileStub
     let question: String
-    /// What's reported, from `ReportDetails.subject`.
-    let subject: String
+    /// What's reported. The server copies it for staff.
+    let content: ReportedContent
     /// Called after "Also block" succeeds.
     var onBlocked: (() -> Void)?
 
@@ -380,6 +380,8 @@ struct ReportPersonView: View {
     @State private var alsoBlock = false
     @State private var busy = false
     @State private var sent = false
+    /// Filed already, so a retry after a failed block doesn't file it twice.
+    @State private var reported = false
     @State private var error: String?
 
     private var handle: String { person.username.isEmpty ? "this person" : "@\(person.username)" }
@@ -443,7 +445,10 @@ struct ReportPersonView: View {
         busy = true
         defer { busy = false }
         do {
-            try await app.backend.report(user: person.id, reason: reason, details: ReportDetails.combined(subject: subject, note: details), message: nil)
+            if !reported {
+                try await app.backend.report(content, author: person.id, reason: reason, note: ReportDetails.note(details))
+                reported = true
+            }
             if alsoBlock {
                 try await app.backend.block(person.id)
                 onBlocked?()
@@ -456,23 +461,12 @@ struct ReportPersonView: View {
     }
 }
 
-/// The `details` text of a report about content outside messages: what it
-/// is, its ID and a short excerpt, then the reporter's own note. The server
-/// keeps the first 1,000 characters.
+/// The reporter's own note, as the server keeps it (at most 1,000 characters).
 enum ReportDetails {
     static let limit = 1000
 
-    /// "post:<id> "excerpt"" with the excerpt on one line, at most 120 characters.
-    static func subject(_ kind: String, id: UUID, excerpt: String) -> String {
-        let line = excerpt.split(whereSeparator: \.isNewline).joined(separator: " ").trimmingCharacters(in: .whitespaces)
-        let short = line.count > 120 ? String(line.prefix(119)) + "…" : line
-        let ref = "\(kind):\(id.uuidString.lowercased())"
-        return short.isEmpty ? ref : "\(ref) \"\(short)\""
-    }
-
-    static func combined(subject: String, note: String) -> String {
-        let note = note.trimmingCharacters(in: .whitespacesAndNewlines)
-        return String((note.isEmpty ? subject : "\(subject)\n\(note)").prefix(limit))
+    static func note(_ text: String) -> String {
+        String(text.trimmingCharacters(in: .whitespacesAndNewlines).prefix(limit))
     }
 }
 

@@ -113,6 +113,9 @@ public protocol BackendService: AnyObject, Sendable {
     func unreadMessages() async throws -> UnreadMessages
     func sharedPreview(_ ref: SharedRef) async throws -> SharedPreview
     func report(user: UserID, reason: ReportReason, details: String, message: UUID?) async throws
+    /// Reports a post, comment, meet or profile by `author`, with the
+    /// reporter's own note. Your own content can't be reported.
+    func report(_ content: ReportedContent, author: UserID, reason: ReportReason, note: String) async throws
     func block(_ user: UserID) async throws
     /// Nudges when something changes in your conversations. Ends when the
     /// consuming task is cancelled.

@@ -88,7 +88,7 @@ public struct FeedView: View {
                 ReportPersonView(
                     person: author(of: post),
                     question: "What's wrong with this post?",
-                    subject: ReportDetails.subject("post", id: post.id, excerpt: post.caption),
+                    content: ReportedContent(.post, id: post.id),
                     onBlocked: { hideAuthor(post.authorID) }
                 )
             }
@@ -452,7 +452,7 @@ struct CommentsView: View {
                 ReportPersonView(
                     person: comment.author ?? ProfileStub(id: comment.authorID, username: "", displayName: ""),
                     question: "What's wrong with this comment?",
-                    subject: ReportDetails.subject("comment", id: comment.id, excerpt: comment.body),
+                    content: ReportedContent(.comment, id: comment.id),
                     onBlocked: { hideAuthor(comment.authorID) }
                 )
             }
