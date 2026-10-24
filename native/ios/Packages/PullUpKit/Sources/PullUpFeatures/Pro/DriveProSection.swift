@@ -6,7 +6,8 @@ import PullUpDomain
 import PullUpTelemetry
 
 /// Pro analytics and export on a drive summary: time in each speed band, and
-/// the person's own track as GPX or CSV. Locked cards without Pro.
+/// the person's own track as GPX or CSV. Locked cards without Pro; nothing
+/// at all while Pro isn't offered.
 struct DriveProSection: View {
     @Environment(AppModel.self) private var app
     @Environment(\.clusterTheme) private var theme
@@ -27,6 +28,11 @@ struct DriveProSection: View {
     }
 
     var body: some View {
+        // Hidden while Pro isn't on sale, unless this person already has it.
+        if app.pro.showsEntryPoints { section }
+    }
+
+    private var section: some View {
         VStack(alignment: .leading, spacing: Space.l) {
             SectionHeader("Analytics") { if !app.pro.isPro { ProBadge() } }
             if app.pro.isPro {

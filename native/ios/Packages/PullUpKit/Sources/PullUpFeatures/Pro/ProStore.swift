@@ -35,6 +35,20 @@ public final class ProStore {
     public var isPro: Bool { entitlement.isPro }
     /// Real App Store purchases (false in demo mode).
     public var isLive: Bool { store.isLive }
+    /// Pro is on sale in this build (`PULLUP_PRO_OFFERED`), or this is demo
+    /// mode, so UI tests keep running.
+    public var isOffered: Bool {
+        if store is DemoStoreClient { return true }
+        return Self.offered(from: Bundle.main.object(forInfoDictionaryKey: "PullUpProOffered") as? String)
+    }
+    /// Show Pro UI: on sale, or this person already has Pro (keep honouring it).
+    public var showsEntryPoints: Bool { isOffered || isPro }
+
+    /// "YES", "1" or "true"; anything else, including an unset build
+    /// setting, means Pro isn't offered.
+    static func offered(from value: String?) -> Bool {
+        ["YES", "1", "true"].contains(value?.trimmingCharacters(in: .whitespaces) ?? "")
+    }
 
     private(set) var store: any StoreClient
     private var backend: any BackendService

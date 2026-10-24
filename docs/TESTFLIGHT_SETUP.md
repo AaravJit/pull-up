@@ -75,12 +75,20 @@ same environments `SUPABASE_SETUP.md` creates):
 | Variable | `APPLE_TEAM_ID` | Team ID |
 | Variable | `SUPABASE_ANON_KEY` | that project's anon (publishable) key; public by design |
 | Variable (optional) | `PULLUP_BUNDLE_ID` | only if not `app.pullup.ios` |
-| Variable (optional) | `PULLUP_PRIVACY_POLICY` | privacy policy URL without `https://`; required before Pro goes to review |
+| Variable | `PULLUP_PRIVACY_POLICY` | privacy policy URL without `https://`; optional for `staging`, required for `production` (the workflow refuses a production build without it) |
+| Variable (optional) | `PULLUP_SUPPORT_URL` | support page URL without `https://`; shown in Settings ▸ About when set |
 | Variable (optional) | `PULLUP_EPN_CAMPAIGN_ID` | eBay Partner Network campaign id |
 
 `SUPABASE_PROJECT_REF` is already there from the Supabase setup. Keep
 `production` limited to the `main` branch with you as required reviewer,
-so a production build always waits for your approval.
+so a production build always waits for your approval. The workflow also
+refuses a production build that isn't from `main`, that points at the
+staging project, or that has no privacy policy URL.
+
+The app is iPhone only for now (`TARGETED_DEVICE_FAMILY` 1 in
+`native/ios/project.yml`), so App Store Connect needs iPhone screenshots
+only. iPad can be added in a later version; it can't be removed once it
+has shipped.
 
 ## 5. Build and upload
 
