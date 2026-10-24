@@ -2,8 +2,8 @@ import CoreGraphics
 import Testing
 @testable import PullUpFeatures
 
-/// Layout decisions come from the measured space, so every window shape a
-/// phone, iPad or foldable can give gets a sensible answer.
+/// Layout decisions come from the measured space, so any window shape gets
+/// a sensible answer, not only the phone sizes tested here.
 struct DashboardLayoutTests {
     @Test func portraitPhoneStacks() {
         let layout = DashboardLayout(size: CGSize(width: 393, height: 759), isAccessibilitySize: false, analogGauge: true)

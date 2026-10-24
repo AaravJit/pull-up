@@ -8,7 +8,7 @@ import PullUpTelemetry
 /// Full-screen instrument cluster while a drive records.
 ///
 /// The layout comes from the space the dashboard has (`DashboardLayout`), so
-/// a rotation, Split View or a foldable opening or closing only rearranges
+/// a rotation or any other change to the window's size only rearranges
 /// it. Nothing here owns the recording: the recorder, its location stream and
 /// its timers live in `AppModel`, so this view can be rebuilt at any size
 /// without touching the drive. Discard and Hold to stop sit in a bottom inset

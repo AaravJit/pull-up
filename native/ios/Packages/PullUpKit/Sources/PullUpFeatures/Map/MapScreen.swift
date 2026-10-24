@@ -76,7 +76,7 @@ public struct MapScreen: View {
                 didLoad = true
             }
             .onChange(of: layer) { _, _ in withAnimation(Motion.resolved(Motion.sheet, reduceMotion: reduceMotion)) { frameContent() } }
-            // A rotation, Split View or a foldable opening changes the map's
+            // A rotation or a new window size changes the map's
             // shape: fit the content to the new one, unless a meet is in focus.
             .onChange(of: [mapFrame.size.width, mapFrame.size.height, clearArea.minY, clearArea.maxY]) { _, _ in
                 if didLoad, selectedMeet == nil { frameContent() }

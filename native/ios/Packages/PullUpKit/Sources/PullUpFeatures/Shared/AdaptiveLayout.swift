@@ -3,8 +3,8 @@ import PullUpDesign
 
 // Layout decisions taken from the space a screen actually has. A window can
 // be any shape and any combination of size classes: a phone in either
-// orientation, iPad Split View, or a foldable that resizes the running app
-// when it opens or closes. So nothing here looks at the device, its
+// orientation, or whatever size the system gives the window. So nothing
+// here looks at the device, its
 // orientation or its size classes. These are plain functions of a measured
 // size, so tests can check them without a screen.
 
