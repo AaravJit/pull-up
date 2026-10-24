@@ -146,6 +146,8 @@ struct DriveSummaryView: View {
             NoticeStrip("The server didn't accept this drive, so it's kept on this device and not retried. You can delete it or try again from the Drive tab.", tone: .caution)
         case .tooShort:
             NoticeStrip("Too short to save: a drive needs at least 30 clean GPS fixes and 200 m. Nothing was stored.", tone: .caution)
+        case .notSaved:
+            NoticeStrip("Couldn't save this drive on your phone (storage may be full) and the upload didn't go through.", tone: .caution)
         }
     }
 
@@ -373,7 +375,9 @@ struct DriveSummaryView: View {
 
     private func delete() async {
         do {
-            try await app.backend.deleteDrive(drive.id)
+            // Through the recorder, so a copy still waiting on this phone
+            // goes too and isn't uploaded again.
+            try await app.recorder.deleteDrive(drive.id)
             deleteError = nil
             dismiss()
         } catch {

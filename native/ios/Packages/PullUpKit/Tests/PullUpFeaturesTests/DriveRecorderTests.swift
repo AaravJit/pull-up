@@ -750,4 +750,33 @@ struct UploadRecoveryTests {
         #expect(recorder.pendingUploads == 0)
         #expect(await h.store.all().isEmpty)
     }
+
+    /// The drive's stats reached the server but its track didn't, so it's
+    /// also still waiting on the phone. Deleted from its summary, it stays
+    /// deleted: the next sync doesn't send it again.
+    @Test func deletedDriveIsNotUploadedAgain() async throws {
+        let h = await RecorderHarness()
+        let me = try #require(await h.backend.currentUserID())
+        let backend = h.backend
+        h.recorder.sendDrive = { drive, _ in
+            _ = try await backend.upload(drive: drive, track: [])
+            throw URLError(.networkConnectionLost)
+        }
+        let draft = try await savePendingDrive(h)
+        await h.recorder.syncPending()
+        #expect(h.recorder.pendingUploads == 1)
+        #expect(try await backend.drives(owner: me, limit: 50).contains { $0.id == draft.id })
+
+        let uploads = FakeUploads()
+        h.recorder.sendDrive = { drive, _ in try await uploads.send(drive) }
+        let revision = h.recorder.storedDrivesRevision
+        try await h.recorder.deleteDrive(draft.id)
+        #expect(h.recorder.pendingUploads == 0)
+        #expect(h.recorder.storedDrivesRevision > revision)
+
+        await h.recorder.syncPending()
+        #expect(uploads.calls == 0)
+        #expect(await h.store.all().isEmpty)
+        #expect(try await backend.drives(owner: me, limit: 50).allSatisfy { $0.id != draft.id })
+    }
 }

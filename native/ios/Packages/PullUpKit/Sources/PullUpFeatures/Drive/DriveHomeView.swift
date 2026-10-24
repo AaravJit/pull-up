@@ -17,6 +17,12 @@ struct DriveHomeView: View {
     @State private var loadError: String?
     @State private var confirmingDeleteRejected = false
 
+    /// Recent drives reload after a recording, a background upload or a delete.
+    private struct RecentKey: Equatable {
+        let result: UUID?
+        let revision: Int
+    }
+
     private var preferredVehicle: Vehicle? {
         guard case let .vehicle(id) = app.recorder.preferredChoice(among: app.garage.active) else { return nil }
         return app.garage.vehicle(id)
@@ -44,7 +50,7 @@ struct DriveHomeView: View {
             DriveHistoryDetail(drive: drive)
         }
         .navigationDestination(for: LeaderboardRoute.self) { _ in LeaderboardView() }
-        .task(id: app.recorder.lastResult?.id) { await loadDrives() }
+        .task(id: RecentKey(result: app.recorder.lastResult?.id, revision: app.recorder.storedDrivesRevision)) { await loadDrives() }
         .refreshable { await loadDrives() }
         .confirmationDialog(
             app.recorder.rejectedUploads == 1 ? "Delete this drive?" : "Delete these drives?",

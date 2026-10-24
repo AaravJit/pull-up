@@ -18,6 +18,9 @@ public struct FinishedDrive: Identifiable, Equatable, Sendable {
         /// The server refused the drive's data for good. Kept on this device,
         /// but not retried until the person asks.
         case rejected
+        /// Not stored on the server and couldn't be saved on this device
+        /// either (its storage may be full).
+        case notSaved
     }
 
     public var id: UUID { drive.id }
@@ -85,6 +88,9 @@ public final class DriveRecorder {
     public private(set) var pendingUploads = 0
     /// Finished drives the server refused, kept on this device.
     public private(set) var rejectedUploads = 0
+    /// Goes up whenever the drives stored on the server change (an upload
+    /// went through, a drive was deleted), so lists of them can reload.
+    public private(set) var storedDrivesRevision = 0
     public private(set) var recoveredDrive: Date?
     /// The app was closed mid-drive and recording picked up where it left
     /// off. The time it wasn't running counts as a signal gap.
@@ -375,9 +381,10 @@ public final class DriveRecorder {
 
         if Self.isWorthKeeping(summary) {
             // On disk before the upload, so a slow or lost upload loses nothing.
-            try? await store.save(draft)
+            let savedLocally = (try? await store.save(draft)) != nil
             let (state, uploaded) = await upload(draft, drive: result.drive)
-            result.upload = state
+            // Without a copy on disk there's nothing to keep or retry.
+            result.upload = (savedLocally || state == .uploaded) ? state : .notSaved
             if let uploaded { result.drive = uploaded }
         } else {
             await store.delete(draft.id)
@@ -499,6 +506,7 @@ public final class DriveRecorder {
                 }
             }
             self.uploads[id] = nil
+            if case .uploaded = sent { self.storedDrivesRevision += 1 }
             await self.refreshPendingCount()
             return sent
         }
@@ -561,7 +569,8 @@ public final class DriveRecorder {
     private func syncOnce() async {
         guard let ownerID, phase == .idle else { return }
         for var draft in await store.pendingUploads() where draft.ownerID == ownerID {
-            guard let recorded = draft.endedAt else { continue }
+            // Deleted (or sent) since the list was read.
+            guard await store.load(draft.id) != nil, let recorded = draft.endedAt else { continue }
             // Drafts finished past the limit (by older builds) would be
             // refused by the server forever.
             let end = min(recorded, Self.limit(of: draft))
@@ -581,7 +590,30 @@ public final class DriveRecorder {
     /// Removes from this device the drives the server refused.
     public func deleteRejectedUploads() async {
         guard let ownerID else { return }
-        for draft in await store.rejectedUploads() where draft.ownerID == ownerID { await store.delete(draft.id) }
+        for draft in await store.rejectedUploads() where draft.ownerID == ownerID {
+            // The server may have kept the drive's stats when only its track
+            // was refused.
+            try? await backend.deleteDrive(draft.id)
+            await store.delete(draft.id)
+        }
+        storedDrivesRevision += 1
+        await refreshPendingCount()
+    }
+
+    /// Deletes a drive from the server and from this device, so a copy
+    /// still waiting here (its stats reached the server but not its track)
+    /// isn't sent again by the next sync.
+    public func deleteDrive(_ id: UUID) async throws {
+        // An upload under way would store the drive again after the delete.
+        while let attempt = uploads[id] { _ = await attempt.value }
+        await store.delete(id)
+        do {
+            try await backend.deleteDrive(id)
+        } catch {
+            await refreshPendingCount()
+            throw error
+        }
+        storedDrivesRevision += 1
         await refreshPendingCount()
     }
 
