@@ -10,6 +10,7 @@ import PullUpDomain
 public struct MapScreen: View {
     @Environment(AppModel.self) private var app
     @Environment(\.clusterTheme) private var theme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// Both `.automatic` and an explicit region depend on the map's size and
     /// insets, and in a tab they came out at world or coast zoom. A camera
     /// (centre plus distance) doesn't, so the map is framed with one, after
@@ -22,6 +23,11 @@ public struct MapScreen: View {
     @State private var selectedMeet: Meet.ID?
     @State private var openMeet: Meet?
     @State private var error: String?
+    /// Where the map, the header over it and the meet strip under it are,
+    /// in one coordinate space, so framing fits the window's real shape.
+    @State private var mapFrame: CGRect = .zero
+    @State private var headerFrame: CGRect = .zero
+    @State private var stripFrame: CGRect = .zero
 
     enum Layer: String, CaseIterable, Identifiable {
         case meets, routes
@@ -43,11 +49,24 @@ public struct MapScreen: View {
                     header
                     if let error { ErrorLine(message: error) { Task { await load() } } }
                 }
+                .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { headerFrame = $0 }
+                // Capped and centred, so a wide window doesn't stretch it.
+                .frame(maxWidth: 600)
                 .padding(.horizontal, Space.gutter)
                 .padding(.top, Space.s)
             }
+            .background {
+                // Same extent as the map, which runs up under the status bar.
+                Color.clear
+                    .ignoresSafeArea(edges: .top)
+                    .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { mapFrame = $0 }
+            }
             .safeAreaInset(edge: .bottom) {
-                if layer == .meets, !meets.isEmpty { meetStrip }
+                if layer == .meets, !meets.isEmpty {
+                    meetStrip
+                        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { stripFrame = $0 }
+                        .onDisappear { stripFrame = .zero }
+                }
             }
             .toolbar(.hidden, for: .navigationBar)
             .navigationDestination(item: $openMeet) { meet in MeetDetailView(meetID: meet.id, initial: meet) }
@@ -56,7 +75,12 @@ public struct MapScreen: View {
                 frameContent()
                 didLoad = true
             }
-            .onChange(of: layer) { _, _ in withAnimation(Motion.sheet) { frameContent() } }
+            .onChange(of: layer) { _, _ in withAnimation(Motion.resolved(Motion.sheet, reduceMotion: reduceMotion)) { frameContent() } }
+            // A rotation or a new window size changes the map's
+            // shape: fit the content to the new one, unless a meet is in focus.
+            .onChange(of: [mapFrame.size.width, mapFrame.size.height, clearArea.minY, clearArea.maxY]) { _, _ in
+                if didLoad, selectedMeet == nil { frameContent() }
+            }
         }
     }
 
@@ -83,7 +107,7 @@ public struct MapScreen: View {
         }
         .onChange(of: selectedMeet) { _, id in
             guard let meet = meets.first(where: { $0.id == id }) else { return }
-            withAnimation(Motion.sheet) {
+            withAnimation(Motion.resolved(Motion.sheet, reduceMotion: reduceMotion)) {
                 position = .region(MKCoordinateRegion(center: meet.coordinate.clLocation, span: MKCoordinateSpan(latitudeDelta: 0.15, longitudeDelta: 0.15)))
             }
         }
@@ -119,7 +143,7 @@ public struct MapScreen: View {
                     Button {
                         if selectedMeet == meet.id { openMeet = meet } else { selectedMeet = meet.id }
                     } label: {
-                        MeetMapCard(meet: meet, isSelected: selectedMeet == meet.id)
+                        MeetMapCard(meet: meet, isSelected: selectedMeet == meet.id, width: MapLayout.meetCardWidth(availableWidth: mapFrame.width))
                     }
                     .buttonStyle(.plain)
                     .accessibilityHint(selectedMeet == meet.id ? "Opens the meet." : "Shows the venue on the map.")
@@ -152,6 +176,14 @@ public struct MapScreen: View {
         routes = loaded
     }
 
+    /// The part of the map the header and the meet strip leave uncovered, in
+    /// the map's own coordinates.
+    private var clearArea: CGRect {
+        let top = headerFrame.isEmpty ? 0 : max(0, headerFrame.maxY - mapFrame.minY)
+        let bottom = stripFrame.isEmpty ? mapFrame.height : min(mapFrame.height, stripFrame.minY - mapFrame.minY)
+        return CGRect(x: 0, y: top, width: mapFrame.width, height: max(0, bottom - top))
+    }
+
     /// Frames the visible layer's content (venues or your routes), never the
     /// device's location.
     private func frameContent() {
@@ -159,14 +191,12 @@ public struct MapScreen: View {
         guard !points.isEmpty else { return }
         let lats = points.map(\.latitude), lons = points.map(\.longitude)
         let latSpan = (lats.max()! - lats.min()!), lonSpan = (lons.max()! - lons.min()!)
-        // Metres to fit the larger span on a phone-shaped map, with room for the
-        // header above and the meet strip below.
-        let meters = max(6_000, max(latSpan * 111_000, lonSpan * 87_000) * 3.2)
+        let camera = MapLayout.camera(contentWidth: lonSpan * 87_000, contentHeight: latSpan * 111_000, map: mapFrame.size, clear: clearArea)
         let center = CLLocationCoordinate2D(
-            latitude: (lats.max()! + lats.min()!) / 2 + latSpan * 0.25,
+            latitude: (lats.max()! + lats.min()!) / 2 + camera.northOffset / 111_000,
             longitude: (lons.max()! + lons.min()!) / 2
         )
-        position = .camera(MapCamera(centerCoordinate: center, distance: meters))
+        position = .camera(MapCamera(centerCoordinate: center, distance: camera.distance))
     }
 }
 
@@ -177,6 +207,7 @@ struct RouteLine: Identifiable {
 
 struct MeetPin: View {
     @Environment(\.clusterTheme) private var theme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let meet: Meet
     let isSelected: Bool
 
@@ -189,7 +220,7 @@ struct MeetPin: View {
                 .background(ChamferedRectangle(cut: 6).fill(meet.isLive() ? ClusterColor.live : theme.accentColor))
             Rectangle().fill(meet.isLive() ? ClusterColor.live : theme.accentColor).frame(width: 2, height: 8)
         }
-        .animation(Motion.select, value: isSelected)
+        .animation(Motion.resolved(Motion.select, reduceMotion: reduceMotion), value: isSelected)
         .accessibilityLabel(meet.title)
     }
 }
@@ -198,6 +229,7 @@ struct MeetMapCard: View {
     @Environment(\.clusterTheme) private var theme
     let meet: Meet
     let isSelected: Bool
+    var width: CGFloat = 270
 
     var body: some View {
         HStack(alignment: .top, spacing: Space.m) {
@@ -219,7 +251,7 @@ struct MeetMapCard: View {
             Spacer(minLength: 0)
         }
         .padding(Space.m)
-        .frame(width: 270)
+        .frame(width: width)
         .background(.regularMaterial, in: ChamferedRectangle(cut: Radius.chamfer))
         .overlay {
             ChamferedRectangle(cut: Radius.chamfer).strokeBorder(isSelected ? theme.accentColor : .clear, lineWidth: 2)

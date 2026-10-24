@@ -347,6 +347,8 @@ public struct SwitchBank<Value: Hashable & Identifiable>: View {
     @Binding var selection: Value
     let label: (Value) -> String
     @Environment(\.clusterTheme) private var theme
+    @Environment(\.dynamicTypeSize) private var typeSize
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Namespace private var namespace
 
     public init(_ options: [Value], selection: Binding<Value>, label: @escaping (Value) -> String) {
@@ -359,12 +361,69 @@ public struct SwitchBank<Value: Hashable & Identifiable>: View {
         // Every segment at full size on one line if they all fit; otherwise
         // labels may wrap to two lines. Shrinking each label on its own made
         // long ones visibly smaller than their neighbours.
-        ViewThatFits(in: .horizontal) {
-            bank(lines: 1)
-            bank(lines: 2)
+        Group {
+            if typeSize.isAccessibilitySize && options.count >= 4 {
+                // Four or more labels at accessibility sizes truncate even on
+                // two lines, so they stack as a list instead.
+                ViewThatFits(in: .horizontal) {
+                    bank(lines: 1)
+                    list
+                }
+            } else {
+                ViewThatFits(in: .horizontal) {
+                    bank(lines: 1)
+                    bank(lines: 2)
+                }
+            }
         }
         .overlay(alignment: .bottom) { Hairline() }
         .sensoryFeedback(.selection, trigger: selection)
+    }
+
+    private func select(_ option: Value) {
+        withAnimation(Motion.resolved(Motion.select, reduceMotion: reduceMotion)) { selection = option }
+    }
+
+    private var list: some View {
+        VStack(spacing: 0) {
+            ForEach(options) { option in
+                let selected = option == selection
+                Button {
+                    select(option)
+                } label: {
+                    HStack(spacing: Space.s) {
+                        Text(label(option))
+                            .font(ClusterFont.legend(.caption))
+                            .textCase(.uppercase)
+                            .tracking(1)
+                            .multilineTextAlignment(.leading)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .foregroundStyle(selected ? ClusterColor.ink : ClusterColor.inkTertiary)
+                        Spacer(minLength: Space.s)
+                        if selected {
+                            Image(systemName: "checkmark")
+                                .font(ClusterFont.legend(.caption))
+                                .foregroundStyle(theme.accentColor)
+                        }
+                    }
+                    .padding(.vertical, Space.s)
+                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                    .overlay(alignment: .leading) {
+                        if selected {
+                            Rectangle().fill(theme.accentColor).frame(width: 2)
+                                .offset(x: -Space.s)
+                        }
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(selected ? .isSelected : [])
+                .overlay(alignment: .bottom) {
+                    if option != options.last { Hairline() }
+                }
+            }
+        }
+        .padding(.leading, Space.s)
     }
 
     private func bank(lines: Int) -> some View {
@@ -372,7 +431,7 @@ public struct SwitchBank<Value: Hashable & Identifiable>: View {
             ForEach(options) { option in
                 let selected = option == selection
                 Button {
-                    withAnimation(Motion.select) { selection = option }
+                    select(option)
                 } label: {
                     Text(label(option))
                         .font(ClusterFont.legend(.caption))

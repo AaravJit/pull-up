@@ -7,6 +7,7 @@ import PullUpDomain
 struct VehicleEditorView: View {
     @Environment(AppModel.self) private var app
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     let original: Vehicle?
     var onSave: (Vehicle) -> Void = { _ in }
@@ -127,7 +128,7 @@ struct VehicleEditorView: View {
             Legend(previewTitle, color: ClusterColor.inkSecondary)
                 .padding(Space.m)
         }
-        .animation(Motion.select, value: bodyStyle)
+        .animation(Motion.resolved(Motion.select, reduceMotion: reduceMotion), value: bodyStyle)
         .accessibilityHidden(true)
     }
 
@@ -143,7 +144,7 @@ struct VehicleEditorView: View {
                 ForEach(BodyStyle.styles(for: kind)) { style in
                     let selected = style == bodyStyle
                     Button {
-                        withAnimation(Motion.select) { bodyStyle = style }
+                        withAnimation(Motion.resolved(Motion.select, reduceMotion: reduceMotion)) { bodyStyle = style }
                     } label: {
                         VStack(spacing: Space.xs) {
                             VehicleSilhouette(style, color: selected ? ClusterColor.accent(identity) : ClusterColor.inkSecondary, lineWidth: 1.2, showsGround: false)

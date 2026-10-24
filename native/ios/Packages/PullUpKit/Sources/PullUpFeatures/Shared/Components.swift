@@ -169,6 +169,7 @@ struct SpecRow: View {
 /// profiles use the standard set; the app accent adds the Pro colours, which
 /// call `onLocked` instead of selecting while Pro is off.
 struct AccentSwatches: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Binding var selection: AccentChoice
     var choices: [AccentChoice] = AccentChoice.standard
     var locked: (AccentChoice) -> Bool = { _ in false }
@@ -183,7 +184,7 @@ struct AccentSwatches: View {
                     if isLocked {
                         onLocked()
                     } else {
-                        withAnimation(Motion.select) { selection = choice }
+                        withAnimation(Motion.resolved(Motion.select, reduceMotion: reduceMotion)) { selection = choice }
                     }
                 } label: {
                     ChamferedRectangle(cut: 7)

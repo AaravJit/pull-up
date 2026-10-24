@@ -11,13 +11,15 @@ import PullUpDomain
 ///   recording begins, only when the user taps Start recording.
 /// * On success the recorder flips to `.recording` and the parent morphs this
 ///   panel into the live dashboard.
+/// * Sized from the space it has, never the device or orientation. When the
+///   choices don't fit the height, they scroll and Start recording stays
+///   pinned below them.
 struct StartDrivePicker: View {
     @Environment(AppModel.self) private var app
     @Environment(\.clusterTheme) private var theme
     @Environment(\.dynamicTypeSize) private var typeSize
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.openURL) private var openURL
-    @Environment(\.verticalSizeClass) private var verticalSizeClass
 
     let stage: Namespace.ID
     let onClose: () -> Void
@@ -28,6 +30,7 @@ struct StartDrivePicker: View {
     @State private var dragOffset: CGFloat = 0
     @State private var addingVehicle = false
     @State private var confirmTrigger = 0
+    @State private var panelWidth: CGFloat = 0
     @AccessibilityFocusState private var titleFocused: Bool
 
     private var vehicles: [Vehicle] { app.garage.active }
@@ -50,6 +53,7 @@ struct StartDrivePicker: View {
         }
         .padding(.bottom, Space.l)
         .frame(maxWidth: 640)
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { panelWidth = $0 }
         .background {
             ChamferedRectangle(cut: 18, corners: [.topLeading, .topTrailing])
                 .fill(ClusterColor.plate)
@@ -130,37 +134,74 @@ struct StartDrivePicker: View {
                 .frame(maxWidth: .infinity, minHeight: 220)
                 .accessibilityLabel("Loading your garage")
         } else if vehicles.isEmpty {
-            emptyGarage
-        } else if typeSize.isAccessibilitySize {
-            // Large text: one scroll view for the list and the Start button,
-            // so every vehicle can be reached instead of a squeezed inner list.
-            ScrollView {
-                choiceStack
+            ViewThatFits(in: .vertical) {
+                emptyGarage
+                ScrollView { emptyGarage }
+                    .scrollIndicators(.visible)
             }
-            .scrollIndicators(.visible)
         } else {
-            choiceStack
+            // The first that fits the height the panel has: regular cards,
+            // smaller cards, then a scrolling list with Start recording
+            // pinned below it, so the button is never pushed off screen
+            // (landscape, large text, a short window).
+            ViewThatFits(in: .vertical) {
+                choiceStack(cardWidth: PickerLayout.cardWidth(panelWidth: panelWidth, compact: false))
+                choiceStack(cardWidth: PickerLayout.cardWidth(panelWidth: panelWidth, compact: true))
+                scrollingChoices(cardWidth: PickerLayout.cardWidth(panelWidth: panelWidth, compact: true))
+            }
         }
     }
 
-    private var choiceStack: some View {
+    private func choiceStack(cardWidth: CGFloat) -> some View {
         VStack(alignment: .leading, spacing: Space.l) {
-            if typeSize.isAccessibilitySize {
-                accessibleList
-            } else {
-                carousel
-            }
+            choiceList(cardWidth: cardWidth)
             selectionDetail
                 .padding(.horizontal, Space.gutter)
-            footer
-                .padding(.horizontal, Space.gutter)
+            VStack(alignment: .leading, spacing: Space.m) {
+                failureNotice
+                startButton
+                locationNote
+            }
+            .padding(.horizontal, Space.gutter)
         }
         .padding(.top, Space.l)
     }
 
-    private var cardWidth: CGFloat { verticalSizeClass == .compact ? 180 : 212 }
+    private func scrollingChoices(cardWidth: CGFloat) -> some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: Space.l) {
+                choiceList(cardWidth: cardWidth)
+                selectionDetail
+                    .padding(.horizontal, Space.gutter)
+                locationNote
+                    .padding(.horizontal, Space.gutter)
+            }
+            .padding(.vertical, Space.l)
+        }
+        .scrollIndicators(.visible)
+        .scrollBounceBehavior(.basedOnSize)
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            VStack(alignment: .leading, spacing: Space.m) {
+                failureNotice
+                startButton
+            }
+            .padding(.horizontal, Space.gutter)
+            .padding(.top, Space.m)
+            .background(ClusterColor.plate)
+        }
+    }
 
-    private var carousel: some View {
+    /// Large text: a vertical list instead of cards, which would truncate.
+    @ViewBuilder
+    private func choiceList(cardWidth: CGFloat) -> some View {
+        if typeSize.isAccessibilitySize {
+            accessibleList
+        } else {
+            carousel(cardWidth: cardWidth)
+        }
+    }
+
+    private func carousel(cardWidth: CGFloat) -> some View {
         ScrollViewReader { proxy in
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(spacing: Space.m) {
@@ -236,40 +277,44 @@ struct StartDrivePicker: View {
         .accessibilityIdentifier("picker-selection-detail")
     }
 
-    private var footer: some View {
-        VStack(alignment: .leading, spacing: Space.m) {
-            if let failure {
-                VStack(alignment: .leading, spacing: Space.s) {
-                    NoticeStrip(failure.message, tone: .caution)
-                    if failure.canOpenSettings {
-                        Button("Open Settings") {
-                            if let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) }
-                        }
-                        .font(ClusterFont.headline(.subheadline))
+    @ViewBuilder
+    private var failureNotice: some View {
+        if let failure {
+            VStack(alignment: .leading, spacing: Space.s) {
+                NoticeStrip(failure.message, tone: .caution)
+                if failure.canOpenSettings {
+                    Button("Open Settings") {
+                        if let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) }
                     }
+                    .font(ClusterFont.headline(.subheadline))
                 }
-                .accessibilityElement(children: .contain)
             }
-            Button(action: confirm) {
-                HStack(spacing: Space.s) {
-                    if isStarting {
-                        ProgressView().tint(ClusterColor.onAccent)
-                    } else {
-                        Image(systemName: "record.circle")
-                    }
-                    Text(isStarting ? "Starting" : "Start recording")
-                }
-                .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.cluster)
-            .disabled(isStarting || selection == nil)
-            .accessibilityIdentifier("picker-confirm")
-            .accessibilityHint("Starts recording location for this drive.")
-
-            Label("Location is only used while a drive is recording.", systemImage: "location")
-                .font(ClusterFont.body(.caption))
-                .foregroundStyle(ClusterColor.inkTertiary)
+            .accessibilityElement(children: .contain)
         }
+    }
+
+    private var startButton: some View {
+        Button(action: confirm) {
+            HStack(spacing: Space.s) {
+                if isStarting {
+                    ProgressView().tint(ClusterColor.onAccent)
+                } else {
+                    Image(systemName: "record.circle")
+                }
+                Text(isStarting ? "Starting" : "Start recording")
+            }
+            .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(.cluster)
+        .disabled(isStarting || selection == nil)
+        .accessibilityIdentifier("picker-confirm")
+        .accessibilityHint("Starts recording location for this drive.")
+    }
+
+    private var locationNote: some View {
+        Label("Location is only used while a drive is recording.", systemImage: "location")
+            .font(ClusterFont.body(.caption))
+            .foregroundStyle(ClusterColor.inkTertiary)
     }
 
     private var emptyGarage: some View {
