@@ -17,10 +17,11 @@ native/ios/
 supabase/
   migrations/              Forward migrations (24: 8 from Phase 1, 5 from Phase 2, 11 from Phase 3)
   rollback/                Matching down migrations, destructive steps guarded
-  tests/                   14 pgTAP files: RLS, privacy, accounts, messages, Pro, push, security,
-                           sign-up guard, push guard, drive privacy, notification limits,
-                           storage moves, open findings, distance bounds, leaderboard distance;
-                           api/ has the two-account API tests
+  tests/                   15 pgTAP files (001–015): RLS, privacy, accounts, messages, Pro, push,
+                           security, sign-up guard, push guard, drive privacy, notification
+                           limits, storage moves, open findings, distance bounds, leaderboard
+                           distance, follow requests; api/ has the two-account API tests.
+                           Staging has run 001–014 (2026-10-20), not 015
   functions/               Edge functions: delete-account, send-push (APNs), dm-retention,
                            verify-subscription, app-store-notifications; _shared/ has Deno tests
 ```

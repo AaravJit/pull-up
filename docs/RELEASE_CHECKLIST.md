@@ -9,8 +9,11 @@ alone. Items are in the order they unblock each other.
 The step-by-step version, with the GitHub deploy workflow that automates
 most of this, is `SUPABASE_SETUP.md`.
 
-Staging is done for the first four items (`STAGING_DEPLOYMENT.md`);
-production is still to do.
+Staging is done for the first, second and fourth items and partly for
+the third (`STAGING_DEPLOYMENT.md`). On 2026-10-23 the owner set the
+sign-up hook, the redirect URL and the Apple provider in the staging
+dashboard; none of these has been verified end to end. Production is
+still to do.
 
 - [ ] Create a Supabase project (or pick the existing one) and note the
       project ref and anon key (Project Settings ▸ API). Staging
@@ -24,13 +27,18 @@ production is still to do.
       `pullup.allow_destructive_rollback` is set for the session. Staging
       has all 24.
 - [ ] Run `supabase test db` against a staging project (the same pgTAP
-      suite CI runs). Done on staging: 262 of 262 on 2026-10-20. The
-      two-account API suite hasn't been rerun there since 2026-10-18.
+      suite CI runs). On staging: files 001–014, 262 of 262, on
+      2026-10-20; `015_follow_requests.sql` (#21) hasn't run there yet.
+      The two-account API suite hasn't been rerun there since 2026-10-18.
 - [ ] Deploy edge functions: `supabase functions deploy delete-account send-push
       dm-retention verify-subscription app-store-notifications`. All five
       are on staging.
 - [ ] Generate a random push webhook secret (`openssl rand -hex 32`) and
-      set it: `supabase secrets set PUSH_WEBHOOK_SECRET=<value>`.
+      add `PUSH_WEBHOOK_SECRET` as a secret in the GitHub environment
+      (`SUPABASE_SETUP.md` §3); the next Supabase deploy run with apply
+      ticked copies it to the project. Don't set it with
+      `supabase secrets set`: a deploy removes any function secret that
+      isn't in the environment.
 - [ ] Database ▸ Webhooks: enable webhooks (installs the `pg_net`
       extension), then on INSERT into `public.notifications`, call the
       `send-push` function with the HTTP headers
@@ -39,7 +47,11 @@ production is still to do.
       check). Requests without the secret are
       rejected. Without the webhook, notifications still appear in the app's
       bell; they just aren't pushed.
-- [ ] Auth ▸ Providers: enable Apple (see 3). Keep Email enabled for the
+- [ ] Auth ▸ Hooks: enable **Before User Created** with
+      `public.hook_before_user_created` (`SUPABASE_SETUP.md` §5). Staging:
+      done 2026-10-23 (owner, dashboard), not verified end to end.
+- [ ] Auth ▸ Providers: enable Apple (see 3). Staging: done 2026-10-23
+      (owner, dashboard), not verified end to end. Keep Email enabled for the
       App Review demo account; the app offers email sign-in only, behind
       "Other ways to sign in". Leave "Allow new users to sign up" on: it
       covers every provider, Apple included.
@@ -51,7 +63,8 @@ production is still to do.
       support how to add a trigger on `auth.identities` on your plan before
       launch, and keep "Allow manual linking" off meanwhile.
 - [ ] Auth ▸ URL configuration: add `pullup://auth-callback` as a redirect URL
-      for email confirmation links.
+      for email confirmation links. Staging: done 2026-10-23 (owner,
+      dashboard), not verified end to end.
 
 ## 2. App configuration (no secrets in git)
 
@@ -63,7 +76,7 @@ production is still to do.
       The service-role key must never go in the app.
 - [x] For CI-signed builds, the TestFlight workflow (`testflight.yml`)
       writes `Secrets.xcconfig` before `xcodegen generate`, from the GitHub
-      environment's secrets and variables (`TESTFLIGHT_SETUP.md`).
+      environment's variables (`TESTFLIGHT_SETUP.md`).
 - [ ] A build without these values shows a "Server not configured" screen
       with an explicit demo-data option. It never shows fake data silently.
 
@@ -71,13 +84,21 @@ production is still to do.
 
 - [ ] Register the App ID with capabilities: Sign in with Apple, Push
       Notifications. (CarPlay: see 5.)
-- [ ] Sign in with Apple: create a Services ID and a key, then enter the
-      Services ID, Team ID, Key ID and private key in Supabase ▸ Auth ▸ Apple.
-      The app sends a SHA-256 nonce; Supabase verifies it.
-- [ ] APNs: create an APNs auth key (.p8). Set the function secrets with
-      `supabase secrets set APNS_KEY_ID=… APNS_TEAM_ID=… APNS_TOPIC=<bundle id>
-      APNS_PRIVATE_KEY="$(cat AuthKey_XXXX.p8)"`. The app reports whether its
-      token is sandbox or production, and the function routes accordingly.
+- [ ] Sign in with Apple: in Supabase ▸ Auth ▸ Providers ▸ Apple, enable it
+      and put the app's bundle ID `app.pullup.ios` (or `PULLUP_BUNDLE_ID`)
+      in Client IDs. The app signs in natively (`signInWithIdToken`), which
+      accepts only token audiences listed there. A Services ID and secret
+      key are only needed for web sign-in. The deploy workflow's "Report
+      the sign-in settings" step (coming in #22) prints whether the bundle
+      ID is listed. The app sends a SHA-256 nonce; Supabase verifies it.
+- [ ] APNs: create an APNs auth key (.p8). Add `APNS_KEY_ID`,
+      `APNS_TEAM_ID`, `APNS_TOPIC` (the bundle ID) and `APNS_PRIVATE_KEY`
+      (the whole `.p8` file) as secrets in the GitHub environment
+      (`SUPABASE_SETUP.md` §3); the next Supabase deploy run with apply
+      ticked copies them to the project. Don't set them with
+      `supabase secrets set`: a deploy removes any function secret that
+      isn't in the environment. The app reports whether its token is
+      sandbox or production, and the function routes accordingly.
 - [ ] `aps-environment` in `PullUp.entitlements` is `development`. Archive
       builds for TestFlight/App Store get `production` from the distribution
       profile automatically.
@@ -86,10 +107,22 @@ production is still to do.
 
 - [ ] Create the app record in App Store Connect with the bundle ID.
 - [ ] Archive: either on a Mac (`xcodegen generate`, open `PullUp.xcodeproj`,
-      Product ▸ Archive), or run Actions ▸ TestFlight, which archives with
-      an App Store Connect API key and `-allowProvisioningUpdates`
-      (`TESTFLIGHT_SETUP.md`; it hasn't made a signed upload yet). No
-      signing material is in the repo.
+      Product ▸ Archive), or run Actions ▸ TestFlight from `main`, which
+      archives with an App Store Connect API key and
+      `-allowProvisioningUpdates` (`TESTFLIGHT_SETUP.md`). No signing
+      material is in the repo.
+
+TestFlight, stage by stage:
+
+- [x] Unsigned Release archive: built by CI on pull requests that touch
+      the app, passing.
+- [ ] Signed archive. Not done yet.
+- [ ] Upload accepted by App Store Connect. Not done yet.
+- [ ] App Store Connect processing finished. Not done yet.
+- [ ] Installed on a device from TestFlight. Not done yet.
+
+App Store:
+
 - [ ] App Privacy answers, matching `PrivacyInfo.xcprivacy`: precise
       location, photos or videos, email, name, user ID, device ID (push
       token), messages, other user content and purchase history, all linked
@@ -108,8 +141,11 @@ Messages
 - [ ] Check that realtime is on for messages: Database ▸ Publications ▸
       `supabase_realtime` lists `messages` and `message_reactions`. (The
       migration adds them and prints a notice if the publication is missing.)
-- [ ] Generate `CRON_SECRET` (`openssl rand -hex 32`), set it with
-      `supabase secrets set CRON_SECRET=<value>`, and schedule
+- [ ] Generate `CRON_SECRET` (`openssl rand -hex 32`) and add it as a
+      secret in the GitHub environment (`SUPABASE_SETUP.md` §3); the next
+      Supabase deploy run with apply ticked copies it to the project. Don't
+      set it with `supabase secrets set`: a deploy removes any function
+      secret that isn't in the environment. Then schedule
       `dm-retention` daily: enable Integrations ▸ Cron (installs `pg_cron`)
       and Database ▸ Webhooks (installs `pg_net`, which makes the HTTP
       call), store the secret in Vault rather than pasting it into the
@@ -124,10 +160,15 @@ Messages
 
 Sign in with Apple token revocation (account deletion)
 
-- [ ] `supabase secrets set APPLE_TEAM_ID=… APPLE_CLIENT_ID=<bundle id>
-      APPLE_KEY_ID=… APPLE_PRIVATE_KEY="$(cat AuthKey_XXXX.p8)"` using a Sign
-      in with Apple key. Without them accounts are still deleted, and the app
-      tells the person how to remove Pull Up from their Apple Account.
+- [ ] Create a Sign in with Apple key and add `APPLE_TEAM_ID`,
+      `APPLE_CLIENT_ID` (the bundle ID), `APPLE_KEY_ID` and
+      `APPLE_PRIVATE_KEY` (the whole `.p8` file) as secrets in the GitHub
+      environment (`SUPABASE_SETUP.md` §3); the next Supabase deploy run
+      with apply ticked copies them to the project. Don't set them with
+      `supabase secrets set`: a deploy removes any function secret that
+      isn't in the environment. Without them accounts are still deleted,
+      and the app tells the person how to remove Pull Up from their Apple
+      Account.
 
 Pull Up Pro (nothing here is done; prices are placeholders)
 
@@ -138,9 +179,13 @@ Pull Up Pro (nothing here is done; prices are placeholders)
       file are $3.99 and $29.99; choose real prices yourself. Add the review
       screenshot and description each product needs.
 - [ ] Create an In-App Purchase key (Users and Access ▸ Integrations ▸ In-App
-      Purchase) and set `supabase secrets set APPSTORE_ISSUER_ID=…
-      APPSTORE_KEY_ID=… APPSTORE_BUNDLE_ID=<bundle id>
-      APPSTORE_PRIVATE_KEY="$(cat SubscriptionKey_XXXX.p8)"`.
+      Purchase) and add `APPSTORE_ISSUER_ID`, `APPSTORE_KEY_ID`,
+      `APPSTORE_BUNDLE_ID` (the bundle ID) and `APPSTORE_PRIVATE_KEY` (the
+      whole `.p8` file) as secrets in the GitHub environment
+      (`SUPABASE_SETUP.md` §3); the next Supabase deploy run with apply
+      ticked copies them to the project. Don't set them with
+      `supabase secrets set`: a deploy removes any function secret that
+      isn't in the environment.
 - [ ] App Store Connect ▸ App Information ▸ App Store Server Notifications:
       set both the Production and Sandbox URL to
       `https://<project-ref>.supabase.co/functions/v1/app-store-notifications`,
@@ -182,9 +227,10 @@ Parts finder
 
 Security
 
-- [x] Run `supabase test db` against staging, including
-      `006_security_surface.sql`: all 14 files, 262 of 262, on 2026-10-20
-      (`STAGING_DEPLOYMENT.md`).
+- [ ] Run `supabase test db` against staging, including
+      `006_security_surface.sql`. Files 001–014 passed there, 262 of 262,
+      on 2026-10-20 (`STAGING_DEPLOYMENT.md`); `015_follow_requests.sql`
+      (#21) hasn't run on staging yet.
 - [ ] Work through "Still to do" in `SECURITY_REPORT.md`.
 
 ## 5. CarPlay

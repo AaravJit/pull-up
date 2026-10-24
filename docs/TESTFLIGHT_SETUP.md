@@ -4,9 +4,17 @@ How to get Pull Up from GitHub onto your iPhone through TestFlight without
 a Mac. Steps marked **You** need your Apple Developer or GitHub account;
 the build, signing and upload run on a GitHub Actions macOS runner.
 
-No TestFlight build exists yet. The workflow has only built the Release
-archive unsigned; it hasn't signed or uploaded anything, because the Apple
-account steps below haven't been done.
+No TestFlight build exists yet. Where each stage stands:
+
+| Stage | Status |
+| --- | --- |
+| Unsigned Release archive | Passing: built by CI on pull requests that touch the app |
+| Signed archive | Not done yet |
+| Upload accepted by App Store Connect | Not done yet |
+| App Store Connect processing finished | Not done yet |
+| Installed on a device from TestFlight | Not done yet |
+
+The signed stages wait on the Apple account steps below.
 
 ## How it works
 
@@ -54,10 +62,18 @@ membership, and nothing below works without it. Note your **Team ID**
 ## 3. App Store Connect API key (**You**)
 
 Users and Access ▸ Integrations ▸ App Store Connect API ▸ Team Keys ▸
-**+**. Name it `GitHub TestFlight`, access **Admin**. Cloud-managed
-signing creates the distribution certificate for you, and Apple only lets
-Admin keys do that. Download the `.p8` file (Apple offers it once), and
-note the **Key ID** and the **Issuer ID** at the top of the page.
+**+**. Name it `GitHub TestFlight`, access **Admin**. Download the `.p8`
+file (Apple offers it once), and note the **Key ID** and the **Issuer ID**
+at the top of the page.
+
+Why Admin: cloud-managed signing creates the distribution certificate for
+you. Apple's [role table](https://developer.apple.com/support/roles/) gives
+Account Holder and Admin full access to create cloud-managed certificates;
+App Manager and Developer need a separate per-user permission, which Apple
+doesn't document for team keys. So use a team key with the Admin role.
+Individual keys can't use the provisioning endpoints
+([Apple](https://developer.apple.com/documentation/appstoreconnectapi/creating-api-keys-for-app-store-connect-api)),
+so they won't work here.
 
 Treat the `.p8` like a password: it goes only into GitHub secrets (next
 step). Delete the download afterwards.
@@ -75,18 +91,33 @@ same environments `SUPABASE_SETUP.md` creates):
 | Variable | `APPLE_TEAM_ID` | Team ID |
 | Variable | `SUPABASE_ANON_KEY` | that project's anon (publishable) key; public by design |
 | Variable (optional) | `PULLUP_BUNDLE_ID` | only if not `app.pullup.ios` |
-| Variable (optional) | `PULLUP_PRIVACY_POLICY` | privacy policy URL without `https://`; required before Pro goes to review |
+| Variable | `PULLUP_PRIVACY_POLICY` | privacy policy URL without `https://`; optional for `staging`, required for `production` (the workflow refuses a production build without it) |
+| Variable (optional) | `PULLUP_SUPPORT_URL` | support page URL without `https://`; shown in Settings ▸ About when set |
 | Variable (optional) | `PULLUP_EPN_CAMPAIGN_ID` | eBay Partner Network campaign id |
 
 `SUPABASE_PROJECT_REF` is already there from the Supabase setup. Keep
 `production` limited to the `main` branch with you as required reviewer,
-so a production build always waits for your approval.
+so a production build always waits for your approval. `staging` also
+allows deployments from `main` only. The workflow also refuses a
+production build that isn't from `main`, that points at the staging
+project, or that has no privacy policy URL.
+
+The app is iPhone only for now (`TARGETED_DEVICE_FAMILY` 1 in
+`native/ios/project.yml`), so App Store Connect needs iPhone screenshots
+only. iPad can be added in a later version; it can't be removed once it
+has shipped.
 
 ## 5. Build and upload
 
-Actions ▸ **TestFlight** ▸ Run workflow ▸ backend `staging` ▸ optional
-"What to test" notes. (GitHub lists a hand-run workflow only once it is on
-`main`.)
+Actions ▸ **TestFlight** ▸ Run workflow, with "Use workflow from" on
+`main` (the `staging` and `production` environments refuse runs from other
+branches) ▸ backend `staging` ▸ optional "What to test" notes.
+
+Since 2026-04-28 Apple only accepts uploads built with Xcode 26 or later
+and the iOS 26 SDK
+([Apple](https://developer.apple.com/news/upcoming-requirements/?id=04282026a)).
+The workflow's `macos-26` runner with the latest-stable Xcode (26.6, with
+the iOS 26.5 SDK, at the time of writing) meets that.
 
 A green run means Apple **received** the build. It reaches TestFlight only
 after App Store Connect finishes processing it (usually minutes, sometimes
@@ -96,12 +127,18 @@ processing finds a problem.
 ## 6. Install on your iPhone (**You**)
 
 1. App Store Connect ▸ the app ▸ TestFlight ▸ Internal Testing ▸ **+** ▸
-   create a group and add yourself.
-2. Add the processed build to the group. Export compliance is answered by
-   the build (`ITSAppUsesNonExemptEncryption` is `false`: Pull Up only uses
-   standard HTTPS).
-3. Install TestFlight on the iPhone 18 Pro Max, sign in with the same
-   Apple ID, and install Pull Up. Then follow `DEVICE_TEST_PLAN.md`.
+   create a group, add yourself, and tick **Enable automatic
+   distribution**, so each processed build goes to the group.
+2. Check the processed build is in the group; add it by hand if it isn't.
+   Export compliance is answered by the build
+   (`ITSAppUsesNonExemptEncryption` is `false`: Pull Up only uses standard
+   HTTPS).
+3. Install TestFlight on the iPhone 18 Pro Max. Open Apple's email invite
+   on the iPhone and accept it in the TestFlight app, then install Pull Up.
+   Then follow `DEVICE_TEST_PLAN.md`.
+
+TestFlight builds expire after 90 days; run the workflow again for a fresh
+one.
 
 ## Crash reports
 
@@ -126,7 +163,9 @@ you saved yourself.
 | Message | Cause | Fix |
 | --- | --- | --- |
 | "The staging environment is missing: …" | a secret or variable from step 4 isn't set | add it |
+| "Branch … is not allowed to deploy to staging" | the run was started from a branch other than `main` | run it from `main` (step 5) |
 | "No profiles for 'app.pullup.ios' were found" or a certificate error | the API key isn't Admin, or the App ID is missing | step 3 role, step 2.1 |
+| "Your team has no devices from which to generate a provisioning profile" (possible on the first signed run; not seen yet) | the team has no registered device | register the iPhone (its UDID) in Certificates, Identifiers & Profiles ▸ Devices, then run again |
 | "No suitable application records were found" | no App Store Connect app for that bundle ID | step 2.2 |
 | "The bundle version must be higher" | a build with that number was uploaded by hand | raise the offset in the workflow |
 | Upload passes but no build appears | Apple is still processing, or rejected it by email | wait, then check the email |

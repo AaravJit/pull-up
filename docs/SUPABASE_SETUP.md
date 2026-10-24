@@ -4,13 +4,19 @@ How to connect Pull Up to hosted Supabase projects. Steps marked **You**
 need the project owner's Supabase or GitHub account; everything else is
 done by the "Supabase deploy" workflow.
 
-Staging (`pull-up-staging`) is set up: all 24 migrations, the five edge
-functions and the four storage buckets were applied through the Supabase
-connector, and the pgTAP suite passed there (262 of 262 on 2026-10-20).
+Staging (`pull-up-staging`) is set up: all 24 migrations (last on
+2026-10-20), the five edge functions and the four storage buckets were
+applied through the Supabase connector. pgTAP files 001–014 passed there,
+262 of 262, on 2026-10-20; `015_follow_requests.sql` hasn't run there yet.
+On 2026-10-23 the project owner enabled the Before User Created hook,
+added the redirect URL and configured the Apple provider in the staging
+dashboard; none of these has been checked end to end yet.
 `STAGING_DEPLOYMENT.md` is the record, including the dashboard steps still
-open. The deploy workflow's `staging` environment is set up, but the
-workflow hasn't yet completed a run against staging, and no production
-project has been created.
+open.
+
+The deploy workflow's `staging` environment is set up, but no run has
+completed: until #22 merges, a run from `main` fails connecting to the
+database over IPv6 (step 4). No production project has been created.
 
 ## What lives where
 
@@ -20,7 +26,7 @@ project has been created.
 | Edge functions | `supabase/functions/` | `supabase functions deploy` in the deploy workflow |
 | Function secrets (push, Apple, App Store) | GitHub environment secrets | copied by the deploy workflow; one deleted here is removed from the project on the next deploy |
 | Auth providers, sign-up switches, redirect URLs, database webhook, cron | Supabase dashboard | **You**, once per project (step 5) |
-| App's project URL and anon key | GitHub environment secrets, or your local `Config/Secrets.xcconfig` | the iOS build |
+| App's project URL and anon key | GitHub environment variables `SUPABASE_PROJECT_REF` and `SUPABASE_ANON_KEY` (`testflight.yml` reads variables, not secrets), or your local `Config/Secrets.xcconfig` | the iOS build |
 
 The anon key is meant to be public; row-level security protects the data.
 The service-role key and database password never go in the app or in git.
@@ -49,12 +55,14 @@ Repository ▸ Settings ▸ Environments ▸ New environment:
 
 | Environment | Variables | Secrets | Protection |
 | --- | --- | --- | --- |
-| `staging` | `SUPABASE_PROJECT_REF` = staging ref | `SUPABASE_ACCESS_TOKEN`, `SUPABASE_DB_PASSWORD` (staging's) | none |
+| `staging` | `SUPABASE_PROJECT_REF` = staging ref | `SUPABASE_ACCESS_TOKEN`, `SUPABASE_DB_PASSWORD` (staging's) | deployment branches: `main` only |
 | `production` | `SUPABASE_PROJECT_REF` = production ref | `SUPABASE_ACCESS_TOKEN`, `SUPABASE_DB_PASSWORD` (production's) | **Required reviewers: you**; deployment branches: `main` only |
 
 Optional secrets, per environment, copied to the project's function
 secrets on each deploy, and removed from them once deleted here. Functions
-answer "not configured" without them.
+answer "not configured" without them. Add them here, not with
+`supabase secrets set`: a deploy removes any of these function secrets
+that isn't in the environment.
 
 | Secret | Used by | Where it comes from |
 | --- | --- | --- |
@@ -66,15 +74,18 @@ answer "not configured" without them.
 
 ## 4. Deploy (workflow)
 
-Actions ▸ **Supabase deploy** ▸ Run workflow. (GitHub lists a hand-run
-workflow only once it is on `main`, so this appears after PR #2 is merged.)
+Actions ▸ **Supabase deploy** ▸ Run workflow, with "Use workflow from" on
+`main`. A run from another branch is refused before it starts, because
+the environments allow deployments from `main` only (step 3).
+
+Until #22 merges, a run from `main` fails at the migration-list step:
+GitHub's runners have no IPv6, and the direct database host is IPv6-only.
+#22 connects through the IPv4 session pooler instead.
 
 1. `staging`, **apply unticked**. This is a dry run: it lists the migrations
    staging doesn't have yet and refuses any that could drop data or that
    run dynamic SQL (`supabase/scripts/check-pending-migrations.sh`). It stops
-   first if the project has migrations the checkout lacks (staging carries
-   the Phase 3 migrations from their pull requests, so run it from `main`
-   once those are merged). It also refuses any
+   first if the project has migrations the checkout lacks. It also refuses any
    migration not recorded in `supabase/applied/staging.sha256`: record new
    ones there in their pull request, so CI guards them once deployed.
 2. `staging`, **apply ticked**. Applies the migrations, copies the function
@@ -103,8 +114,12 @@ These aren't in migrations because they hold per-project values:
   Sign in with Apple; accounts you create under Auth ▸ Users still work.
   Check it: a sign-up from the API with the anon key must fail with
   "New Pull Up accounts are created with Sign in with Apple."
-* **Auth ▸ Providers ▸ Apple:** enable with the Services ID and key
-  (`RELEASE_CHECKLIST.md` §3).
+* **Auth ▸ Providers ▸ Apple:** enable it and put the app's bundle ID
+  `app.pullup.ios` (or `PULLUP_BUNDLE_ID`) in Client IDs. The app signs in
+  natively (`signInWithIdToken`), which accepts only token audiences listed
+  there. A Services ID and secret key are only needed for web sign-in. The
+  deploy workflow's "Report the sign-in settings" step (coming in #22)
+  prints whether the bundle ID is listed.
 * **Auth ▸ Sign In / Providers:** "Allow manual linking" on (the database
   refuses links the person didn't start).
 * **Auth ▸ URL Configuration:** site URL and redirect URL
@@ -148,7 +163,8 @@ These aren't in migrations because they hold per-project values:
   `PULLUP_BACKEND_ENVIRONMENT` (`staging` or `production`). Settings ▸
   About then shows "Pull Up server (staging)" on staging builds.
 * **TestFlight builds:** the release workflow writes the same file from
-  the GitHub environment it builds for (`TESTFLIGHT_SETUP.md`).
+  the variables of the GitHub environment it builds for
+  (`TESTFLIGHT_SETUP.md`).
 
 ## Rolling back
 

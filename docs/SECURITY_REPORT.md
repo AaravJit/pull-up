@@ -50,8 +50,10 @@ Also re-checked:
   `is_blocked_between` look open; both already answer only when the caller
   is one of the two (SEC-02), on staging too.
 * **Staging.** All of the above is applied to `pull-up-staging`; 190
-  database checks passed there on 2026-10-18, and all 14 pgTAP files,
-  262 of 262, on 2026-10-20 at `41cf1d5` (docs/STAGING_DEPLOYMENT.md).
+  database checks passed there on 2026-10-18, and all 14 pgTAP files then
+  on `main` (001–014), 262 of 262, on 2026-10-20 at `41cf1d5`
+  (docs/STAGING_DEPLOYMENT.md). `015_follow_requests.sql`, added later,
+  hasn't run on staging.
 
 
 ## Scope and method
