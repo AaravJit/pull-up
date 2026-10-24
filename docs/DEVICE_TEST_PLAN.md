@@ -76,7 +76,7 @@ lower one.
 | --- | --- | --- |
 | D2.1 | Drive tab ▸ Start Drive ▸ pick a vehicle ▸ Start recording | Location prompt appears only now |
 | D2.2 | Answer "Don't Allow" | "Location access is off for Pull Up…" with an Open Settings button; nothing recorded |
-| D2.3 | Allow with Precise Location off, then Start recording | iOS asks for precise location for this drive. Allowing it starts recording; declining shows "Precise Location is off…" with Open Settings and nothing records. Needs #17; earlier builds skip the iOS prompt |
+| D2.3 | Allow with Precise Location off, then Start recording | iOS asks for precise location for this drive. Allowing it starts recording; declining shows "Precise Location is off…" with Open Settings and nothing records. Every build from `main` has this (#17, merged); builds from before #17 skip the iOS prompt |
 | D2.4 | Allow While Using, Precise on | Recording starts; the blue location indicator appears when the app is in the background |
 | D2.5 | Record a keepable drive, then turn Precise Location off for Pull Up in iOS Settings and return | Recording has stopped and the drive summary opens with the drive saved. The next Start recording behaves as in D2.3. See [Known gaps](#known-gaps): the "Precise Location was turned off" notice isn't shown |
 
@@ -145,12 +145,12 @@ still pending, A unfollows and follows again).
 | D4.7d | A reports B from the chat | "Thanks for reporting" appears; B isn't told; a row appears in staging's `reports` table |
 | D4.7e | Run after section 5. A blocks B | The chat leaves A's inbox; B can't start a chat with A, find A or see A's profile. To undo, delete the row in staging's `blocks` table |
 | D4.8 | Send a photo that has a location (in Photos, swipe up shows a map). In the staging dashboard ▸ Storage ▸ dm-media, download that message's .jpg and check it with an EXIF viewer | No GPS fields; longest side 2048 px or less |
-| D4.9 | Look through Feed, meets and leaderboards, and the people search when sending a post (paper-plane button ▸ search). The app has no other search | No demo profiles; only real accounts. CI's API tests briefly create "Test …" users on staging and delete them again |
+| D4.9 | Look through Feed, meets and leaderboards, and the people search when sending a post (paper-plane button ▸ search). The app has no other search | No demo profiles; only real accounts. The staging API suite (run by hand from the `Supabase deploy` workflow; CI's API tests use the local stack) briefly creates test users on staging and deletes them again |
 | D4.10 | A: Feed ▸ New post ▸ Add ▸ pick a clip under 100 MB filmed on the phone ▸ Public ▸ Post. B turns Wi-Fi off (cellular only), opens Feed and plays A's video | The post appears with the video. On cellular it starts playing and plays to the end with the standard controls; note in the result how long it took to start |
 
 ## 5. Notifications (2 accounts)
 
-Only after staging has the APNs secrets and `PUSH_WEBHOOK_SECRET` (`SUPABASE_SETUP.md` step 3), `send-push` is deployed (step 4), and the database webhook on `public.notifications` is set up (step 5). Without the webhook, notifications still show in the app's bell but nothing is pushed.
+Only after staging has the APNs secrets and `PUSH_WEBHOOK_SECRET` (`SUPABASE_SETUP.md` step 3) and the database webhook on `public.notifications` is set up (step 5: it needs the `pg_net` extension, and sends both the `x-pullup-webhook-secret` and an `Authorization: Bearer` header). `send-push` itself is already deployed on staging. Without the webhook, notifications still show in the app's bell but nothing is pushed.
 Pull Up shows no banner while it is open, so keep A's app in the background
 or the phone locked. Repeat follows and likes within 24 hours send no
 second push, by design. A message request's push always reads "… wants
@@ -229,8 +229,6 @@ Found while checking this plan against the code. Each one makes a row
 above behave differently from what a tester might expect. They are not
 fixed yet.
 
-* **D2.3:** before #17, Start Drive refuses with "Precise Location is off"
-  without iOS ever offering precise location for the drive.
 * **D2.5:** the "Precise Location was turned off" notice is never shown.
   The drive summary replaces it, and closing the summary clears it.
 * **D3.15:** a saved drive uploads only when the app starts, on sign-in, or
