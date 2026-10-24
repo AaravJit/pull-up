@@ -103,6 +103,16 @@ jobs:
             echo "::error::The ${{ inputs.backend }} environment is missing:${missing%,}. See docs/TESTFLIGHT_SETUP.md."
             exit 1
           fi
+      - name: Check the link variables
+        run: |
+          # xcconfig reads "//" as the start of a comment, so a value with
+          # https:// would be cut to "https:" and the app would show a dead link.
+          for v in PRIVACY_POLICY:PULLUP_PRIVACY_POLICY SUPPORT_URL:PULLUP_SUPPORT_URL; do
+            name="${v%%:*}"
+            case "${!name}" in
+              *://*|*" "*) echo "::error::Write the ${{ inputs.backend }} environment's ${v#*:} variable without https:// (for example yourdomain.example/privacy)."; exit 1 ;;
+            esac
+          done
       - name: Check a production build is fit for review
         if: inputs.backend == 'production'
         run: |

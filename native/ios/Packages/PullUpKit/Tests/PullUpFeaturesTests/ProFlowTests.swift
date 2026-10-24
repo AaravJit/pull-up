@@ -171,5 +171,6 @@ struct ProLinksTests {
         #expect(ProLinks.privacyURL(from: "") == nil)
         #expect(ProLinks.privacyURL(from: "$(PULLUP_PRIVACY_POLICY)") == nil)
         #expect(ProLinks.privacyURL(from: "http://pullup.app/privacy") == nil)
+        #expect(ProLinks.privacyURL(from: "https:") == nil)
     }
 }
