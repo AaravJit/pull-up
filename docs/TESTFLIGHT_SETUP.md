@@ -9,9 +9,9 @@ No TestFlight build exists yet. Where each stage stands:
 | Stage | Status |
 | --- | --- |
 | Unsigned Release archive | Passing: built by CI on pull requests that touch the app |
-| Signed archive | Not done yet |
-| Upload accepted by App Store Connect | Not done yet |
-| App Store Connect processing finished | Not done yet |
+| Signed archive | Done 2026-10-24: 0.1.0 (233), staging, [run 40077637603](https://github.com/AaravJit/pull-up/actions/runs/40077637603) |
+| Upload accepted by App Store Connect | Done 2026-10-24: "UPLOAD SUCCEEDED with no errors" in the same run |
+| App Store Connect processing finished | Not confirmed yet |
 | Installed on a device from TestFlight | Not done yet |
 
 The signed stages wait on the Apple account steps below.

@@ -116,9 +116,11 @@ TestFlight, stage by stage:
 
 - [x] Unsigned Release archive: built by CI on pull requests that touch
       the app, passing.
-- [ ] Signed archive. Not done yet.
-- [ ] Upload accepted by App Store Connect. Not done yet.
-- [ ] App Store Connect processing finished. Not done yet.
+- [x] Signed archive: 0.1.0 (233), staging backend, 2026-10-24,
+      [run 40077637603](https://github.com/AaravJit/pull-up/actions/runs/40077637603).
+- [x] Upload accepted by App Store Connect: "UPLOAD SUCCEEDED with no
+      errors" in the same run.
+- [ ] App Store Connect processing finished. Not confirmed yet.
 - [ ] Installed on a device from TestFlight. Not done yet.
 
 App Store:

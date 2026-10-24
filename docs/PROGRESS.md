@@ -31,9 +31,9 @@ Each stage is tracked on its own. `TESTFLIGHT_SETUP.md` has the steps.
 | Stage | Status | Evidence / remaining action |
 | --- | --- | --- |
 | Unsigned Release archive | Passing | CI builds it on pull requests that touch the app |
-| Signed archive | Not done | Needs the Apple account steps in `TESTFLIGHT_SETUP.md` §1–4 |
-| Upload accepted by App Store Connect | Not done | Needs a signed archive |
-| App Store Connect processing finished | Not done | Needs an accepted upload |
+| Signed archive | Done 2026-10-24 | Pull Up 0.1.0 (233), `main` at `5e494b9`, staging backend, [run 40077637603](https://github.com/AaravJit/pull-up/actions/runs/40077637603): archive with Apple cloud signing and App Store export succeeded |
+| Upload accepted by App Store Connect | Done 2026-10-24 | Same run: altool reported "UPLOAD SUCCEEDED with no errors" (delivery e7fd6f3e-0604-4092-b073-2d4a02c11e5c) |
+| App Store Connect processing finished | Not confirmed | Check App Store Connect ▸ TestFlight ▸ iOS Builds for 0.1.0 (233) |
 | Installed on a device from TestFlight | Not done | Needs a processed build |
 
 ### Physical-device tests passed
