@@ -30,6 +30,8 @@ public final class DemoBackend: BackendService, Sendable {
         var privacy = PrivacySettings()
         var zones: [PrivacyZone] = []
         var follows: Set<[UserID]> = []
+        /// `[follower, followee]` pairs waiting for the followee's approval.
+        var pendingFollows: Set<[UserID]> = []
         var onboarded = true
         var conversations: [Conversation] = []
         var messages: [DirectMessage] = []
@@ -72,6 +74,12 @@ public final class DemoBackend: BackendService, Sendable {
             seed.onboarded = false
             seed.profiles[DemoSeed.meID]?.profile.username = "driver_3f9a1c22e0"
             seed.profiles[DemoSeed.meID]?.profile.displayName = ""
+        } else {
+            // The demo driver approves new followers, and Sam is waiting.
+            seed.privacy.requireFollowApproval = true
+            seed.pendingFollows = [[DemoSeed.samID, DemoSeed.meID]]
+            seed.notifications.append(AppNotification(id: UUID(), kind: .followRequest, actor: ProfileStub(id: DemoSeed.samID, username: "sam.ek9", displayName: "Sam"),
+                                                      createdAt: now.addingTimeInterval(-300)))
         }
         state = Mutex(seed)
     }
@@ -183,7 +191,7 @@ public final class DemoBackend: BackendService, Sendable {
             guard var page = s.profiles[id] else { throw BackendError.server("This profile isn't available.") }
             page.relationship = .init(
                 iFollow: s.follows.contains([me, id]) ? "accepted" : nil,
-                followsMe: s.follows.contains([id, me]) ? "accepted" : nil
+                followsMe: s.follows.contains([id, me]) ? "accepted" : s.pendingFollows.contains([id, me]) ? "pending" : nil
             )
             page.followerCount = s.follows.filter { $0[1] == id }.count
             page.followingCount = s.follows.filter { $0[0] == id }.count
@@ -214,6 +222,21 @@ public final class DemoBackend: BackendService, Sendable {
     public func unfollow(_ id: UserID) async throws {
         let me = try me()
         _ = state.withLock { $0.follows.remove([me, id]) }
+    }
+
+    public func followRequests() async throws -> [ProfileStub] {
+        let me = try me()
+        return state.withLock { s in
+            s.pendingFollows.filter { $0[1] == me }.compactMap { stub($0[0], in: s) }.sorted { $0.username < $1.username }
+        }
+    }
+
+    public func answerFollowRequest(from id: UserID, accept: Bool) async throws {
+        let me = try me()
+        state.withLock { s in
+            guard s.pendingFollows.remove([id, me]) != nil else { return }
+            if accept { s.follows.insert([id, me]) }
+        }
     }
 
     public func searchProfiles(_ query: String) async throws -> [ProfileStub] {
@@ -706,6 +729,8 @@ public final class DemoBackend: BackendService, Sendable {
             s.blocks.insert(user)
             s.follows.remove([me, user])
             s.follows.remove([user, me])
+            s.pendingFollows.remove([me, user])
+            s.pendingFollows.remove([user, me])
         }
         notifyMessaging(nil)
     }

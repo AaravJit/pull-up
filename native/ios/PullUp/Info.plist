@@ -52,6 +52,10 @@
 	<string>$(PULLUP_BACKEND_ENVIRONMENT)</string>
 	<key>PullUpPrivacyPolicyURL</key>
 	<string>$(PULLUP_PRIVACY_POLICY)</string>
+	<key>PullUpSupportURL</key>
+	<string>$(PULLUP_SUPPORT_URL)</string>
+	<key>PullUpProOffered</key>
+	<string>$(PULLUP_PRO_OFFERED)</string>
 	<key>PullUpEPNCampaignID</key>
 	<string>$(PULLUP_EPN_CAMPAIGN_ID)</string>
 	<key>UIBackgroundModes</key>

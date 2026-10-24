@@ -187,6 +187,51 @@ workflow is on `main`.
 
 Advisors after: no security errors; `rls_auto_enable` no longer listed.
 
+## Third deployment, 2026-10-20
+
+On Aarav's approval ("Merge both, deploy"), after #17 and #16 merged
+(`main` at `41cf1d5`):
+
+| Version | From | MD5 on staging = repository |
+| --- | --- | --- |
+| `20261020000100_signup_hook_schema_usage` | #6 | `8d40649a…` |
+| `20261020000200_drive_distance_bounds` | #13 | `1d452ad3…` |
+| `20261020000300_leaderboard_ranked_distance` | #16 | `4a4d548f…` |
+
+Each ran through the connector in one block that refused to run unless the
+file's MD5 matched and the version wasn't already recorded, then recorded it
+under its own version. Staging now has 24 migrations, all on `main`, and
+none from open pull requests. Staging held no users, drives or files, so
+000300's backfill had nothing to score.
+
+**Database tests on staging: 262 of 262 passed** (rolled back): all 14 files,
+`supabase/tests/001` to `014` at `41cf1d5`, fetched by commit and checked by
+MD5. This includes 004, 009, 010 and check 22 of 012, which the connector
+ran this time.
+
+**API smoke checks, signed out, through the real REST API:** the leaderboard
+and `drives` refuse with 401, while `drive_scores`, `track_coverage_m` and
+`validate_drive` aren't exposed (404). `supabase_auth_admin` has usage on
+`public`. Signed-in users can call the leaderboard, but can't read
+`private.drive_scores` or call `track_coverage_m`.
+
+The two-account API suite was **not** rerun. It creates real accounts
+outside any transaction and has to delete them afterwards, and its clean-up
+needed a hand in the SQL editor the first time. None of the three
+migrations changes what it covers, apart from the leaderboard, which pgTAP
+014 tests. It runs from the `Supabase deploy` workflow once step 7 below is
+done.
+
+Afterwards: 0 auth users, profiles, drives, notifications, scores and stored
+files. Neither `http` nor `pgtap` is installed, and no `selftest` objects
+are left. Security advisors: no errors, and the same intended warnings as
+before (38 app RPCs callable by signed-in users, two service-role tables
+with no policies).
+
+Auth settings read from `/auth/v1/settings`: Apple is **off**, email sign-in
+is on and public sign-up is not disabled. Dashboard steps 1 and 4 below are
+still open, and the first TestFlight run waits on them.
+
 ## Dashboard steps still needed (`SUPABASE_SETUP.md` §5)
 
 Not doable from the connector, or they need secrets that don't exist yet:
