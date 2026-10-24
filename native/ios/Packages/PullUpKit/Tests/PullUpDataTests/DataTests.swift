@@ -57,6 +57,56 @@ struct LocalDriveStoreTests {
         #expect(loaded != nil)
         #expect(loaded?.vehicleID == nil)
     }
+
+    /// A drive saved by an older build, before drives could be refused,
+    /// still loads and still waits to upload.
+    @Test func draftsFromOlderBuildsStillLoad() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("drives-\(UUID())")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let id = UUID()
+        let json = """
+        {"id":"\(id.uuidString)","ownerID":"\(UUID().uuidString)","startedAt":1800000000,"endedAt":1800000600,\
+        "samples":[],"title":"Evening drive","audience":"private"}
+        """
+        try Data(json.utf8).write(to: directory.appendingPathComponent("\(id.uuidString).json"))
+        let store = LocalDriveStore(directory: directory)
+        let loaded = try #require(await store.load(id))
+        #expect(loaded.rejectedAt == nil)
+        #expect(await store.pendingUploads().map(\.id) == [id])
+    }
+
+    @Test func refusedDrivesLeaveTheUploadQueueUntilRetried() async throws {
+        let store = makeStore()
+        let draft = DriveDraft(ownerID: UUID(), vehicleID: nil, startedAt: .now, endedAt: .now.addingTimeInterval(60))
+        try await store.save(draft)
+        try await store.markRejected(draft.id, at: .now)
+        #expect(await store.pendingUploads().isEmpty)
+        #expect(await store.rejectedUploads().map(\.id) == [draft.id])
+
+        try await store.markRejected(draft.id, at: nil)
+        #expect(await store.pendingUploads().map(\.id) == [draft.id])
+        #expect(await store.rejectedUploads().isEmpty)
+
+        // Deleted meanwhile: nothing comes back.
+        await store.delete(draft.id)
+        try await store.markRejected(draft.id, at: .now)
+        #expect(await store.all().isEmpty)
+    }
+
+    @Test func onlyRefusedDataIsPermanent() {
+        #expect(DriveDraft.isPermanentRejection(RefusedByServer(sqlState: "23514")), "check constraint, e.g. distance bounds")
+        #expect(DriveDraft.isPermanentRejection(RefusedByServer(sqlState: "22023")), "track too large")
+        #expect(DriveDraft.isPermanentRejection(RefusedByServer(sqlState: "23503")))
+        #expect(!DriveDraft.isPermanentRejection(RefusedByServer(sqlState: "23505")), "an earlier attempt got there first")
+        #expect(!DriveDraft.isPermanentRejection(RefusedByServer(sqlState: "42501")))
+        #expect(!DriveDraft.isPermanentRejection(RefusedByServer(sqlState: nil)))
+        #expect(!DriveDraft.isPermanentRejection(URLError(.notConnectedToInternet)))
+        #expect(!DriveDraft.isPermanentRejection(BackendError.notSignedIn))
+    }
+}
+
+struct RefusedByServer: SQLStateError {
+    let sqlState: String?
 }
 
 @Suite("Demo backend")

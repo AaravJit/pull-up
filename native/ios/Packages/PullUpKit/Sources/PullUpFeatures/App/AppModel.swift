@@ -247,6 +247,13 @@ public final class AppModel {
         await refreshMessages()
     }
 
+    /// Back in the foreground: drives that couldn't upload earlier (no
+    /// signal, or the app closed mid-upload) are sent again.
+    func foregrounded() async {
+        guard case .signedIn = phase else { return }
+        await recorder.syncPending()
+    }
+
     /// Called by onboarding once the server has marked it complete.
     func finishOnboarding() async {
         guard case let .onboarding(user) = phase else { return }
