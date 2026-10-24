@@ -175,6 +175,28 @@ public final class SupabaseBackend: BackendService, @unchecked Sendable {
         try await client.from("follows").delete().eq("follower_id", value: me).eq("followee_id", value: id).execute()
     }
 
+    public func followRequests() async throws -> [ProfileStub] {
+        let me = try await uid()
+        struct Row: Decodable { let follower: ProfileStub? }
+        let rows: [Row] = try await client.from("follows")
+            .select("follower:profiles!follows_follower_id_fkey(id, username, display_name, avatar_path)")
+            .eq("followee_id", value: me).eq("status", value: "pending")
+            .order("created_at", ascending: false).limit(100).execute().value
+        return rows.compactMap(\.follower)
+    }
+
+    // RLS lets only the followee accept, and either side delete.
+    public func answerFollowRequest(from id: UserID, accept: Bool) async throws {
+        let me = try await uid()
+        if accept {
+            try await client.from("follows").update(["status": "accepted"])
+                .eq("follower_id", value: id).eq("followee_id", value: me).eq("status", value: "pending").execute()
+        } else {
+            try await client.from("follows").delete()
+                .eq("follower_id", value: id).eq("followee_id", value: me).eq("status", value: "pending").execute()
+        }
+    }
+
     public func searchProfiles(_ query: String) async throws -> [ProfileStub] {
         let q = query.trimmingCharacters(in: .whitespaces).lowercased()
         guard q.count >= 2 else { return [] }

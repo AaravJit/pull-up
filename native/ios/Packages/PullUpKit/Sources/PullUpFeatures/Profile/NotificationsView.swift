@@ -6,15 +6,31 @@ struct NotificationsView: View {
     @Environment(AppModel.self) private var app
     @Environment(\.dismiss) private var dismiss
     @State private var items: [AppNotification] = []
+    @State private var requests: [ProfileStub] = []
+    @State private var answering: Set<UserID> = []
+    @State private var requestError: String?
     @State private var isLoaded = false
     @State private var error: String?
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
+                if !requests.isEmpty || requestError != nil {
+                    SectionHeader(requests.isEmpty ? "Follow requests" : "Follow requests (\(requests.count))")
+                        .padding(.top, Space.m)
+                    if let requestError {
+                        ErrorLine(message: requestError).padding(.top, Space.m)
+                    }
+                    ForEach(requests) { person in
+                        requestRow(person)
+                    }
+                    if !items.isEmpty {
+                        SectionHeader("Activity").padding(.top, Space.l)
+                    }
+                }
                 if let error {
                     ErrorLine(message: error) { Task { await load() } }
-                } else if isLoaded, items.isEmpty {
+                } else if isLoaded, items.isEmpty, requests.isEmpty {
                     EmptyState(title: "All caught up", message: "Follows, likes, comments and meet updates show up here.")
                 }
                 ForEach(items) { item in
@@ -52,6 +68,35 @@ struct NotificationsView: View {
         .task { await load() }
     }
 
+    private func requestRow(_ person: ProfileStub) -> some View {
+        let name = person.displayName.isEmpty ? "@\(person.username)" : person.displayName
+        let busy = answering.contains(person.id)
+        return VStack(alignment: .leading, spacing: Space.m) {
+            HStack(spacing: Space.m) {
+                Avatar(name: person.displayName, path: person.avatarPath, size: 34)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(name).font(ClusterFont.body(.subheadline)).foregroundStyle(ClusterColor.ink)
+                    Text("@\(person.username)").font(ClusterFont.body(.caption)).foregroundStyle(ClusterColor.inkTertiary)
+                }
+                .accessibilityElement(children: .combine)
+                Spacer(minLength: 0)
+            }
+            HStack(spacing: Space.s) {
+                Button { Task { await answer(person, accept: false) } } label: { Text("Decline").frame(maxWidth: .infinity) }
+                    .buttonStyle(.clusterSecondary)
+                    .accessibilityLabel("Decline \(name)")
+                    .accessibilityIdentifier("decline-follow-\(person.username)")
+                Button { Task { await answer(person, accept: true) } } label: { Text("Accept").frame(maxWidth: .infinity) }
+                    .buttonStyle(.cluster)
+                    .accessibilityLabel("Accept \(name)")
+                    .accessibilityIdentifier("accept-follow-\(person.username)")
+            }
+            .disabled(busy)
+        }
+        .padding(.vertical, Space.m)
+        .overlay(alignment: .bottom) { Hairline() }
+    }
+
     private func load() async {
         do {
             items = try await app.backend.notifications()
@@ -61,7 +106,25 @@ struct NotificationsView: View {
         } catch {
             self.error = error.localizedDescription
         }
+        do {
+            requests = try await app.backend.followRequests()
+            requestError = nil
+        } catch {
+            requestError = error.localizedDescription
+        }
         isLoaded = true
+    }
+
+    private func answer(_ person: ProfileStub, accept: Bool) async {
+        answering.insert(person.id)
+        defer { answering.remove(person.id) }
+        do {
+            try await app.backend.answerFollowRequest(from: person.id, accept: accept)
+            requests.removeAll { $0.id == person.id }
+            requestError = nil
+        } catch {
+            requestError = error.localizedDescription
+        }
     }
 
     private func symbol(_ kind: AppNotification.Kind) -> String {

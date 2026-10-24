@@ -17,8 +17,18 @@ PULLUP_BACKEND_ENVIRONMENT =
 
 // Privacy policy shown with the Pull Up Pro subscription, WITHOUT the
 // scheme (https is added), e.g. pullup.app/privacy. Required before Pro can
-// be submitted to App Review; empty = no link shown.
+// be submitted to App Review. Also shown in Settings > About. Empty = no
+// link shown.
 PULLUP_PRIVACY_POLICY =
+
+// Support page shown in Settings > About, WITHOUT the scheme (https is
+// added), e.g. pullup.app/support. Empty = no Support row.
+PULLUP_SUPPORT_URL =
+
+// Whether Pull Up Pro is on sale in this build. NO hides every Pro entry
+// point (people who already have Pro keep it and still see it). Set YES once
+// the subscriptions are submitted with the version.
+PULLUP_PRO_OFFERED = NO
 
 // eBay Partner Network campaign id (10 digits) for parts-finder links.
 // Empty = plain eBay links with no affiliate parameters or disclosure.
