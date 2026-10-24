@@ -88,7 +88,9 @@ The workflow reaches the database through the project's session pooler
 direct host `db.<ref>.supabase.co` is IPv6-only on projects without the
 paid IPv4 add-on. It reads the pooler address from the Management API with
 `SUPABASE_ACCESS_TOKEN`, checks the host and user belong to the project,
-and requires TLS. No IPv4 add-on is needed.
+and requires TLS for the migration commands. The pgTAP run gets only the
+host, user and password from the CLI, so it uses libpq's default, which
+tries TLS first. No IPv4 add-on is needed.
 
 ## 5. Dashboard settings per project (**You**)
 

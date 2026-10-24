@@ -100,8 +100,12 @@ jobs:
       # The connection string comes from the Management API, the same source
       # `supabase link` uses, and is checked before use: the host must be a
       # supabase.com pooler and the user must name this project. TLS is
-      # required (no fallback to an unencrypted connection). The URL holds the
-      # password, so it is masked and kept in a file only this job can read.
+      # required for migration list and db push (no fallback to an
+      # unencrypted connection). `supabase test db` passes pg_prove only the
+      # host, user and password, so the pgTAP run uses libpq's default
+      # (sslmode=prefer: TLS when the server offers it, as the pooler does).
+      # The URL holds the password, so it is masked and kept in a file only
+      # this job can read.
       - name: Resolve the IPv4 session pooler
         run: |
           set -o pipefail
