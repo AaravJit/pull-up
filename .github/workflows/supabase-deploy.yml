@@ -69,6 +69,31 @@ jobs:
             exit 1
           fi
 
+      # Read-only, and it never fails the run: shows whether the sign-in
+      # settings the app needs are on, so they can be checked without
+      # opening the dashboard. Only named non-secret fields are printed
+      # (the config also holds provider secrets and SMTP passwords).
+      - name: Report the sign-in settings
+        run: |
+          set -o pipefail
+          if ! config=$(curl -fsS -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+            "https://api.supabase.com/v1/projects/$PROJECT_REF/config/auth"); then
+            echo "::warning::Couldn't read the auth settings with SUPABASE_ACCESS_TOKEN."
+            exit 0
+          fi
+          bundle=$(grep -E '^PULLUP_BUNDLE_ID *=' native/ios/Config/Base.xcconfig | sed -E 's/.*= *//')
+          jq -r --arg bundle "$bundle" '
+            def show($k): "\($k): \(if has($k) then .[$k] else "(not reported)" end)";
+            def ids: (.external_apple_client_id // "") | split(",") | map(gsub("^ +| +$"; ""));
+            show("external_apple_enabled"),
+            "external_apple_client_id includes \($bundle): \(ids | index($bundle) != null)",
+            show("hook_before_user_created_enabled"),
+            show("hook_before_user_created_uri"),
+            "uri_allow_list includes pullup://auth-callback: \((.uri_allow_list // "") | split(",") | map(gsub("^ +| +$"; "")) | index("pullup://auth-callback") != null)",
+            show("disable_signup"), show("external_email_enabled"), show("external_phone_enabled"),
+            show("external_anonymous_users_enabled")
+          ' <<<"$config" | tee -a "$GITHUB_STEP_SUMMARY" || echo "::warning::Couldn't parse the auth settings."
+
       - name: Link the project
         run: supabase link --project-ref "$PROJECT_REF" --password "$SUPABASE_DB_PASSWORD"
 
