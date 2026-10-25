@@ -4,7 +4,9 @@ How to get Pull Up from GitHub onto your iPhone through TestFlight without
 a Mac. Steps marked **You** need your Apple Developer or GitHub account;
 the build, signing and upload run on a GitHub Actions macOS runner.
 
-No TestFlight build exists yet. Where each stage stands:
+One build has been uploaded: Pull Up 0.1.0 (233), staging backend. Apple
+accepted the upload but hasn't confirmed processing it, so it may not be on
+TestFlight yet. Where each stage stands:
 
 | Stage | Status |
 | --- | --- |
@@ -14,7 +16,9 @@ No TestFlight build exists yet. Where each stage stands:
 | App Store Connect processing finished | Not confirmed yet |
 | Installed on a device from TestFlight | Not done yet |
 
-The signed stages wait on the Apple account steps below.
+The Apple account steps below were done for that staging upload. The
+production environment's values (step 4) are needed before a production
+build.
 
 ## How it works
 
@@ -26,14 +30,41 @@ The signed stages wait on the Apple account steps below.
 2. Archives the Release build. Signing is **cloud-managed**: Xcode asks
    Apple to sign using your App Store Connect API key, so there is no
    certificate or provisioning profile to export, store or renew.
-3. Exports the `.ipa`, records a build provenance attestation for it, keeps
-   the debug symbols as a run artifact for 90 days, and uploads the `.ipa`
-   to App Store Connect. The `.ipa` itself isn't kept: the repository is
-   public, so anyone signed in to GitHub could download a run's artifacts.
+3. Exports the `.ipa`, records a build provenance attestation for it,
+   checks what the app declares and writes a provenance record
+   (`native/ios/scripts/release-provenance.sh`), keeps the debug symbols as
+   a run artifact for 90 days, and uploads the `.ipa` to App Store Connect.
+   The `.ipa` itself isn't kept: the repository is public, so anyone signed
+   in to GitHub could download a run's artifacts.
 
-The build number is the workflow's run number plus 100, so every upload is
-higher than the last. The version (`MARKETING_VERSION` in
-`native/ios/project.yml`, now `0.1.0`) changes only when someone edits it.
+Which job does what:
+
+| Job | Runs on | Signs | Exports `.ipa` | Uploads to Apple |
+| --- | --- | --- | --- | --- |
+| `unsigned`: Release archive (unsigned) | pull requests and `claude/**` pushes that touch the app | no (`CODE_SIGNING_ALLOWED=NO`) | no | no |
+| `upload`: Build and upload | Run workflow by hand only (`workflow_dispatch`) | yes, Apple cloud signing with the API key | yes | yes, `xcrun altool` |
+
+`ios.yml` builds a Debug app for the simulator and runs the tests; it never
+archives, signs or uploads.
+
+**Version.** `MARKETING_VERSION` in `native/ios/project.yml`, now `1.0`, the
+version expected for the first App Store release of the "Pull Up – Drive &
+Meet" app record. Settings ▸ About reads it (and the build) from the app
+bundle, so it is never typed twice. It
+changes only when someone edits it. The one earlier upload, 0.1.0 (233),
+was a staging TestFlight build.
+
+**Build number.** `native/ios/scripts/build-number.sh`: the workflow's run
+number plus 100, and `<number>.<attempt>` when a run is re-run (Re-run jobs
+keeps the run number, so a re-run after an upload went through would
+otherwise repeat the number). Every run of `testflight.yml` takes a new run
+number, so no two builds share one, and each upload is higher than the
+last. The script refuses an upload numbered at or below 233, the last
+upload, in case the run number is ever reset. The unsigned archive is
+stamped the same way, so its number is checked on every pull request; it's
+never uploaded. `project.yml`'s `CURRENT_PROJECT_VERSION` (1) is only for
+local and simulator builds: an archive made on a Mac for upload must pass a
+higher `CURRENT_PROJECT_VERSION` by hand.
 
 On every pull request that touches the app, the same archive is built
 unsigned, so a broken Release build shows up before you need it.
@@ -53,6 +84,10 @@ membership, and nothing below works without it. Note your **Team ID**
    (`CARPLAY.md`).
 2. App Store Connect ▸ Apps ▸ **+** ▸ New App: platform iOS, name "Pull
    Up" (or the closest available), the bundle ID above, SKU `pullup-ios`.
+   Done: the record is named "Pull Up – Drive & Meet". Its first App Store
+   version is expected to be 1.0, which `MARKETING_VERSION` now matches;
+   check the version shown under the app's iOS App section before
+   submitting.
 3. App Store Connect ▸ the app ▸ App Privacy: answer to match
    `native/ios/PullUp/PrivacyInfo.xcprivacy`: precise location, email,
    name, user ID, device ID (push token), photos, messages, other user
@@ -158,6 +193,31 @@ received. The `.ipa` isn't kept as an artifact, so checking a file against
 it (`gh attestation verify PullUp.ipa -R AaravJit/pull-up`) needs a copy
 you saved yourself.
 
+Each run also writes a provenance record, in the job summary and as the
+artifact `PullUp-<version>-<build>-provenance` (`-unsigned-provenance` for
+the pull request archive): commit, ref, run id and attempt, version, build,
+bundle ID, device family, background modes, backend environment, Xcode,
+and for an upload the `.ipa`'s SHA-256, the signed entitlement names, the
+attestation link, the upload step's outcome and altool's delivery UUID.
+Names and numbers only: no key, key ID, certificate, profile or team ID.
+The same step fails the job before the upload if the built app's version
+or build isn't the one picked, if it isn't iPhone only, if it declares
+background modes other than location, App Tracking Transparency, or a
+CarPlay scene, or if the signed app carries a CarPlay entitlement.
+
+Apple's processing isn't checked by the workflow. A record with upload
+step `success` means only that altool delivered the file.
+
+For the one upload so far, made before this record existed, the facts from
+[run 40077637603](https://github.com/AaravJit/pull-up/actions/runs/40077637603)'s
+log: commit `5e494b993e8db7927ba307bf65a6a889852af474` on `main`, run
+number 133 attempt 1, `staging` environment, Xcode 26.6 (17F113), Pull Up
+0.1.0 (233), `.ipa` SHA-256
+`65abf5c37fb554807ed7d6d00f3b10fadd488bff6f684a3c38052edbcc93f294`
+([attestation 59373956](https://github.com/AaravJit/pull-up/attestations/59373956)),
+dSYMs artifact `PullUp-0.1.0-233-dSYMs`, delivery UUID
+`e7fd6f3e-0604-4092-b073-2d4a02c11e5c`.
+
 ## If a run fails
 
 | Message | Cause | Fix |
@@ -167,5 +227,7 @@ you saved yourself.
 | "No profiles for 'app.pullup.ios' were found" or a certificate error | the API key isn't Admin, or the App ID is missing | step 3 role, step 2.1 |
 | "Your team has no devices from which to generate a provisioning profile" (possible on the first signed run; not seen yet) | the team has no registered device | register the iPhone (its UDID) in Certificates, Identifiers & Profiles ▸ Devices, then run again |
 | "No suitable application records were found" | no App Store Connect app for that bundle ID | step 2.2 |
-| "The bundle version must be higher" | a build with that number was uploaded by hand | raise the offset in the workflow |
+| "The bundle version must be higher" | a build with that number was uploaded by hand | raise `OFFSET` (and `LAST_UPLOADED_BUILD`) in `native/ios/scripts/build-number.sh` |
+| "Build … is not above the last uploaded build 233" | the workflow's run number was reset (file renamed or recreated) | raise `OFFSET` in `native/ios/scripts/build-number.sh` |
+| A provenance check fails ("UIDeviceFamily is …", "a CarPlay scene is declared …") | the built app declares something it shouldn't | fix `Info.plist`, `project.yml` or the entitlements; nothing was uploaded |
 | Upload passes but no build appears | Apple is still processing, or rejected it by email | wait, then check the email |

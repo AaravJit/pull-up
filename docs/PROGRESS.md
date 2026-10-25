@@ -35,6 +35,7 @@ Each stage is tracked on its own. `TESTFLIGHT_SETUP.md` has the steps.
 | Upload accepted by App Store Connect | Done 2026-10-24 | Same run: altool reported "UPLOAD SUCCEEDED with no errors" (delivery e7fd6f3e-0604-4092-b073-2d4a02c11e5c) |
 | App Store Connect processing finished | Not confirmed | Check App Store Connect ▸ TestFlight ▸ iOS Builds for 0.1.0 (233) |
 | Installed on a device from TestFlight | Not done | Needs a processed build |
+| Version and build numbering for submission | Set, not yet built | `MARKETING_VERSION` 1.0; build numbers from `native/ios/scripts/build-number.sh` (run number + 100, `.attempt` on re-runs, refuses ≤ 233). Each TestFlight run now writes a provenance record (`TESTFLIGHT_SETUP.md`) |
 
 ### Physical-device tests passed
 
@@ -132,7 +133,7 @@ Legend:
 | Account | Delete account (server side) | Needs backend | `delete-account` edge function; exercised on staging through the API (5 deletion and 2 clean-up checks, 2026-10-18) |
 | Notifications | In-app list and unread badge | Demo data | Bell on Drive tab |
 | Notifications | APNs push | Needs Apple | `send-push` function; APNs key + webhook (checklist §1, §3) |
-| CarPlay | Driving-task scene: status, choose vehicle, start, stop | Needs Apple | Compiles in CI; entitlement request (`CARPLAY.md`) |
+| CarPlay | Driving-task scene: status, choose vehicle, start, stop | Needs Apple | Compiles in CI; not declared in `Info.plist` until the entitlement is granted (`CARPLAY.md`) |
 | Backend | Schema, RLS, anti-spoofing validation, route redaction | Working | Backend workflow: pgTAP, lint, rollback and re-apply of every migration |
 | Backend | Reversible migrations that refuse to destroy data | Working | Rollbacks guarded by `pullup.allow_destructive_rollback` |
 | Android | Kotlin client | Not started | Domain/Telemetry rules are written to port directly |

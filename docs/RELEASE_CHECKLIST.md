@@ -105,7 +105,17 @@ still to do.
 
 ## 4. Signing, TestFlight, App Store
 
-- [ ] Create the app record in App Store Connect with the bundle ID.
+- [x] Create the app record in App Store Connect with the bundle ID:
+      "Pull Up – Drive & Meet".
+- [ ] App Store version 1.0. `MARKETING_VERSION` is `1.0` in
+      `native/ios/project.yml`; confirm App Store Connect shows 1.0 for the
+      version being submitted. Build numbers come from
+      `native/ios/scripts/build-number.sh` (above 233, the one upload so
+      far).
+- [ ] The submitted build's provenance record (job summary and
+      `PullUp-1.0-<build>-provenance` artifact of its TestFlight run) shows
+      the expected commit on `main`, the `production` environment, and no
+      problems.
 - [ ] Archive: either on a Mac (`xcodegen generate`, open `PullUp.xcodeproj`,
       Product ▸ Archive), or run Actions ▸ TestFlight from `main`, which
       archives with an App Store Connect API key and
@@ -241,7 +251,9 @@ See `docs/CARPLAY.md`. Request the Driving Task entitlement, enable it on
 the App ID, set `PULLUP_ENTITLEMENTS = PullUp/PullUp-CarPlay.entitlements`
 in `Secrets.xcconfig`. The TestFlight workflow doesn't write that setting,
 so its builds use `PullUp/PullUp.entitlements` (no CarPlay) until a pull
-request changes the workflow or `Base.xcconfig`.
+request changes the workflow or `Base.xcconfig`. That pull request also
+declares the CarPlay scene in `Info.plist` again (`CARPLAY.md` step 3);
+the shipping build declares none.
 
 ## 6. Physical-device testing (cannot be done in a simulator)
 
