@@ -77,10 +77,14 @@ insert into public.drives (id, owner_id, vehicle_id, started_at, ended_at, dista
 values ('d0000000-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111', 'a0000000-0000-0000-0000-000000000001',
         now() - interval '1 hour', now() - interval '1 hour' + interval '199 seconds', 4426, 199, 0, 199, 22.2, 'public', 'validated');
 select is((select validation_status from public.drives where id = 'd0000000-0000-0000-0000-000000000001'), 'pending', 'client cannot self-validate a drive');
+-- Someone else's vehicle (the owner's public one, seen by the friend). A
+-- vehicle that doesn't exist is a deleted one: 017_drive_deleted_vehicle.sql.
+select pg_temp.act_as('22222222-2222-2222-2222-222222222222');
 select throws_ok(
   $$ insert into public.drives (owner_id, vehicle_id, started_at, ended_at, distance_m, moving_s, stopped_s, elapsed_s)
-     values ('11111111-1111-1111-1111-111111111111', 'a0000000-0000-0000-0000-00000000dead', now() - interval '1 hour', now(), 1, 1, 0, 1) $$,
+     values ('22222222-2222-2222-2222-222222222222', 'a0000000-0000-0000-0000-000000000001', now() - interval '1 hour', now(), 1, 1, 0, 1) $$,
   '42501', null, 'drive must use one of your own vehicles');
+select pg_temp.act_as('11111111-1111-1111-1111-111111111111');
 
 insert into public.drive_tracks (drive_id, owner_id, points) values ('d0000000-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111', pg_temp.track());
 select is((select validation_status from public.drives where id = 'd0000000-0000-0000-0000-000000000001'), 'validated', 'clean track validates');
