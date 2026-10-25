@@ -1,0 +1,93 @@
+name: Xcode 27.1 probe
+
+# Temporary: checks what GitHub's xcode-27 runner offers for iPhone Duo work
+# (Xcode 27.1, iOS 27.1 SDK, an iPhone Duo simulator and how to pose it),
+# and whether the app builds with that toolchain. Not part of CI.
+on:
+  push:
+    branches: ["claude/xcode27-probe"]
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: xcode-27
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Host and installed Xcodes
+        run: |
+          sw_vers
+          ls -d /Applications/Xcode* || true
+      - name: Select Xcode 27.1
+        run: |
+          sudo xcode-select -s /Applications/Xcode_27.1.app
+          xcodebuild -version
+          swift --version
+          xcodebuild -showsdks | grep -iE "ios|simulator" || true
+      - name: Simulator runtimes and device types
+        run: |
+          xcrun simctl list runtimes
+          xcrun simctl list devicetypes
+          echo "--- Duo device types"
+          xcrun simctl list devicetypes | grep -i duo || echo "none"
+      - name: simctl commands that could pose a foldable
+        run: |
+          xcrun simctl help 2>&1 || true
+          echo "--- io help"
+          xcrun simctl help io 2>&1 || true
+          echo "--- search"
+          xcrun simctl help 2>&1 | grep -iE "fold|hinge|posture|pose|display|state" || echo "no match"
+          echo "--- developer tools"
+          ls "$(xcode-select -p)/usr/bin" | grep -iE "hub|sim|device" || true
+          ls "$(xcode-select -p)/Applications" || true
+      - name: Boot an iPhone Duo simulator and capture each display
+        run: |
+          set -x
+          mkdir -p "$RUNNER_TEMP/probe"
+          RUNTIME=$(xcrun simctl list runtimes -j | python3 -c 'import json,sys; r=[x for x in json.load(sys.stdin)["runtimes"] if x["identifier"].endswith("iOS-27-1") and x["isAvailable"]]; print(r[0]["identifier"] if r else "")')
+          echo "runtime: $RUNTIME"
+          TYPE=$(xcrun simctl list devicetypes -j | python3 -c 'import json,sys; t=[x for x in json.load(sys.stdin)["devicetypes"] if "duo" in x["name"].lower()]; print(t[0]["identifier"] if t else "")')
+          echo "device type: $TYPE"
+          if [ -z "$RUNTIME" ] || [ -z "$TYPE" ]; then echo "No Duo simulator available"; exit 0; fi
+          UDID=$(xcrun simctl create "Probe Duo" "$TYPE" "$RUNTIME")
+          xcrun simctl boot "$UDID"
+          xcrun simctl bootstatus "$UDID" -b || true
+          xcrun simctl io "$UDID" enumerate 2>&1 | tee "$RUNNER_TEMP/probe/io-enumerate.txt" || true
+          xcrun simctl io "$UDID" screenshot "$RUNNER_TEMP/probe/duo-default.png" || true
+          for d in internal external; do xcrun simctl io "$UDID" screenshot --display=$d "$RUNNER_TEMP/probe/duo-$d.png" 2>&1 || true; done
+          for f in "$RUNNER_TEMP"/probe/*.png; do sips -g pixelWidth -g pixelHeight "$f" || true; done
+          xcrun simctl getenv "$UDID" SIMULATOR_MAINSCREEN_WIDTH 2>&1 || true
+          echo "$UDID" > "$RUNNER_TEMP/probe/udid"
+      - name: Build the app with Xcode 27.1
+        working-directory: native/ios
+        run: |
+          brew install xcodegen
+          xcodegen generate
+          set -o pipefail
+          xcodebuild build -project PullUp.xcodeproj -scheme PullUp \
+            -destination "generic/platform=iOS Simulator" \
+            -derivedDataPath "$RUNNER_TEMP/dd" \
+            -skipPackagePluginValidation CODE_SIGNING_ALLOWED=NO 2>&1 | tee "$RUNNER_TEMP/probe/build.log" | grep -E "error:|warning:|BUILD" | sort -u | head -200
+      - name: Run the demo app on the Duo simulator
+        if: always()
+        run: |
+          [ -f "$RUNNER_TEMP/probe/udid" ] || exit 0
+          UDID=$(cat "$RUNNER_TEMP/probe/udid")
+          APP=$(find "$RUNNER_TEMP/dd/Build/Products" -name "PullUp.app" -maxdepth 2 | head -1)
+          [ -n "$APP" ] || { echo "no app built"; exit 0; }
+          xcrun simctl install "$UDID" "$APP"
+          xcrun simctl launch "$UDID" "$(defaults read "$APP/Info" CFBundleIdentifier)" -PullUpDemo -PullUpResetDefaults
+          sleep 20
+          xcrun simctl io "$UDID" screenshot "$RUNNER_TEMP/probe/app-duo-default.png" || true
+          for d in internal external; do xcrun simctl io "$UDID" screenshot --display=$d "$RUNNER_TEMP/probe/app-duo-$d.png" 2>&1 || true; done
+          xcrun simctl io "$UDID" recordVideo --help 2>&1 | head -30 || true
+          for f in "$RUNNER_TEMP"/probe/app-*.png; do sips -g pixelWidth -g pixelHeight "$f" || true; done
+      - name: Upload probe output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: xcode27-probe
+          path: ${{ runner.temp }}/probe
+          if-no-files-found: ignore
