@@ -13,6 +13,7 @@ import PullUpDomain
 struct AuthView: View {
     @Environment(AppModel.self) private var app
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @State private var email = ""
     @State private var password = ""
@@ -96,7 +97,7 @@ struct AuthView: View {
                 .tracking(Tracking.title)
                 .foregroundStyle(ClusterColor.ink)
                 .accessibilityAddTraits(.isHeader)
-            Text("Your garage, your drives, your meets.")
+            Text("Drive. Meet. Connect.")
                 .font(ClusterFont.body(.title3))
                 .foregroundStyle(ClusterColor.inkSecondary)
         }
@@ -120,7 +121,7 @@ struct AuthView: View {
     private var emailSection: some View {
         VStack(alignment: .leading, spacing: Space.l) {
             Button {
-                withAnimation(Motion.sheet) { showEmail.toggle() }
+                withAnimation(Motion.resolved(Motion.sheet, reduceMotion: reduceMotion)) { showEmail.toggle() }
             } label: {
                 HStack {
                     Legend("Other ways to sign in")
