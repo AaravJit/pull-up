@@ -77,8 +77,9 @@ entitlement is present in the signed build.
    </dict>
    ```
 
-   and removes the two CarPlay checks from
-   `native/ios/scripts/release-provenance.sh`. A Mac build with the
+   and, in `native/ios/scripts/release-provenance.sh`, drops the CarPlay
+   scene check and adds `com.apple.developer.carplay-driving-task` to the
+   allowed entitlements. A Mac build with the
    CarPlay entitlements file also needs the scene declared to appear in
    the CarPlay simulator.
 4. Test on a real head unit or a CarPlay-capable aftermarket unit; the

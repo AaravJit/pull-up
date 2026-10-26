@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Checks what a Release archive claims, then writes a provenance record for
-# it: provenance.json in OUT_DIR, and the same facts in the job summary.
+# Checks what a Release build claims, then writes a provenance record for
+# it: provenance.json in the out dir, and the same facts in the job summary.
+# With IPA set the checks run on the app inside the exported, signed .ipa.
 #
 #   release-provenance.sh <path to PullUp.xcarchive> <out dir>
 #       Checks the archive (and the exported .ipa when IPA is set) and writes
@@ -20,7 +21,10 @@
 #   EXPECTED_VERSION, EXPECTED_BUILD   fail if the app says otherwise
 #   BACKEND        staging / production (the GitHub environment used)
 #   SIGNED         true when signed for App Store Connect
-#   IPA            path to the exported .ipa (hashed; entitlements listed)
+#   IPA            path to the exported .ipa: checked instead of the
+#                  archive, hashed, and its signed entitlements checked
+#   EXPECTED_BUNDLE_ID  default app.pullup.ios
+#   EXPECTED_MIN_OS     default 18.0
 #   ATTESTATION_URL the build provenance attestation for the .ipa
 # and with --upload:
 #   UPLOAD_OUTCOME outcome of the upload step (success / failure / skipped)
@@ -58,9 +62,27 @@ fi
 archive="${1:?usage: release-provenance.sh <xcarchive> <out dir>}"
 out="${2:?usage: release-provenance.sh <xcarchive> <out dir>}"
 app="$archive/Products/Applications/PullUp.app"
-plist="$app/Info.plist"
-[ -f "$plist" ] || { echo "::error::No app in $archive"; exit 1; }
+[ -f "$app/Info.plist" ] || { echo "::error::No app in $archive"; exit 1; }
 mkdir -p "$out"
+
+problems=()
+# Things worth a look that shouldn't stop an upload on their own.
+warnings=()
+
+# With IPA set, every check below runs on the app inside the exported,
+# signed .ipa: exactly what Apple receives, not the project settings.
+ipa_sha="" ipa_bytes=""
+if [ -n "${IPA:-}" ]; then
+  [ -f "$IPA" ] || { echo "::error::No .ipa at $IPA"; exit 1; }
+  ipa_sha=$(shasum -a 256 "$IPA" | cut -d' ' -f1)
+  ipa_bytes=$(wc -c < "$IPA" | tr -d " ")
+  unpacked=$(mktemp -d)
+  trap 'rm -rf "$unpacked"' EXIT
+  unzip -q "$IPA" 'Payload/*' -d "$unpacked"
+  app=$(find "$unpacked/Payload" -maxdepth 1 -name '*.app' | head -1)
+  [ -n "$app" ] && [ -f "$app/Info.plist" ] || { echo "::error::No app inside $IPA"; exit 1; }
+fi
+plist="$app/Info.plist"
 
 read_key() { plutil -extract "$1" raw -o - "$plist" 2>/dev/null || true; }
 has_key() { plutil -extract "$1" raw -o - "$plist" >/dev/null 2>&1 || plutil -extract "$1" json -o - "$plist" >/dev/null 2>&1; }
@@ -72,13 +94,15 @@ min_os=$(read_key MinimumOSVersion)
 environment_label=$(read_key PullUpBackendEnvironment)
 families=$(plutil -extract UIDeviceFamily json -o - "$plist" 2>/dev/null | tr -d ' \n' || true)
 background=$(plutil -extract UIBackgroundModes json -o - "$plist" 2>/dev/null | tr -d ' \n' || true)
+scenes=$(plutil -extract UIApplicationSceneManifest json -o - "$plist" 2>/dev/null | tr -d '\n' || true)
 xcode=$(xcodebuild -version 2>/dev/null | tr '\n' ' ' | sed 's/ *$//' || true)
 
-problems=()
-# Things worth a look that shouldn't stop an upload on their own.
-warnings=()
-[ -z "${EXPECTED_VERSION:-}" ] || [ "$version" = "$EXPECTED_VERSION" ] || problems+=("version is $version, expected $EXPECTED_VERSION")
-[ -z "${EXPECTED_BUILD:-}" ] || [ "$build" = "$EXPECTED_BUILD" ] || problems+=("build is $build, expected $EXPECTED_BUILD")
+[ -z "${EXPECTED_VERSION:-}" ] || [ "$version" = "$EXPECTED_VERSION" ] || problems+=("CFBundleShortVersionString is ${version:-missing}, expected $EXPECTED_VERSION")
+[ -z "${EXPECTED_BUILD:-}" ] || [ "$build" = "$EXPECTED_BUILD" ] || problems+=("CFBundleVersion is ${build:-missing}, expected $EXPECTED_BUILD")
+expected_bundle="${EXPECTED_BUNDLE_ID:-app.pullup.ios}"
+[ "$bundle_id" = "$expected_bundle" ] || problems+=("CFBundleIdentifier is ${bundle_id:-missing}, expected $expected_bundle")
+expected_min_os="${EXPECTED_MIN_OS:-18.0}"
+[ "$min_os" = "$expected_min_os" ] || problems+=("MinimumOSVersion is ${min_os:-missing}, expected $expected_min_os")
 # iPhone only for the first release (project.yml TARGETED_DEVICE_FAMILY).
 [ "$families" = "[1]" ] || problems+=("UIDeviceFamily is ${families:-missing}, expected [1] (iPhone only)")
 # Only what the app uses: location while a drive records.
@@ -86,38 +110,78 @@ warnings=()
 # No tracking: the app never asks for App Tracking Transparency.
 ! has_key NSUserTrackingUsageDescription || problems+=("NSUserTrackingUsageDescription is declared but the app doesn't track")
 # CarPlay is not granted yet (docs/CARPLAY.md), so no CarPlay scene.
-! has_key UIApplicationSceneManifest.UISceneConfigurations.CPTemplateApplicationSceneSessionRoleApplication \
-  || problems+=("a CarPlay scene is declared but the CarPlay entitlement isn't granted")
+case "$scenes" in
+  *CPTemplate*|*CarPlay*) problems+=("the scene manifest declares CarPlay but the CarPlay entitlement isn't granted") ;;
+esac
+# App Store Connect rejects an app without its privacy manifest.
+privacy_manifest=false
+if [ -f "$app/PrivacyInfo.xcprivacy" ]; then
+  privacy_manifest=true
+  plutil -lint "$app/PrivacyInfo.xcprivacy" >/dev/null 2>&1 || problems+=("PrivacyInfo.xcprivacy isn't a valid property list")
+else
+  problems+=("PrivacyInfo.xcprivacy is missing from the app")
+fi
+# The public pages (LegalLinks): set, expanded, and written without the
+# scheme, as Base.xcconfig has them.
+links=()
+for key in PullUpPrivacyPolicyURL PullUpSupportURL PullUpTermsURL PullUpCommunityURL; do
+  value=$(read_key "$key")
+  case "$value" in
+    "") problems+=("$key is empty, so the app shows no link") ;;
+    '$('*|*://*|*" "*) problems+=("$key is '$value', expected a host and path without https://") ;;
+    *.*) links+=("$key=https://$value") ;;
+    *) problems+=("$key is '$value', expected a host and path without https://") ;;
+  esac
+done
 
-ipa_sha="" ipa_bytes="" entitlements="" aps=""
-if [ -n "${IPA:-}" ] && [ -f "$IPA" ]; then
-  ipa_sha=$(shasum -a 256 "$IPA" | cut -d' ' -f1)
-  ipa_bytes=$(wc -c < "$IPA" | tr -d " ")
-  # The entitlements Apple signed into the exported app. Key names only,
-  # plus the push environment: application-identifier and the team ID are
-  # left out.
-  unpacked=$(mktemp -d)
-  unzip -q "$IPA" 'Payload/*' -d "$unpacked"
-  signed_app=$(find "$unpacked/Payload" -maxdepth 1 -name '*.app' | head -1)
-  codesign -d --entitlements - --xml "$signed_app" 2>/dev/null > "$unpacked/ent.plist" || true
-  if [ -s "$unpacked/ent.plist" ]; then
-    entitlements=$(plutil -convert json -o - "$unpacked/ent.plist" | python3 -I -c 'import json,sys; print(",".join(sorted(json.load(sys.stdin))))')
-    aps=$(plutil -extract aps-environment raw -o - "$unpacked/ent.plist" 2>/dev/null || true)
-    case ",$entitlements," in
-      *,com.apple.developer.carplay-*) problems+=("the signed app has a CarPlay entitlement") ;;
-    esac
-    # App Store export swaps development for production; without it pushes
-    # to TestFlight and App Store installs would go to the sandbox.
-    [ "$aps" = production ] || warnings+=("aps-environment in the signed app is ${aps:-missing}, expected production")
-  else
-    warnings+=("couldn't read the signed app's entitlements")
+entitlements="" aps=""
+if [ -n "$ipa_sha" ]; then
+  # The entitlements Apple signed into the exported app. Only names and the
+  # push environment are recorded: application-identifier, the team ID and
+  # keychain groups are left out.
+  codesign -d --entitlements - --xml "$app" > "$unpacked/ent.plist" 2>/dev/null || true
+  if [ ! -s "$unpacked/ent.plist" ]; then
+    codesign -d --entitlements :- "$app" > "$unpacked/ent.raw" 2>/dev/null || true
+    # Older output can carry a binary blob header before the XML.
+    python3 -I -c 'import sys; d=open(sys.argv[1],"rb").read(); i=d.find(b"<?xml"); open(sys.argv[2],"wb").write(d[i:] if i >= 0 else b"")' \
+      "$unpacked/ent.raw" "$unpacked/ent.plist" 2>/dev/null || true
   fi
-  rm -rf "$unpacked"
+  if [ -s "$unpacked/ent.plist" ] && plutil -convert json -o "$unpacked/ent.json" "$unpacked/ent.plist" 2>/dev/null; then
+    # Allowed: what signing always adds, plus the two capabilities Pull Up
+    # uses (Sign in with Apple, push). Anything else, CarPlay included,
+    # fails the job: add a key here only together with the feature using it.
+    report=$(python3 -I - "$unpacked/ent.json" <<'PY'
+import json, sys
+ent = json.load(open(sys.argv[1]))
+signing = {"application-identifier", "com.apple.developer.team-identifier", "keychain-access-groups",
+           "get-task-allow", "beta-reports-active"}
+used = {"aps-environment", "com.apple.developer.applesignin"}
+print("KEYS " + ",".join(sorted(ent)))
+print("APS " + str(ent.get("aps-environment", "")))
+for key in sorted(set(ent) - signing - used):
+    what = "a CarPlay entitlement" if key.startswith("com.apple.developer.carplay") else "an entitlement the app doesn't use"
+    print(f"PROBLEM the signed app has {what}: {key}")
+if ent.get("aps-environment") != "production":
+    print(f"PROBLEM aps-environment in the signed app is {ent.get('aps-environment') or 'missing'}, expected production")
+if "Default" not in (ent.get("com.apple.developer.applesignin") or []):
+    print("PROBLEM Sign in with Apple (com.apple.developer.applesignin Default) is missing from the signed app")
+if ent.get("get-task-allow") is True:
+    print("PROBLEM get-task-allow is true: a debug-signed app, not an App Store one")
+PY
+)
+    entitlements=$(printf '%s\n' "$report" | sed -n 's/^KEYS //p')
+    aps=$(printf '%s\n' "$report" | sed -n 's/^APS //p')
+    while IFS= read -r line; do
+      [ -n "$line" ] && problems+=("$line")
+    done < <(printf '%s\n' "$report" | sed -n 's/^PROBLEM //p')
+  else
+    problems+=("couldn't read the signed app's entitlements with codesign")
+  fi
 fi
 
 export P_VERSION="$version" P_BUILD="$build" P_BUNDLE="$bundle_id" P_MINOS="$min_os" P_ENVLABEL="$environment_label" \
   P_FAMILIES="$families" P_BACKGROUND="$background" P_XCODE="$xcode" P_IPA_SHA="$ipa_sha" P_IPA_BYTES="$ipa_bytes" \
-  P_ENTITLEMENTS="$entitlements" P_APS="$aps" \
+  P_ENTITLEMENTS="$entitlements" P_APS="$aps" P_PRIVACY_MANIFEST="$privacy_manifest" P_LINKS="$(printf '%s\n' "${links[@]+"${links[@]}"}")" \
   P_PROBLEMS="$(printf '%s\n' "${problems[@]+"${problems[@]}"}")" \
   P_WARNINGS="$(printf '%s\n' "${warnings[@]+"${warnings[@]}"}")"
 python3 -I - "$out/provenance.json" <<'PY'
@@ -136,6 +200,8 @@ record = {
         "version": e("P_VERSION"), "build": e("P_BUILD"), "bundle_id": e("P_BUNDLE"),
         "minimum_os": e("P_MINOS"), "device_family": parsed("P_FAMILIES"), "background_modes": parsed("P_BACKGROUND"),
         "backend_label": opt("P_ENVLABEL"),
+        "public_pages": dict(l.split("=", 1) for l in e("P_LINKS", "").splitlines() if "=" in l),
+        "privacy_manifest": e("P_PRIVACY_MANIFEST") == "true",
     },
     "source": {
         "repository": e("GITHUB_REPOSITORY"), "commit": e("GITHUB_SHA"), "ref": e("GITHUB_REF"),

@@ -126,8 +126,8 @@ same environments `SUPABASE_SETUP.md` creates):
 | Variable | `APPLE_TEAM_ID` | Team ID |
 | Variable | `SUPABASE_ANON_KEY` | that project's anon (publishable) key; public by design |
 | Variable (optional) | `PULLUP_BUNDLE_ID` | only if not `app.pullup.ios` |
-| Variable | `PULLUP_PRIVACY_POLICY` | privacy policy URL without `https://`; optional for `staging`, required for `production` (the workflow refuses a production build without it) |
-| Variable (optional) | `PULLUP_SUPPORT_URL` | support page URL without `https://`; shown in Settings ▸ About when set |
+| Variable (optional) | `PULLUP_PRIVACY_POLICY` | privacy policy URL without `https://`. Only to override `native/ios/Config/Base.xcconfig`, which sets the public GitHub page for every build; an empty variable changes nothing |
+| Variable (optional) | `PULLUP_SUPPORT_URL` | support page URL without `https://`; same as above |
 | Variable (optional) | `PULLUP_EPN_CAMPAIGN_ID` | eBay Partner Network campaign id |
 
 `SUPABASE_PROJECT_REF` is already there from the Supabase setup. Keep
@@ -200,10 +200,29 @@ bundle ID, device family, background modes, backend environment, Xcode,
 and for an upload the `.ipa`'s SHA-256, the signed entitlement names, the
 attestation link, the upload step's outcome and altool's delivery UUID.
 Names and numbers only: no key, key ID, certificate, profile or team ID.
-The same step fails the job before the upload if the built app's version
-or build isn't the one picked, if it isn't iPhone only, if it declares
-background modes other than location, App Tracking Transparency, or a
-CarPlay scene, or if the signed app carries a CarPlay entitlement.
+In the upload job the same step unzips the exported `.ipa` and checks the
+signed app inside it, before the upload, failing the job on any of:
+
+- `CFBundleShortVersionString` isn't `MARKETING_VERSION` (1.0) or
+  `CFBundleVersion` isn't the build picked;
+- `CFBundleIdentifier` isn't `app.pullup.ios`, or `MinimumOSVersion` isn't
+  18.0;
+- `UIDeviceFamily` isn't `[1]` (iPhone only), or `UIBackgroundModes` is
+  anything but `location`;
+- `NSUserTrackingUsageDescription` is present, or the scene manifest
+  mentions CarPlay;
+- `PrivacyInfo.xcprivacy` is missing or invalid;
+- any of the four public page links (privacy, support, terms, community)
+  is empty, unexpanded or written with a scheme;
+- the signed entitlements (`codesign -d --entitlements`) aren't exactly
+  what signing adds (`application-identifier`, team identifier,
+  `keychain-access-groups`, `get-task-allow` false, `beta-reports-active`)
+  plus Sign in with Apple and `aps-environment` `production`. Any other
+  key, a CarPlay entitlement included, fails. Add a key to the list in
+  `release-provenance.sh` only together with the feature that needs it.
+
+The unsigned pull request job runs the same checks, except the
+entitlement ones, on its unsigned archive.
 
 Apple's processing isn't checked by the workflow. A record with upload
 step `success` means only that altool delivered the file.

@@ -112,6 +112,12 @@ still to do.
       version being submitted. Build numbers come from
       `native/ios/scripts/build-number.sh` (above 233, the one upload so
       far).
+- [ ] App Store Connect ▸ the app ▸ Pricing and Availability: turn off
+      **Make this app available on Mac** (Apple silicon) and **Apple Vision
+      Pro**. The build already opts out
+      (`SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD` and
+      `SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD` are `NO` in `project.yml`),
+      but the store setting is separate.
 - [ ] The submitted build's provenance record (job summary and
       `PullUp-1.0-<build>-provenance` artifact of its TestFlight run) shows
       the expected commit on `main`, the `production` environment, and no
@@ -202,11 +208,16 @@ Pull Up Pro (nothing here is done; prices are placeholders)
       set both the Production and Sandbox URL to
       `https://<project-ref>.supabase.co/functions/v1/app-store-notifications`,
       Version 2. Send a test notification and check the function log shows it.
-- [ ] Publish a privacy policy and set `PULLUP_PRIVACY_POLICY` (without
-      `https://`): in `Secrets.xcconfig` for your own build, or as the
-      GitHub environment variable of the same name for TestFlight builds.
-      App Store Connect asks for a privacy policy URL for every app, not
-      only for Pro. The paywall links Apple's standard Terms of Use.
+- [x] Publish a privacy policy and set `PULLUP_PRIVACY_POLICY` (without
+      `https://`). The public pages are in `docs/public/` (#30), and
+      `native/ios/Config/Base.xcconfig` sets `PULLUP_PRIVACY_POLICY`,
+      `PULLUP_SUPPORT_URL`, `PULLUP_TERMS_URL` and `PULLUP_COMMUNITY_URL` to
+      their GitHub pages for every build (Settings ▸ About lists all four;
+      `LegalLinks` in PullUpFeatures reads them). A GitHub environment
+      variable or `Secrets.xcconfig` overrides one only when set.
+      App Store Connect still needs the complete https URLs typed in
+      (`PUBLIC_PAGES_RELEASE.md`). The paywall links Apple's standard
+      Terms of Use for the subscription.
 - [ ] Sandbox test on a device with a sandbox Apple Account: buy, renew,
       cancel, refund (via the sandbox settings), Ask to Buy, and restore on a
       second phone. Only then submit the products with the app version.
