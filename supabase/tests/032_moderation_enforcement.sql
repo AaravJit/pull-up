@@ -5,7 +5,7 @@
 
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(49);
+select plan(50);
 
 insert into auth.users (id, email, raw_user_meta_data) values
   ('f3200000-0000-0000-0000-00000000000a'::uuid, 'me-ann@example.com', '{"username":"me_ann"}'),
@@ -140,6 +140,7 @@ select throws_ok($$ update public.profile_details set bio = 'x' where user_id = 
 select throws_ok($$ select public.claim_username('me_ann_new', 'Ann') $$, 'PUM02', null, 'no renaming through RPCs either');
 select throws_ok($$ insert into storage.objects (bucket_id, name) values ('avatars', auth.uid() || '/a.jpg') $$, '42501', null, 'no uploads');
 select lives_ok($$ delete from public.posts where caption = 'sneaky' $$, 'she can still delete her own content');
+select lives_ok($$ update public.profiles set visibility = 'private' where id = auth.uid() $$, 'and change who can see her profile');
 select lives_ok($$ insert into public.blocks (blocker_id, blocked_id) values (auth.uid(), 'f3200000-0000-0000-0000-00000000000e') $$, 'block');
 select lives_ok($$ select public.report_content('profile', 'f3200000-0000-0000-0000-00000000000c', 'spam') $$, 'and report');
 

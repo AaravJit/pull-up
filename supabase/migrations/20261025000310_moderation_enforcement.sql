@@ -270,6 +270,15 @@ begin
       return new;
     end if;
   end if;
+  -- Changing who can see something (Settings, a vehicle or post's audience)
+  -- publishes nothing new, so it stays allowed.
+  if tg_op = 'UPDATE' and not exists (
+    select 1 from jsonb_each(rec) n
+    where n.key not in ('visibility', 'updated_at')
+      and n.value is distinct from (to_jsonb(old) -> n.key)
+  ) then
+    return new;
+  end if;
   raise exception '%', private.suspension_message(me) using errcode = 'PUM02';
 end;
 $$;

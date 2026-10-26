@@ -154,11 +154,15 @@ Messages
       job, and have the job send headers `x-pullup-cron-secret: <value>`
       (read from Vault) and `Authorization: Bearer <anon key>`. The SQL is
       in `SUPABASE_SETUP.md` §5.
-- [ ] Decide who reviews reports (`public.reports`) and how quickly.
-      Suspensions are set by the service role on
-      `profiles.messaging_suspended_until`. Nothing alerts anyone to a new
-      report yet: `report_user` only sends `pg_notify('pullup_reports', …)`,
-      which nothing listens to.
+- [ ] Moderation (`MODERATION_RUNBOOK.md` §2), per project: name a
+      moderator (`private.moderators`, SQL editor only), load and review
+      the term list (`supabase/moderation/starter_terms.sql`, plus a
+      vetted slur list kept out of the repository), add
+      `MODERATION_WEBHOOK_URL` to the GitHub environment and deploy,
+      schedule the two `moderation-worker` cron jobs, send a test report
+      and see it arrive, and decide response times (§5). Until then
+      reports queue with nobody told, and nothing public may say they are
+      reviewed.
 
 Sign in with Apple token revocation (account deletion)
 
