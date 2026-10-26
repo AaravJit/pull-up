@@ -314,6 +314,12 @@ public final class AppModel {
     /// folder. They go on sign-out and account deletion.
     static func clearMediaCache(_ cache: URLCache = .shared) {
         cache.removeAllCachedResponses()
+        cache.removeCachedResponses(since: .distantPast)
+        // removeAll doesn't reliably drop responses already in memory;
+        // emptying the memory capacity does.
+        let memory = cache.memoryCapacity
+        cache.memoryCapacity = 0
+        cache.memoryCapacity = memory
     }
 
     /// Deletes the account on the server. `appleAuthorizationCode` comes from

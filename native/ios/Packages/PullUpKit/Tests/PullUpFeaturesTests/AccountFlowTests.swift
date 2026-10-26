@@ -110,8 +110,18 @@ struct AccountFlowTests {
         let url = URL(string: "https://example.supabase.co/storage/v1/object/sign/avatars/me.jpg?token=t")!
         let response = HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: ["Cache-Control": "max-age=31536000"])!
         URLCache.shared.storeCachedResponse(CachedURLResponse(response: response, data: Data([0xff, 0xd8])), for: URLRequest(url: url))
+        // Let the store land first, so it can't arrive after the clearing.
+        for _ in 0..<30 where URLCache.shared.cachedResponse(for: URLRequest(url: url)) == nil {
+            try await Task.sleep(for: .milliseconds(100))
+        }
         try await app.deleteAccount(appleAuthorizationCode: nil)
-        #expect(URLCache.shared.cachedResponse(for: URLRequest(url: url)) == nil)
+        // URLCache works on its own queue: allow it a moment, no more.
+        var cached = URLCache.shared.cachedResponse(for: URLRequest(url: url))
+        for _ in 0..<30 where cached != nil {
+            try await Task.sleep(for: .milliseconds(100))
+            cached = URLCache.shared.cachedResponse(for: URLRequest(url: url))
+        }
+        #expect(cached == nil)
     }
 
     @Test func authMessagesAreReadable() {
