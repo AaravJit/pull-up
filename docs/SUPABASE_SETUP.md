@@ -67,7 +67,7 @@ that isn't in the environment.
 | Secret | Used by | Where it comes from |
 | --- | --- | --- |
 | `PUSH_WEBHOOK_SECRET` | `send-push` | `openssl rand -hex 32`; the same value goes in the webhook (step 5) |
-| `CRON_SECRET` | `dm-retention` | `openssl rand -hex 32`; the same value goes in the cron job (step 5) |
+| `CRON_SECRET` | `dm-retention`, `post-media-cleanup` | `openssl rand -hex 32`; the same value goes in the cron jobs (step 5) |
 | `APNS_KEY_ID`, `APNS_TEAM_ID`, `APNS_PRIVATE_KEY`, `APNS_TOPIC` | `send-push` | Apple push key (`RELEASE_CHECKLIST.md` §3) |
 | `APPLE_CLIENT_ID`, `APPLE_KEY_ID`, `APPLE_TEAM_ID`, `APPLE_PRIVATE_KEY` | `delete-account` (Apple token revocation) | Sign in with Apple key (§3) |
 | `APPSTORE_ISSUER_ID`, `APPSTORE_KEY_ID`, `APPSTORE_PRIVATE_KEY`, `APPSTORE_BUNDLE_ID` | `verify-subscription`, `app-store-notifications` | App Store Server API key (§4a) |
@@ -153,6 +153,29 @@ These aren't in migrations because they hold per-project values:
   select cron.schedule('pullup-dm-retention', '30 3 * * *', $$
     select net.http_post(
       url := 'https://<ref>.supabase.co/functions/v1/dm-retention',
+      headers := jsonb_build_object(
+        'Content-Type', 'application/json',
+        'Authorization', 'Bearer <anon key>',
+        'x-pullup-cron-secret', (select decrypted_secret
+          from vault.decrypted_secrets where name = 'pullup_cron_secret')),
+      body := '{}'::jsonb);
+  $$);
+  ```
+
+  A second daily job, the same way, POSTs to `post-media-cleanup`. It
+  deletes post photos and videos no post uses, a day after upload: files
+  of posts that never published (upload failed, cancelled, app closed) and
+  of deleted posts (`public.post_orphaned_media`, migration
+  `20261025000200`). Files a report refers to are kept. Until it is
+  scheduled those files stay in storage (visible only to their owner,
+  counted against their 2 GB quota); the app also deletes them itself
+  when a post is cancelled, and at the next sign-in after it was closed
+  mid-upload.
+
+  ```sql
+  select cron.schedule('pullup-post-media-cleanup', '45 3 * * *', $$
+    select net.http_post(
+      url := 'https://<ref>.supabase.co/functions/v1/post-media-cleanup',
       headers := jsonb_build_object(
         'Content-Type', 'application/json',
         'Authorization', 'Bearer <anon key>',
