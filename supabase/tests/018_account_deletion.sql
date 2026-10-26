@@ -5,14 +5,14 @@
 
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(14);
+select plan(20);
 
 -- Zed deletes their account; Amy stays.
 insert into auth.users (id, email, raw_user_meta_data) values
   ('de000000-0000-0000-0000-00000000000a', 'del-amy@example.com', '{"username":"del_amy"}'),
   ('de000000-0000-0000-0000-00000000000f', 'del-zed@example.com', '{"username":"del_zed"}');
-insert into auth.identities (user_id, provider, provider_id) values
-  ('de000000-0000-0000-0000-00000000000f', 'apple', '001234.zed');
+insert into auth.identities (user_id, provider, provider_id, identity_data) values
+  ('de000000-0000-0000-0000-00000000000f', 'apple', '001234.zed', '{"sub": "001234.zed"}');
 
 create or replace function pg_temp.act_as(uid uuid) returns void language plpgsql as $$
 begin
@@ -135,6 +135,31 @@ create temp table zed_rows_before as
          (select count(*) from public.reports) as reports;
 select ok((select messages = 2 and reports >= 2 from zed_rows_before), 'the fixture has messages and reports both ways');
 
+-- 5–10: the deletion job delete-account records first -------------------
+select pg_temp.act_as('de000000-0000-0000-0000-00000000000f');
+select throws_ok($$ select * from public.account_deletion_begin('de000000-0000-0000-0000-00000000000f') $$,
+  '42501', null, 'only the service role can start a deletion job');
+select pg_temp.as_admin();
+set local role service_role;
+select is((select apple_token from public.account_deletion_begin('de000000-0000-0000-0000-00000000000f')), null,
+  'a new job has no Apple token');
+select public.account_deletion_failed('de000000-0000-0000-0000-00000000000f', 'storage: 503', 'apple-refresh', 'refresh_token');
+select is((select apple_token from public.account_deletion_begin('de000000-0000-0000-0000-00000000000f')), 'apple-refresh',
+  'a retry gets back the Apple token still to revoke');
+select is((select count(*)::int from public.account_deletions_due() where user_id = 'de000000-0000-0000-0000-00000000000f'), 0,
+  'a job just attempted isn''t due yet');
+select pg_temp.as_admin();
+update private.account_deletions set last_attempt_at = now() - interval '11 minutes'
+  where user_id = 'de000000-0000-0000-0000-00000000000f';
+set local role service_role;
+select is((select attempts from public.account_deletions_due() where user_id = 'de000000-0000-0000-0000-00000000000f'), 2,
+  'an unfinished job is due for the scheduled run after ten minutes');
+select pg_temp.act_as('de000000-0000-0000-0000-00000000000f');
+select throws_ok(
+  $$ insert into storage.objects (bucket_id, name) values ('avatars', 'de000000-0000-0000-0000-00000000000f/during.jpg') $$,
+  '42501', null, 'no uploads once deletion has started');
+select pg_temp.as_admin();
+
 -- The deletion delete-account performs.
 delete from auth.users where id = 'de000000-0000-0000-0000-00000000000f';
 
@@ -190,8 +215,9 @@ select is(
   + (select count(*)::int from public.vehicles where id = 'de100000-0000-0000-0000-00000000000a')
   + (select count(*)::int from public.profiles where id = 'de000000-0000-0000-0000-00000000000a'),
   4, 'Amy''s profile, vehicle, post and drive stay (the drive just loses the meet link)');
-select is((select count(*)::int from auth.identities where user_id = 'de000000-0000-0000-0000-00000000000f'), 0,
-  'the Sign in with Apple identity is gone');
+select is((select count(*)::int from auth.identities where user_id = 'de000000-0000-0000-0000-00000000000f')
+  + (select count(*)::int from private.account_deletions where user_id = 'de000000-0000-0000-0000-00000000000f'), 0,
+  'the Sign in with Apple identity and the finished deletion job are gone');
 
 -- 14: a token that outlives the account can't upload ----------------------
 select pg_temp.act_as('de000000-0000-0000-0000-00000000000f');

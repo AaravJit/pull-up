@@ -305,7 +305,15 @@ public final class AppModel {
         try? await backend.signOut()
         appleCredentials.store(userID: nil)
         DriveProSection.removeExports()
+        Self.clearMediaCache()
         await apply(nil)
+    }
+
+    /// Photos are fetched through URLSession.shared from signed URLs stored
+    /// with a one-year cache lifetime, so copies sit in the app's Caches
+    /// folder. They go on sign-out and account deletion.
+    static func clearMediaCache(_ cache: URLCache = .shared) {
+        cache.removeAllCachedResponses()
     }
 
     /// Deletes the account on the server. `appleAuthorizationCode` comes from
@@ -318,6 +326,7 @@ public final class AppModel {
         // either. Before apply(nil), which keeps a drive that's recording.
         if let owner { await recorder.eraseLocalData(for: owner) }
         DriveProSection.removeExports()
+        Self.clearMediaCache()
         appleCredentials.store(userID: nil)
         await apply(nil)
         switch result.apple {

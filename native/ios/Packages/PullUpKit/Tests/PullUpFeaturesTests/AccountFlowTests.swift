@@ -104,6 +104,16 @@ struct AccountFlowTests {
         #expect(!FileManager.default.fileExists(atPath: DriveProSection.exportsFolder.path))
     }
 
+    @Test func deletionClearsCachedMedia() async throws {
+        let app = model()
+        await app.start()
+        let url = URL(string: "https://example.supabase.co/storage/v1/object/sign/avatars/me.jpg?token=t")!
+        let response = HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: ["Cache-Control": "max-age=31536000"])!
+        URLCache.shared.storeCachedResponse(CachedURLResponse(response: response, data: Data([0xff, 0xd8])), for: URLRequest(url: url))
+        try await app.deleteAccount(appleAuthorizationCode: nil)
+        #expect(URLCache.shared.cachedResponse(for: URLRequest(url: url)) == nil)
+    }
+
     @Test func authMessagesAreReadable() {
         struct Server: LocalizedError { let errorDescription: String? }
         #expect(AuthMessages.server(Server(errorDescription: "automatic account linking is disabled: sign in with your existing method")).contains("signs in another way"))

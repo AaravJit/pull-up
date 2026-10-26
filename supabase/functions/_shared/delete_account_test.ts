@@ -2,7 +2,8 @@
 // delete-account's steps against fakes: in-memory Storage, a stubbed Auth
 // and a stubbed Apple with a throwaway P-256 key. No network, no real keys.
 import { type AppleConfig, appleConfig, clientSecret, pemToDer } from "./apple.ts";
-import { deleteAccount, type DeleteAccountDeps, type Identity } from "./delete_account.ts";
+import { type AppleGrant } from "./apple.ts";
+import { deleteAccount, type DeleteAccountDeps, type DeletionJobs, finishPendingDeletions, type Identity } from "./delete_account.ts";
 import { assert, assertEquals, FakeStorage, fakeSleep } from "./test_fakes.ts";
 
 const uid = "0b6f3e3e-9c1d-4b6a-8f6e-2a1d3c4b5e6f";
@@ -59,9 +60,35 @@ function fakeApple(options: { token?: number; revoke?: number[]; sub?: string } 
 
 let events: string[] = [];
 
+/** private.account_deletions in memory; deleting the user cascades its row away. */
+class FakeJobs implements DeletionJobs {
+  readonly rows = new Map<string, { attempts: number; error: string | null; apple: AppleGrant | null }>();
+  failBegin = false;
+  begin(uid: string) {
+    events.push("job:begin");
+    if (this.failBegin) return Promise.resolve({ apple: null, error: "connection refused" });
+    const row = this.rows.get(uid) ?? { attempts: 0, error: null, apple: null };
+    row.attempts += 1;
+    this.rows.set(uid, row);
+    return Promise.resolve({ apple: row.apple, error: null });
+  }
+  failed(uid: string, error: string, apple: AppleGrant | null) {
+    const row = this.rows.get(uid);
+    if (row) {
+      row.error = error;
+      if (apple) row.apple = apple;
+    }
+    return Promise.resolve();
+  }
+  due(_limit: number) {
+    return Promise.resolve({ ids: [...this.rows.keys()], error: null });
+  }
+}
+
 function deps(storage: FakeStorage, overrides: Partial<DeleteAccountDeps> & { identities?: Identity[] } = {}) {
   const logs: string[] = [];
   const deleted: string[] = [];
+  const jobs = overrides.jobs as FakeJobs | undefined ?? new FakeJobs();
   const instrumented = new Proxy(storage, {
     get(target, prop) {
       if (prop !== "from") return Reflect.get(target, prop);
@@ -80,10 +107,12 @@ function deps(storage: FakeStorage, overrides: Partial<DeleteAccountDeps> & { id
   const d: DeleteAccountDeps = {
     user: () => Promise.resolve({ user: { id: uid, identities: overrides.identities ?? [{ provider: "email", id: uid }] }, error: null }),
     conversationIds: () => Promise.resolve({ ids: [conversation], error: null }),
+    jobs,
     storage: instrumented,
     deleteUser: (id) => {
       events.push("deleteUser");
       deleted.push(id);
+      jobs.rows.delete(id);
       return Promise.resolve({ error: null });
     },
     apple: null,
@@ -92,7 +121,7 @@ function deps(storage: FakeStorage, overrides: Partial<DeleteAccountDeps> & { id
     log: (line) => logs.push(line),
     ...overrides,
   };
-  return { d, logs, deleted };
+  return { d, logs, deleted, jobs };
 }
 
 const appleIdentity: Identity[] = [{ provider: "apple", id: appleSub, identity_data: { sub: appleSub, email: "x@privaterelay.appleid.com" } }];
@@ -113,6 +142,7 @@ Deno.test("deletes every file the account owns, then the account", async () => {
   assertEquals(result.body, { deleted: true, removed_files: 1205, apple_revoked: null, apple_reason: null });
   assertOnlyOthersLeft(storage);
   assertEquals(deleted, [uid]);
+  assertEquals(events[0], "job:begin", "the job is recorded before anything is removed");
   assertEquals(events.at(-1), "deleteUser", "the auth user goes last");
 });
 
@@ -125,7 +155,7 @@ Deno.test("a storage failure keeps the account and says so; calling again finish
   assertEquals(first.status, 503);
   assertEquals(first.body.deleted, false);
   assertEquals(first.body.error, "storage_incomplete");
-  assert(String(first.body.message).includes("Try again"), "a message the app shows");
+  assert(String(first.body.message).includes("try again"), "a message the app shows");
   assertEquals(deleted, [], "the account stays so a retry can find its files");
   assert(logs.some((l) => l.includes("Service Unavailable")), "logged");
 
@@ -185,7 +215,7 @@ Deno.test("Sign in with Apple: code exchanged first, token revoked after the acc
   assertEquals(result.status, 200);
   assertEquals(result.body.apple_revoked, true);
   assertEquals(result.body.apple_reason, null);
-  assertEquals(events[0], "apple:token");
+  assertEquals(events.slice(0, 2), ["job:begin", "apple:token"]);
   assertEquals(events.slice(-2), ["deleteUser", "apple:revoke"]);
 
   const [token, revoke] = appleStub.calls;
@@ -292,4 +322,68 @@ Deno.test("the .p8 key is read as pasted, with real or literal \\n line breaks",
   assertEquals(pemToDer(flat), pemToDer(pem));
   assertEquals(pemToDer(pem), pkcs8);
   await assertValidClientSecret(await clientSecret({ ...apple, privateKey: flat }));
+});
+
+Deno.test("a deletion that can't be recorded doesn't start", async () => {
+  const storage = seededStorage();
+  const jobs = new FakeJobs();
+  jobs.failBegin = true;
+  const { d, deleted } = deps(storage, { jobs });
+  const result = await deleteAccount({}, d);
+  assertEquals([result.status, result.body.error], [503, "not_started"]);
+  assertEquals(storage.calls, []);
+  assertEquals(deleted, []);
+});
+
+Deno.test("an interrupted deletion is finished by the scheduled run, Apple token included", async () => {
+  events = [];
+  const storage = seededStorage();
+  storage.fail({ op: "remove", bucket: "vehicle-media", times: Infinity, error: { message: "Service Unavailable", status: 503 } });
+  const appleStub = fakeApple();
+  const { d, jobs, deleted } = deps(storage, { identities: appleIdentity, apple, fetch: appleStub.impl });
+
+  const first = await deleteAccount({ apple_authorization_code: "one-time" }, d);
+  assertEquals([first.status, first.body.deleted], [503, false]);
+  assert(String(first.body.message).includes("keeps retrying"), "the app can say it will finish");
+  const row = jobs.rows.get(uid)!;
+  assert(row.error?.includes("Service Unavailable"), "the job keeps the error");
+  assertEquals(row.apple?.token, "refresh-abc", "and the Apple token the code was exchanged for");
+  assertEquals(deleted, []);
+  assert(storage.files("vehicle-media").length > 0, "cleanup really did stop part-way");
+
+  // The person never comes back. Storage recovers; the scheduled run finishes.
+  storage.faults.length = 0;
+  const run = await finishPendingDeletions(d);
+  assertEquals(run.body, { due: 1, finished: 1, failed: 0, apple_not_revoked: 0 });
+  assertOnlyOthersLeft(storage);
+  assertEquals(deleted, [uid]);
+  assertEquals(jobs.rows.size, 0, "the job went with the account");
+  assertEquals(appleStub.calls.map((c) => c.url), ["https://appleid.apple.com/auth/token", "https://appleid.apple.com/auth/revoke"]);
+  assertEquals(appleStub.calls[1].form.token, "refresh-abc");
+  assertEquals(events.slice(-2), ["deleteUser", "apple:revoke"], "revoked only after the account is gone");
+
+  assertEquals((await finishPendingDeletions(d)).body, { due: 0, finished: 0, failed: 0, apple_not_revoked: 0 });
+});
+
+Deno.test("the scheduled run reports what it couldn't finish and keeps the job", async () => {
+  const storage = seededStorage();
+  const { d, jobs, deleted } = deps(storage);
+  await jobs.begin(uid);
+  storage.fail({ op: "list", bucket: "avatars", times: Infinity, error: { message: "Internal Server Error", status: 500 } });
+  const run = await finishPendingDeletions(d);
+  assertEquals([run.status, run.body.failed], [500, 1]);
+  assertEquals(jobs.rows.get(uid)?.attempts, 2);
+  assert(jobs.rows.get(uid)?.error?.includes("Internal Server Error"), "error kept");
+  assertEquals(deleted, []);
+});
+
+Deno.test("a retry from the app uses the Apple token kept from the first try", async () => {
+  const storage = seededStorage();
+  storage.fail({ op: "remove", bucket: "avatars", times: 4, error: { message: "Bad Gateway", status: 502 } });
+  const appleStub = fakeApple();
+  const { d } = deps(storage, { identities: appleIdentity, apple, fetch: appleStub.impl });
+  assertEquals((await deleteAccount({ apple_authorization_code: "one-time" }, d)).status, 503);
+  const second = await deleteAccount({}, d); // the app has no fresh code this time
+  assertEquals([second.status, second.body.apple_revoked], [200, true]);
+  assertEquals(appleStub.calls.filter((c) => c.url.endsWith("/token")).length, 1, "the used code isn't sent again");
 });

@@ -143,8 +143,9 @@ public actor LocalDriveStore {
         try? FileManager.default.removeItem(at: url(for: id))
     }
 
-    /// Removes every draft recorded by `owner`, finished or not.
+    /// Removes every draft recorded by `owner`, finished or not, and any
+    /// draft without an owner (no account can ever upload those).
     public func deleteAll(owner: UserID) {
-        for draft in all() where draft.ownerID == owner { delete(draft.id) }
+        for draft in all() where draft.ownerID == owner || draft.ownerID == nil { delete(draft.id) }
     }
 }
