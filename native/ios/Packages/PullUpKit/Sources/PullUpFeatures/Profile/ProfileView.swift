@@ -24,6 +24,8 @@ struct ProfileView: View {
     @State private var blocked = false
 
     private var isMe: Bool { userID == app.userID }
+    /// Blocked here, or anywhere else in the app since this screen loaded.
+    private var isBlocked: Bool { blocked || app.blockedUsers.contains(userID) }
     private var handle: String { page.map { "@\($0.profile.username)" } ?? "this person" }
 
     private var theme: ClusterTheme {
@@ -39,7 +41,7 @@ struct ProfileView: View {
 
     var body: some View {
         Group {
-            if blocked {
+            if isBlocked {
                 EmptyState(title: "Blocked", message: "You won't see each other's profiles, posts or meets, and \(handle) can't message you. Pull Up doesn't tell them.")
             } else if let page {
                 content(page)
@@ -61,7 +63,7 @@ struct ProfileView: View {
                         .accessibilityIdentifier("open-settings")
                 }
             }
-            if !isMe, page != nil, !blocked {
+            if !isMe, page != nil, !isBlocked {
                 ToolbarItem(placement: .primaryAction) {
                     Menu {
                         Button { reporting = true } label: { Label("Report \(handle)", systemImage: "flag") }
@@ -354,7 +356,7 @@ struct ProfileView: View {
 
     private func block() async {
         do {
-            try await app.backend.block(userID)
+            try await app.block(userID)
             blocked = true
         } catch {
             self.error = error.localizedDescription
@@ -393,7 +395,7 @@ struct ReportPersonView: View {
                     if sent {
                         EmptyState(
                             title: "Thanks for reporting",
-                            message: "Pull Up staff review reports. \(handle) isn't told who reported them."
+                            message: "Your report is saved with a copy of what you reported, for Pull Up to review. \(handle) isn't told who reported them."
                         )
                     } else {
                         Text(question)
@@ -450,7 +452,7 @@ struct ReportPersonView: View {
                 reported = true
             }
             if alsoBlock {
-                try await app.backend.block(person.id)
+                try await app.block(person.id)
                 onBlocked?()
             }
             sent = true

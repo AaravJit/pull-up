@@ -375,7 +375,7 @@ public enum ReportReason: String, Codable, Sendable, CaseIterable, Identifiable 
 /// What a report from outside Messages is about. The server looks it up as
 /// the reporter sees it and keeps a copy for staff (`report_content`).
 public struct ReportedContent: Hashable, Sendable {
-    public enum Kind: String, Sendable { case post, comment, meet, profile }
+    public enum Kind: String, Sendable { case post, comment, meet, profile, vehicle }
 
     public var kind: Kind
     public var id: UUID

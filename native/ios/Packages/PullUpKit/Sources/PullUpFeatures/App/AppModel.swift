@@ -38,6 +38,11 @@ public final class AppModel {
     private(set) var messagingPulse = MessagingPulse()
     /// The signed-in person's own account (username, sign-in methods).
     public private(set) var account: AccountState?
+    /// People this account has blocked since it signed in on this phone.
+    /// Screens that already loaded their posts, comments, meets or
+    /// conversations drop them at once instead of waiting for a refetch. The
+    /// server enforces the block itself (RLS, `is_blocked_between`).
+    public private(set) var blockedUsers: Set<UserID> = []
     /// Shown once on the sign-in screen after the app signed someone out on
     /// its own (Apple credential revoked, account deleted).
     public var signedOutNotice: String?
@@ -170,6 +175,7 @@ public final class AppModel {
             guard !recorder.isRecording else { return }
             phase = .signedOut
             account = nil
+            blockedUsers = []
             messagingTask?.cancel()
             messagingTask = nil
             unreadMessages = UnreadMessages()
@@ -180,6 +186,7 @@ public final class AppModel {
     }
 
     private func enterApp(_ user: UserID) async {
+        blockedUsers = []
         phase = .signedIn(user)
         recorder.ownerID = user
         await garage.setOwner(user)
@@ -252,6 +259,21 @@ public final class AppModel {
     func foregrounded() async {
         guard case .signedIn = phase else { return }
         await recorder.syncPending()
+        // Picks up a suspension placed (or lifted) while the app was away.
+        await refreshAccount()
+    }
+
+    // MARK: Blocking
+
+    /// Blocks on the server, then hides the person everywhere in the app.
+    public func block(_ user: UserID) async throws {
+        try await backend.block(user)
+        noteBlocked(user)
+    }
+
+    /// Records a block made through a conversation's own model.
+    public func noteBlocked(_ user: UserID) {
+        blockedUsers.insert(user)
     }
 
     /// Called by onboarding once the server has marked it complete.
