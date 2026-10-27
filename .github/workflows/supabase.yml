@@ -20,7 +20,9 @@ jobs:
       - uses: actions/checkout@v4
       - uses: supabase/setup-cli@v1
         with:
-          version: latest
+          # Pinned, same as supabase-deploy.yml: resolving "latest" calls the
+          # GitHub API, whose unauthenticated rate limit fails this step.
+          version: 2.121.0
       - name: Destructive-migration gate tests
         run: python3 -m unittest discover -s supabase/scripts -p 'test_*.py'
       - name: Migrations already on staging are unchanged
@@ -62,7 +64,9 @@ jobs:
       - uses: actions/checkout@v4
       - uses: supabase/setup-cli@v1
         with:
-          version: latest
+          # Pinned, same as supabase-deploy.yml: resolving "latest" calls the
+          # GitHub API, whose unauthenticated rate limit fails this step.
+          version: 2.121.0
       - uses: denoland/setup-deno@v2
         with:
           deno-version: v2.x
