@@ -67,7 +67,9 @@ that isn't in the environment.
 | Secret | Used by | Where it comes from |
 | --- | --- | --- |
 | `PUSH_WEBHOOK_SECRET` | `send-push` | `openssl rand -hex 32`; the same value goes in the webhook (step 5) |
-| `CRON_SECRET` | `dm-retention`, `delete-account` (scheduled run), `post-media-cleanup` | `openssl rand -hex 32`; the same value goes in the cron jobs (step 5) |
+| `CRON_SECRET` | `dm-retention`, `delete-account` (scheduled run), `post-media-cleanup`, `moderation-worker` | `openssl rand -hex 32`; the same value goes in the cron jobs (step 5) |
+| `MODERATION_WEBHOOK_URL` | `moderation-worker` | An https endpoint the owner picks for report alerts (Discord or Slack webhook, ntfy topic); `MODERATION_RUNBOOK.md` §2.3 |
+| `MODERATION_WEBHOOK_SECRET` | `moderation-worker` (optional) | `openssl rand -hex 32`; signs each alert (`x-pullup-signature`) for an endpoint of your own |
 | `APNS_KEY_ID`, `APNS_TEAM_ID`, `APNS_PRIVATE_KEY`, `APNS_TOPIC` | `send-push` | Apple push key (`RELEASE_CHECKLIST.md` §3) |
 | `APPLE_CLIENT_ID`, `APPLE_KEY_ID`, `APPLE_TEAM_ID`, `APPLE_PRIVATE_KEY` | `delete-account` (Apple token revocation) | Sign in with Apple key (§3) |
 | `APPSTORE_ISSUER_ID`, `APPSTORE_KEY_ID`, `APPSTORE_PRIVATE_KEY`, `APPSTORE_BUNDLE_ID` | `verify-subscription`, `app-store-notifications` | App Store Server API key (§4a) |

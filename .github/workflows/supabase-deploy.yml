@@ -11,7 +11,8 @@ name: Supabase deploy
 #   secret   SUPABASE_ACCESS_TOKEN  a personal access token of the project owner
 #   secret   SUPABASE_DB_PASSWORD   the project's database password
 #   optional secrets for the functions: PUSH_WEBHOOK_SECRET, CRON_SECRET,
-#   APNS_*, APPLE_*, APPSTORE_* (copied to the project only when present)
+#   APNS_*, APPLE_*, APPSTORE_*, MODERATION_WEBHOOK_URL,
+#   MODERATION_WEBHOOK_SECRET (copied to the project only when present)
 #
 # Staging runs also run the pgTAP suite and the two-account API tests
 # against the project. Production never runs tests that write data.
@@ -197,6 +198,9 @@ jobs:
           APPSTORE_KEY_ID: ${{ secrets.APPSTORE_KEY_ID }}
           APPSTORE_PRIVATE_KEY: ${{ secrets.APPSTORE_PRIVATE_KEY }}
           APPSTORE_BUNDLE_ID: ${{ secrets.APPSTORE_BUNDLE_ID }}
+          MODERATION_WEBHOOK_URL: ${{ secrets.MODERATION_WEBHOOK_URL }}
+          MODERATION_WEBHOOK_SECRET: ${{ secrets.MODERATION_WEBHOOK_SECRET }}
+          PULLUP_ENVIRONMENT_NAME: ${{ inputs.environment }}
         run: |
           umask 077
           file="$RUNNER_TEMP/function-secrets.env"
@@ -205,7 +209,8 @@ jobs:
           absent=""
           for name in PUSH_WEBHOOK_SECRET CRON_SECRET APNS_KEY_ID APNS_PRIVATE_KEY APNS_TEAM_ID APNS_TOPIC \
                       APPLE_CLIENT_ID APPLE_KEY_ID APPLE_PRIVATE_KEY APPLE_TEAM_ID \
-                      APPSTORE_ISSUER_ID APPSTORE_KEY_ID APPSTORE_PRIVATE_KEY APPSTORE_BUNDLE_ID; do
+                      APPSTORE_ISSUER_ID APPSTORE_KEY_ID APPSTORE_PRIVATE_KEY APPSTORE_BUNDLE_ID \
+                      MODERATION_WEBHOOK_URL MODERATION_WEBHOOK_SECRET PULLUP_ENVIRONMENT_NAME; do
             value="${!name}"
             if [ -z "$value" ]; then absent="$absent $name"; continue; fi
             printf '%s="%s"\n' "$name" "$value" >> "$file"

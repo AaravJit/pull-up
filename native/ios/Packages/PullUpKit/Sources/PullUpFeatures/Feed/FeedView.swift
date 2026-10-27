@@ -46,7 +46,7 @@ public struct FeedView: View {
                     if let actionError {
                         ErrorLine(message: actionError).padding(.horizontal, Space.gutter)
                     }
-                    ForEach(posts) { post in
+                    ForEach(posts.filter { !app.blockedUsers.contains($0.authorID) }) { post in
                         PostCard(
                             post: post, onLike: { toggleLike(post) }, onComments: { commentsFor = post }, onShare: { sharing = post },
                             isMine: post.authorID == app.userID,
@@ -160,7 +160,7 @@ public struct FeedView: View {
 
     private func block(_ id: UserID) async {
         do {
-            try await app.backend.block(id)
+            try await app.block(id)
             hideAuthor(id)
             actionError = nil
         } catch {
@@ -399,7 +399,7 @@ struct CommentsView: View {
                     if comments.isEmpty {
                         Text("No comments yet.").font(ClusterFont.body(.subheadline)).foregroundStyle(ClusterColor.inkSecondary)
                     }
-                    ForEach(comments) { comment in
+                    ForEach(comments.filter { !app.blockedUsers.contains($0.authorID) }) { comment in
                         HStack(alignment: .top, spacing: Space.m) {
                             Avatar(name: comment.author?.displayName ?? "?", path: comment.author?.avatarPath, size: 30)
                             VStack(alignment: .leading, spacing: 2) {
@@ -471,7 +471,7 @@ struct CommentsView: View {
 
     private func block(_ id: UserID) async {
         do {
-            try await app.backend.block(id)
+            try await app.block(id)
             hideAuthor(id)
             error = nil
         } catch {
