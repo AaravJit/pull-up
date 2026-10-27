@@ -624,12 +624,18 @@ final class FakeUploads: Sendable {
     }
 
     private let log: Mutex<Log>
+    private let held: Mutex<Bool>
     let delay: Duration
 
-    init(delay: Duration = .zero, error: (any Error)? = nil) {
+    /// `held` keeps every upload in flight until `release()`, so a test
+    /// doesn't depend on how fast the runner is.
+    init(delay: Duration = .zero, error: (any Error)? = nil, held: Bool = false) {
         self.delay = delay
         log = Mutex(Log(error: error))
+        self.held = Mutex(held)
     }
+
+    func release() { held.withLock { $0 = false } }
 
     var calls: Int { log.withLock { $0.calls } }
     var mostAtOnce: Int { log.withLock { $0.mostAtOnce } }
@@ -643,6 +649,7 @@ final class FakeUploads: Sendable {
         }
         defer { log.withLock { $0.running -= 1 } }
         try? await Task.sleep(for: delay)
+        while held.withLock({ $0 }) { try? await Task.sleep(for: .milliseconds(10)) }
         if let error = log.withLock({ $0.error }) { throw error }
         var stored = drive
         stored.validationStatus = .validated
@@ -682,7 +689,9 @@ struct UploadRecoveryTests {
     /// Weak signal at the stop: the summary doesn't wait for the upload, the
     /// drive is on disk, and the upload finishes on its own.
     @Test func slowUploadIsSavedOfflineAndStillFinishes() async throws {
-        let uploads = FakeUploads(delay: .milliseconds(600))
+        // Held rather than delayed: a slow runner once let a 600 ms upload
+        // finish before these checks ran.
+        let uploads = FakeUploads(held: true)
         let h = await harness(uploads)
         h.recorder.uploadTimeout = .milliseconds(50)
         let result = try await recordAndFinish(h)
@@ -692,6 +701,7 @@ struct UploadRecoveryTests {
 
         // Back in the foreground while it's still on its way: waited on,
         // not sent a second time.
+        Task { try? await Task.sleep(for: .milliseconds(200)); uploads.release() }
         await h.recorder.syncPending()
         for _ in 0..<500 where h.recorder.pendingUploads > 0 { try await Task.sleep(for: .milliseconds(10)) }
         #expect(h.recorder.pendingUploads == 0)
