@@ -106,7 +106,7 @@ Every row is linked to the account and none is used for tracking, so those two c
 |---|---|---|---|---|---|
 | APNs device token | `native/ios/PullUp/PullUpApp.swift:28-46`; RPC at notification_preferences.sql:347-389 | `device_tokens` (social.sql:69) | No client read (`permission denied`, probe §2) | Unregistered on sign-out; cascade on deletion | Device ID |
 | Notification preferences, privacy settings | `Settings/NotificationSettings.swift`; `SupabaseBackend.swift:211-225, 744-765` | `notification_preferences`, `privacy_settings` | Owner only | Cascade | Other Data Types |
-| Profile search terms | `SupabaseBackend.swift:200-206` calls RPC `search_profiles` (`20261025000400_search_profiles.sql`); the term is in the POST body | **Nowhere.** Not in the database; not in a request URL, so not in the gateway's `request.path` / `request.search` log fields | — | Processed in real time only | **Not collected** (see 3.2) |
+| Profile search terms | `SupabaseBackend.swift:200-206` calls RPC `search_profiles` (`20261025000350_search_profiles.sql`); the term is in the POST body | **Nowhere.** Not in the database; not in a request URL, so not in the gateway's `request.path` / `request.search` log fields | — | Processed in real time only | **Not collected** (see 3.2) |
 
 ### 1.7 Reports and moderation
 
@@ -210,10 +210,10 @@ Answer every type below with the same three choices:
 
 Not collected, as of this PR.
 - **Before:** profile search was a GET whose query string carried the term. Supabase's API gateway logs keep `request.path` and `request.search` with the client IP, and can be filtered by JWT subject. Sources: `supabase.com/docs/guides/observability/log-field-reference` and `supabase.com/docs/guides/platform/logs`, both retrieved 2026-10-27. Those logs are kept for 1–90 days depending on plan, which would have made search terms "collected" under Apple's definition.
-- **Now:** `public.search_profiles(p_prefix)` (`supabase/migrations/20261025000400_search_profiles.sql`) is a security-invoker RPC called through `client.rpc`, which sends its arguments in a POST body. Supabase's log field reference lists no request-body field for the gateway.
+- **Now:** `public.search_profiles(p_prefix)` (`supabase/migrations/20261025000350_search_profiles.sql`) is a security-invoker RPC called through `client.rpc`, which sends its arguments in a POST body. Supabase's log field reference lists no request-body field for the gateway.
   - Same columns, RLS and 20-result limit as before. LIKE wildcards in the term are now literal.
-  - Rollback: `supabase/rollback/20261025000400_search_profiles_down.sql`.
-  - Test: `supabase/tests/040_search_profiles.sql`.
+  - Rollback: `supabase/rollback/20261025000350_search_profiles_down.sql`.
+  - Test: `supabase/tests/036_search_profiles.sql`.
 - **Caveats:**
   - Builds from before this change still send the GET until people update. The first App Store build includes the change, so this matters only for TestFlight builds.
   - Whether the gateway logs bodies wasn't checked against a live project, only against Supabase's documented fields. If a later check finds bodies in logs, declare Search History.

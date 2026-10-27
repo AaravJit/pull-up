@@ -1,4 +1,4 @@
--- Profile search RPC (20261025000400): same results and RLS as the old
+-- Profile search RPC (20261025000350): same results and RLS as the old
 -- direct select, the term never needs to be in a URL, and LIKE wildcards
 -- in the term are literal.
 
