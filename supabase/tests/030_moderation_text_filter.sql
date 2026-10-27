@@ -9,6 +9,12 @@ select plan(41);
 insert into auth.users (id, email, raw_user_meta_data) values
   ('f3000000-0000-0000-0000-00000000000a'::uuid, 'tf-ann@example.com', '{"username":"tf_ann"}'),
   ('f3000000-0000-0000-0000-00000000000b'::uuid, 'tf-ben@example.com', '{"username":"tf_ben"}');
+-- These accounts confirmed the minimum age and accepted the current terms
+-- (20261025000400); 040/041 test what happens without that.
+insert into public.terms_acceptances (user_id, version)
+select p.id, v.version from public.profiles p, public.terms_versions v where v.is_current on conflict do nothing;
+insert into private.age_checks (user_id, meets_minimum, minimum_age, method)
+select id, true, 13, 'self_declared' from public.profiles on conflict do nothing;
 
 create or replace function pg_temp.act_as(uid uuid) returns void language plpgsql as $$
 begin
@@ -100,6 +106,12 @@ select throws_ok($$ insert into public.comments (post_id, author_id, body) value
 -- Sign-up never fails over a name.
 insert into auth.users (id, email, raw_user_meta_data) values
   ('f3000000-0000-0000-0000-00000000000c'::uuid, 'tf-cat@example.com', '{"username":"zzbadword","display_name":"qqslur"}');
+-- These accounts confirmed the minimum age and accepted the current terms
+-- (20261025000400); 040/041 test what happens without that.
+insert into public.terms_acceptances (user_id, version)
+select p.id, v.version from public.profiles p, public.terms_versions v where v.is_current on conflict do nothing;
+insert into private.age_checks (user_id, meets_minimum, minimum_age, method)
+select id, true, 13, 'self_declared' from public.profiles on conflict do nothing;
 select matches((select username from public.profiles where id = 'f3000000-0000-0000-0000-00000000000c'), '^driver_', 'a blocked requested username becomes the placeholder');
 select is((select display_name from public.profiles where id = 'f3000000-0000-0000-0000-00000000000c'), '', 'a blocked display name is left empty');
 

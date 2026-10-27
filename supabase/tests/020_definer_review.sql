@@ -37,8 +37,8 @@ select is(
     'like_count', 'liked_by_me', 'mark_conversation_read', 'meet_attendees', 'mod_add_term',
     'mod_check_text', 'mod_queue', 'mod_remove_term', 'mod_report', 'mod_reset_profile',
     'mod_resolve_report', 'mod_set_content_state', 'mod_suspend_user', 'mod_terms', 'mod_unsuspend_user',
-    'moderation_summary', 'my_moderation_status', 'my_rsvp', 'owns_vehicle', 'peer_read_at',
-    'publish_post', 'register_device_token', 'report_content', 'report_user', 'respond_to_request',
+    'moderation_summary', 'my_consent_ok', 'my_consent_status', 'my_moderation_status', 'my_rsvp', 'owns_vehicle', 'peer_read_at',
+    'publish_post', 'record_age_check', 'register_device_token', 'report_content', 'report_user', 'respond_to_request',
     'set_conversation_muted', 'share_drive_route', 'shared_preview', 'start_conversation', 'unread_message_counts',
     'unsend_message', 'unshare_drive_route', 'username_status'
     ]::text[])),
@@ -50,6 +50,12 @@ insert into auth.users (id, email, raw_user_meta_data) values
   ('ed000000-0000-0000-0000-00000000000a', 'def-ann@example.com', '{"username":"def_ann"}'),
   ('ed000000-0000-0000-0000-00000000000b', 'def-ben@example.com', '{"username":"def_ben"}'),
   ('ed000000-0000-0000-0000-00000000000c', 'def-cat@example.com', '{"username":"def_cat"}');
+-- These accounts confirmed the minimum age and accepted the current terms
+-- (20261025000400); 040/041 test what happens without that.
+insert into public.terms_acceptances (user_id, version)
+select p.id, v.version from public.profiles p, public.terms_versions v where v.is_current on conflict do nothing;
+insert into private.age_checks (user_id, meets_minimum, minimum_age, method)
+select id, true, 13, 'self_declared' from public.profiles on conflict do nothing;
 
 select pg_temp.act_as('ed000000-0000-0000-0000-00000000000a');
 update public.privacy_settings set allow_route_sharing = true where user_id = auth.uid();
