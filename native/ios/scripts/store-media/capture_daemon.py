@@ -113,6 +113,19 @@ class Daemon:
         self.display = self.fold_display if pose == "fold" else self.unfold_display
         return {"pose": pose, "display": self.display, "output": output[-2000:]}
 
+    def check_display(self, req):
+        """On iPhone Duo, the app's window must be on the display this pose
+        captures: inner (2007x2853 px, 669 pt wide) or outer (1398x2034 px,
+        466 pt wide). Otherwise the captures would show the wrong display."""
+        window = req.get("window") or []
+        if not self.pose or len(window) != 4:
+            return {}
+        width = window[2]
+        on_inner = width > 560
+        if (self.pose == "unfold") != on_inner:
+            raise RuntimeError("app window is %s pt wide, so it isn't on the %s display" % (width, "inner" if self.pose == "unfold" else "outer"))
+        return {"window_checked": True}
+
     def handle(self, req):
         action = req.get("action")
         name = req.get("name", "")
@@ -127,11 +140,13 @@ class Daemon:
                 raise RuntimeError("not a foldable")
             return self.set_pose(action)
         if action == "note":
-            return {}
+            return self.check_display(req) if name == "launched" else {}
         raise RuntimeError("unknown action %s" % action)
 
     def loop(self):
         print("capture daemon: udid=%s display=%s pose=%s" % (self.udid, self.display, self.pose), flush=True)
+        # Requests already there belong to an earlier daemon; never replay them.
+        self.handled.update(n for n in os.listdir(self.requests) if n.startswith("req-"))
         while True:
             names = sorted(n for n in os.listdir(self.requests) if n.startswith("req-") and n.endswith(".json"))
             for n in names:

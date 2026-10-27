@@ -70,6 +70,18 @@ final class PullUpUITests: XCTestCase {
         return shown.waitForExistence(timeout: 10)
     }
 
+    /// Taps a meet row and waits for `shown` on its detail page. A loaded CI
+    /// simulator sometimes drops the tap (the list stays on screen), so this
+    /// taps once more if the row is still there and hittable.
+    @discardableResult
+    private func openMeet(_ app: XCUIApplication, _ row: XCUIElement, until shown: XCUIElement) -> Bool {
+        settle()
+        row.tap()
+        if shown.waitForExistence(timeout: 8) { return true }
+        if row.exists && row.isHittable { row.tap() }
+        return shown.waitForExistence(timeout: 10)
+    }
+
     // MARK: Journeys
 
     /// Start Drive → pick a vehicle → record → stop → summary, then check the
@@ -176,8 +188,8 @@ final class PullUpUITests: XCTestCase {
         snap("18-meets")
         let meet = element(app, "meet-row-Sac Nights")
         XCTAssertTrue(meet.waitForExistence(timeout: 5))
-        meet.tap()
-        XCTAssertTrue(element(app, "meet-detail").waitForExistence(timeout: 5))
+        openMeet(app, meet, until: element(app, "meet-detail"))
+        XCTAssertTrue(element(app, "meet-detail").exists)
         settle(2)
         snap("19-meet-detail")
         app.swipeUp()
@@ -250,8 +262,8 @@ final class PullUpUITests: XCTestCase {
         tab(app, "Meets")
         let meet = element(app, "meet-row-Sac Nights")
         XCTAssertTrue(meet.waitForExistence(timeout: 5))
-        meet.tap()
-        XCTAssertTrue(app.buttons["meet-options"].waitForExistence(timeout: 5), "A meet by someone else can be reported")
+        openMeet(app, meet, until: app.buttons["meet-options"])
+        XCTAssertTrue(app.buttons["meet-options"].exists, "A meet by someone else can be reported")
     }
 
     func testPickerCanBeDismissedWithoutRecording() throws {

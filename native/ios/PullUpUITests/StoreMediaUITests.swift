@@ -48,6 +48,8 @@ final class StoreMediaUITests: XCTestCase {
         // Store capture hides the demo labels; if this fails the capture
         // switch isn't compiled into this (debug) build.
         XCTAssertFalse(element(app, "demo-strip").exists, "Store capture must run with -PullUpStoreCapture in a debug build")
+        // The host checks the window is on the display it captures (Duo).
+        XCTAssertTrue(request("note", "launched", app: app), "The app is on the wrong display for this capture")
         return app
     }
 
@@ -75,7 +77,7 @@ final class StoreMediaUITests: XCTestCase {
         }
         guard wait else { return true }
         let ack = base.appendingPathComponent("ack-\(id).json")
-        let deadline = Date().addingTimeInterval(240)
+        let deadline = Date().addingTimeInterval(150)
         while Date() < deadline {
             if let data = try? Data(contentsOf: ack),
                let answer = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
@@ -156,7 +158,10 @@ final class StoreMediaUITests: XCTestCase {
     private func openMeet(_ app: XCUIApplication) {
         let meet = element(app, "meet-row-Sac Nights")
         XCTAssertTrue(meet.waitForExistence(timeout: 10))
+        settle()
         meet.tap()
+        // A loaded CI simulator sometimes drops the tap; tap once more.
+        if !element(app, "meet-detail").waitForExistence(timeout: 8), meet.exists, meet.isHittable { meet.tap() }
         XCTAssertTrue(element(app, "meet-detail").waitForExistence(timeout: 10))
     }
 
@@ -165,7 +170,6 @@ final class StoreMediaUITests: XCTestCase {
     /// The ten App Store screenshots, in product-page order.
     func testScreenshots() throws {
         let app = launch()
-        request("note", "launched", app: app)
 
         let confirm = openPicker(app)
         pickDaily(app)
@@ -256,14 +260,14 @@ final class StoreMediaUITests: XCTestCase {
         XCTAssertTrue(app.buttons["start-drive"].waitForExistence(timeout: 10))
         settle(2)
         request("recstart", "P1-drive", app: app)
-        settle(3)
-        let confirm = openPicker(app)
         settle(2)
+        let confirm = openPicker(app)
+        settle(1.5)
         pickDaily(app)
-        settle(2.5)
+        settle(2)
         confirm.tap()
         waitForDashboard(app)
-        settle(15)
+        settle(11)
         request("recstop", "P1-drive", app: app)
     }
 
@@ -274,20 +278,19 @@ final class StoreMediaUITests: XCTestCase {
         XCTAssertTrue(daily.waitForExistence(timeout: 10))
         settle(2)
         request("recstart", "P2-garage", app: app)
-        settle(3.5)
+        settle(2.5)
         reveal(app, daily)
         daily.tap()
-        settle(3)
-        scroll(app)
         settle(2.5)
+        scroll(app)
+        settle(1.5)
         let drive = app.buttons.matching(NSPredicate(format: "label CONTAINS 'Commute'")).firstMatch
         reveal(app, drive)
-        settle(1)
         drive.tap()
         XCTAssertTrue(element(app, "drive-summary").waitForExistence(timeout: 10) || element(app, "summary-vehicle-name").waitForExistence(timeout: 5))
-        settle(4)
-        scroll(app)
         settle(3)
+        scroll(app)
+        settle(2)
         request("recstop", "P2-garage", app: app)
     }
 
@@ -298,50 +301,17 @@ final class StoreMediaUITests: XCTestCase {
         XCTAssertTrue(element(app, "map").waitForExistence(timeout: 10))
         settle(5)
         request("recstart", "P3-community", app: app)
-        settle(4)
+        settle(2.5)
         tab(app, "Meets")
-        settle(2)
+        settle(1)
         openMeet(app)
-        settle(3)
+        settle(2)
         let going = app.buttons["rsvp-going"]
         reveal(app, going)
-        settle(1)
         going.tap()
-        settle(2.5)
+        settle(1.5)
         tab(app, "Feed")
         settle(2.5)
-        scroll(app)
-        settle(3)
         request("recstop", "P3-community", app: app)
-    }
-
-    // MARK: iPhone Duo
-
-    /// Folding and unfolding mid-drive: the drive keeps recording and the
-    /// layout follows the display. Duo only (STORE_MEDIA_FOLDABLE=1).
-    func testFoldContinuity() throws {
-        guard ProcessInfo.processInfo.environment["STORE_MEDIA_FOLDABLE"] == "1" else {
-            throw XCTSkip("Not a foldable")
-        }
-        let app = launch()
-        request("unfold", "start-unfolded", app: app)
-        settle(4)
-        let confirm = openPicker(app)
-        pickDaily(app)
-        confirm.tap()
-        waitForDashboard(app)
-        shot(app, "F01-drive-unfolded", settleFor: 6)
-        request("fold", "fold-mid-drive", app: app)
-        shot(app, "F02-drive-folded", settleFor: 5)
-        XCTAssertTrue(element(app, "hold-to-stop").exists, "Folding mustn't interrupt the drive")
-        request("unfold", "unfold-mid-drive", app: app)
-        shot(app, "F03-drive-unfolded-again", settleFor: 5)
-        XCTAssertTrue(element(app, "hold-to-stop").exists, "Unfolding mustn't interrupt the drive")
-        settle(14)
-        stopDrive(app)
-        shot(app, "F04-summary-unfolded", settleFor: 3)
-        request("fold", "fold-summary", app: app)
-        shot(app, "F05-summary-folded", settleFor: 4)
-        request("unfold", "end-unfolded", app: app)
     }
 }

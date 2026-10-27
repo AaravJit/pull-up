@@ -83,8 +83,6 @@ jobs:
     name: iPhone Duo
     runs-on: xcode-27
     timeout-minutes: 150
-    env:
-      TEST_RUNNER_STORE_MEDIA_FOLDABLE: "1"
     steps:
       - uses: actions/checkout@v4
       - name: Toolchain
@@ -116,17 +114,21 @@ jobs:
           echo "DUO=$DUO" >> "$GITHUB_ENV"
           xcrun simctl io "$DUO" enumerate > "$MEDIA/probe/enumerate-boot.txt" 2>&1 || true
           BID=$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$APP/Info.plist")
-          # The first launch on the Duo simulator can take minutes (Xcode 27.1 notes).
-          xcrun simctl launch "$DUO" "$BID" -PullUpDemo -PullUpResetDefaults -PullUpStoreCapture -PullUpAppearance dark
-          sleep 40
-          snap() { for d in 1 3; do xcrun simctl io "$DUO" screenshot --mask=ignored --display=$d "$MEDIA/probe/$1-display$d.png" 2>&1 | tail -2 || true; done; }
-          snap boot
+          # Where the app appears in each pose: both displays on (as booted),
+          # then only the outer, then only the inner (pose.sh restarts the
+          # simulator after each change; changing power live crashes SpringBoard).
+          look() {
+            xcrun simctl launch "$DUO" "$BID" -PullUpDemo -PullUpResetDefaults -PullUpStoreCapture -PullUpAppearance dark || true
+            sleep 40
+            for d in 1 3; do xcrun simctl io "$DUO" screenshot --mask=ignored --display=$d "$MEDIA/probe/$1-display$d.png" 2>&1 | tail -1 || true; done
+            xcrun simctl terminate "$DUO" "$BID" 2>&1 | tail -1 || true
+          }
+          look open
           $S/pose.sh "$DUO" fold | tee "$MEDIA/probe/pose-fold.txt"
-          sleep 6; snap folded
+          look folded
           $S/pose.sh "$DUO" unfold | tee "$MEDIA/probe/pose-unfold.txt"
-          sleep 6; snap unfolded
-          xcrun simctl terminate "$DUO" "$BID" || true
-          for f in "$MEDIA"/probe/*.png; do sips -g pixelWidth -g pixelHeight "$f" | tail -2 | tr '\n' ' '; echo; done
+          look unfolded
+          for f in "$MEDIA"/probe/*.png; do echo "$(basename "$f") $(sips -g pixelWidth -g pixelHeight "$f" | tail -2 | tr '\n' ' ')"; done
       - name: Capture unfolded (inner display)
         working-directory: native/ios
         run: |
@@ -134,7 +136,7 @@ jobs:
           $S/pose.sh "$DUO" unfold
           fail=0
           for t in testScreenshots testLandscape testPreviewDrive testPreviewGarage; do
-            $S/pass.sh "$DUO" "$MEDIA/duo-inner" "$t" --display 3 --fold-display 1 --unfold-display 3 --pose unfold || fail=1
+            $S/pass.sh "$DUO" "$MEDIA/duo-inner" "$t" --display 3 --pose unfold || fail=1
           done
           exit $fail
       - name: Capture folded (outer display)
@@ -145,16 +147,9 @@ jobs:
           $S/pose.sh "$DUO" fold
           fail=0
           for t in testScreenshots testLandscape testPreviewCommunity; do
-            $S/pass.sh "$DUO" "$MEDIA/duo-outer" "$t" --display 1 --fold-display 1 --unfold-display 3 --pose fold || fail=1
+            $S/pass.sh "$DUO" "$MEDIA/duo-outer" "$t" --display 1 --pose fold || fail=1
           done
           exit $fail
-      - name: Fold and unfold during a drive
-        if: always()
-        working-directory: native/ios
-        run: |
-          S=./scripts/store-media
-          $S/pose.sh "$DUO" unfold
-          $S/pass.sh "$DUO" "$MEDIA/duo-fold" testFoldContinuity --display 3 --fold-display 1 --unfold-display 3 --pose unfold
       - name: Provenance
         if: always()
         working-directory: native/ios
