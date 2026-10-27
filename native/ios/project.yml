@@ -13,7 +13,7 @@ configFiles:
 settings:
   base:
     SWIFT_VERSION: "6.0"
-    MARKETING_VERSION: "0.1.0"
+    MARKETING_VERSION: "1.0"
     CURRENT_PROJECT_VERSION: "1"
     DEVELOPMENT_TEAM: $(PULLUP_TEAM_ID)
     ENABLE_USER_SCRIPT_SANDBOXING: YES
@@ -53,6 +53,11 @@ targets:
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         SUPPORTS_MACCATALYST: NO
+        # iPhone only: no "Designed for iPhone" builds on Apple silicon Macs
+        # or Apple Vision Pro. Availability on those is also switched off in
+        # App Store Connect (owner action, docs/RELEASE_CHECKLIST.md).
+        SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: NO
+        SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD: NO
   # App-hosted, so StoreKit Testing (SKTestSession) can drive the app's
   # StoreKit client with the local configuration file.
   PullUpStoreTests:

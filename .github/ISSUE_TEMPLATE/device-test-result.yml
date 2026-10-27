@@ -20,7 +20,7 @@ body:
     attributes:
       label: Build
       description: Version and build number from Settings ▸ About, and the server label
-      placeholder: 0.1.0 (142), Pull Up server (staging)
+      placeholder: 1.0 (240), Pull Up server (staging)
     validations:
       required: true
   - type: input
