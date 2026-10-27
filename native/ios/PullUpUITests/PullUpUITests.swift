@@ -70,6 +70,18 @@ final class PullUpUITests: XCTestCase {
         return shown.waitForExistence(timeout: 10)
     }
 
+    /// Closes the picker and waits for the sheet to go. As with Start Drive,
+    /// a loaded CI simulator sometimes drops the tap, leaving the sheet over
+    /// the tab bar. testPickerCanBeDismissedWithoutRecording checks a single
+    /// tap closes it.
+    private func closePicker(_ app: XCUIApplication) {
+        let close = app.buttons["picker-close"]
+        close.tap()
+        if close.waitForNonExistence(timeout: 5) { return }
+        if close.isHittable { close.tap() }
+        XCTAssertTrue(close.waitForNonExistence(timeout: 5), "Picker didn't close")
+    }
+
     // MARK: Journeys
 
     /// Start Drive → pick a vehicle → record → stop → summary, then check the
@@ -295,7 +307,7 @@ final class PullUpUITests: XCTestCase {
         XCTAssertTrue(openPicker(app, until: app.buttons["picker-confirm"]))
         settle()
         snap("24-picker-dark")
-        app.buttons["picker-close"].tap()
+        closePicker(app)
         tab(app, "Garage")
         settle(1.5)
         snap("25-garage-dark")
