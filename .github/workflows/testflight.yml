@@ -12,6 +12,12 @@ name: TestFlight
 #
 # On pull requests and pushes that touch it, the same archive is built
 # unsigned, to prove the Release build works before anyone needs it.
+#
+# Both jobs stamp the build number from native/ios/scripts/build-number.sh
+# and check the built app with native/ios/scripts/release-provenance.sh,
+# which also writes a provenance record (commit, run, version, build,
+# environment; never any signing material) to the job summary and to a
+# small artifact.
 
 on:
   workflow_dispatch:
@@ -52,13 +58,23 @@ jobs:
       - run: brew install xcodegen
       - name: Generate project
         working-directory: native/ios
-        run: xcodegen generate
+        # Pinned package versions (native/ios/Package.resolved), used as is.
+        run: xcodegen generate && ./scripts/pin-packages.sh
+      - name: Pick the build number
+        id: version
+        run: |
+          # The same numbering as an upload, so this checks it too. Never
+          # uploaded: the archive isn't signed.
+          build=$(native/ios/scripts/build-number.sh)
+          echo "build=$build" >> "$GITHUB_OUTPUT"
+          echo "version=$(grep -E '^\s*MARKETING_VERSION:' native/ios/project.yml | sed -E 's/.*"(.*)".*/\1/')" >> "$GITHUB_OUTPUT"
       - name: Archive Release without signing
         working-directory: native/ios
         run: |
           ./scripts/xcodebuild-ci.sh archive -project PullUp.xcodeproj -scheme PullUp -configuration Release \
             -destination generic/platform=iOS -archivePath "$RUNNER_TEMP/PullUp.xcarchive" \
-            -skipPackagePluginValidation CODE_SIGNING_ALLOWED=NO
+            -skipPackagePluginValidation -disableAutomaticPackageResolution CODE_SIGNING_ALLOWED=NO \
+            CURRENT_PROJECT_VERSION=${{ steps.version.outputs.build }}
       - name: Check the archive
         run: |
           app="$RUNNER_TEMP/PullUp.xcarchive/Products/Applications/PullUp.app"
@@ -66,6 +82,20 @@ jobs:
           test -f "$app/PrivacyInfo.xcprivacy" || { echo "::error::PrivacyInfo.xcprivacy is missing from the app bundle"; exit 1; }
           plutil -lint "$app/PrivacyInfo.xcprivacy"
           test -f "$app/Assets.car" || { echo "::error::asset catalog (app icon) missing"; exit 1; }
+      - name: Check what the app declares and record provenance
+        env:
+          EXPECTED_VERSION: ${{ steps.version.outputs.version }}
+          EXPECTED_BUILD: ${{ steps.version.outputs.build }}
+          SIGNED: "false"
+        run: native/ios/scripts/release-provenance.sh "$RUNNER_TEMP/PullUp.xcarchive" "$RUNNER_TEMP/provenance"
+      - name: Keep the provenance record
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: PullUp-${{ steps.version.outputs.version }}-${{ steps.version.outputs.build }}-unsigned-provenance
+          path: ${{ runner.temp }}/provenance/provenance.json
+          if-no-files-found: ignore
+          retention-days: 30
 
   upload:
     name: Build and upload (${{ inputs.backend }} backend)
@@ -122,8 +152,12 @@ jobs:
           [ "$GITHUB_REF" = "refs/heads/main" ] || { echo "::error::Production builds run from main, not $GITHUB_REF."; exit 1; }
           [ "$PROJECT_REF" != "hllfsfbuexuniosdewob" ] || { echo "::error::The production environment points at the staging project."; exit 1; }
           # Written without "https://" because xcconfig reads "//" as a comment.
-          case "$PRIVACY_POLICY" in
-            ""|*://*|*" "*) echo "::error::Set the production environment's PULLUP_PRIVACY_POLICY variable to the privacy policy URL without https:// (for example yourdomain.example/privacy)."; exit 1 ;;
+          # Base.xcconfig sets it for every build; the environment variable
+          # only overrides it when set.
+          policy="$PRIVACY_POLICY"
+          [ -n "$policy" ] || policy=$(sed -nE 's/^PULLUP_PRIVACY_POLICY = (.*)$/\1/p' native/ios/Config/Base.xcconfig)
+          case "$policy" in
+            ""|*://*|*" "*) echo "::error::Set PULLUP_PRIVACY_POLICY (native/ios/Config/Base.xcconfig, or the production environment's variable) to the privacy policy URL without https:// (for example yourdomain.example/privacy)."; exit 1 ;;
           esac
       - uses: maxim-lobanov/setup-xcode@v1
         with:
@@ -147,13 +181,14 @@ jobs:
           mkdir -p "$RUNNER_TEMP/private_keys"
           printf '%s\n' "$ASC_PRIVATE_KEY" > "$RUNNER_TEMP/private_keys/AuthKey_$ASC_KEY_ID.p8"
           xcodegen generate
+          ./scripts/pin-packages.sh
 
       - name: Pick the build number
         id: version
         run: |
-          # Every upload needs a higher build number. The run number only
-          # grows; the offset keeps clear of builds uploaded by hand.
-          build=$(( ${{ github.run_number }} + 100 ))
+          # Every upload needs a new, higher build number: run number + 100,
+          # with ".<attempt>" on a re-run (the script explains why).
+          build=$(REQUIRE_NEW_BUILD=1 native/ios/scripts/build-number.sh)
           version=$(grep -E '^\s*MARKETING_VERSION:' native/ios/project.yml | sed -E 's/.*"(.*)".*/\1/')
           echo "build=$build" >> "$GITHUB_OUTPUT"
           echo "version=$version" >> "$GITHUB_OUTPUT"
@@ -163,7 +198,7 @@ jobs:
         run: |
           ./scripts/xcodebuild-ci.sh archive -project PullUp.xcodeproj -scheme PullUp -configuration Release \
             -destination generic/platform=iOS -archivePath "$RUNNER_TEMP/PullUp.xcarchive" \
-            -skipPackagePluginValidation -allowProvisioningUpdates \
+            -skipPackagePluginValidation -disableAutomaticPackageResolution -allowProvisioningUpdates \
             -authenticationKeyPath "$RUNNER_TEMP/private_keys/AuthKey_$ASC_KEY_ID.p8" \
             -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
             CURRENT_PROJECT_VERSION=${{ steps.version.outputs.build }}
@@ -193,9 +228,28 @@ jobs:
           ls -l "$RUNNER_TEMP/export"
 
       - name: Record build provenance
+        id: attest
         uses: actions/attest-build-provenance@v2
         with:
           subject-path: ${{ runner.temp }}/export/*.ipa
+
+      # Unzips the exported .ipa and checks the signed app itself (version,
+      # build, bundle ID, minimum iOS, iPhone only, background modes, no
+      # CarPlay scene, privacy manifest, the public page links, and only the
+      # expected signed entitlements). Before the upload, so a build that
+      # fails any of them is never sent to Apple. The .ipa stays on the
+      # runner: only its SHA-256 goes in the record.
+      - name: Check the signed app and record provenance
+        id: provenance
+        env:
+          EXPECTED_VERSION: ${{ steps.version.outputs.version }}
+          EXPECTED_BUILD: ${{ steps.version.outputs.build }}
+          BACKEND: ${{ inputs.backend }}
+          SIGNED: "true"
+          ATTESTATION_URL: ${{ steps.attest.outputs.attestation-url }}
+        run: |
+          IPA=$(ls "$RUNNER_TEMP"/export/*.ipa | head -1) \
+            native/ios/scripts/release-provenance.sh "$RUNNER_TEMP/PullUp.xcarchive" "$RUNNER_TEMP/provenance"
 
       # Only the symbols: this repository is public, so anyone signed in to
       # GitHub can download a run's artifacts, and the .ipa is the app.
@@ -207,11 +261,30 @@ jobs:
           retention-days: 90
 
       - name: Upload to App Store Connect
+        id: upload
         run: |
+          set -o pipefail
           # altool looks for the key in ./private_keys.
           cd "$RUNNER_TEMP"
           xcrun altool --upload-app --type ios --file export/*.ipa \
-            --apiKey "$ASC_KEY_ID" --apiIssuer "$ASC_ISSUER_ID" --output-format normal
+            --apiKey "$ASC_KEY_ID" --apiIssuer "$ASC_ISSUER_ID" --output-format normal 2>&1 | tee "$RUNNER_TEMP/altool.log"
+
+      - name: Add the upload result to the provenance record
+        if: always() && steps.provenance.outcome == 'success'
+        env:
+          UPLOAD_OUTCOME: ${{ steps.upload.outcome }}
+          ALTOOL_LOG: ${{ runner.temp }}/altool.log
+        run: native/ios/scripts/release-provenance.sh --upload "$RUNNER_TEMP/provenance"
+
+      # Names and numbers only (see the script): safe on a public repository.
+      - name: Keep the provenance record
+        if: always() && steps.provenance.outcome != 'skipped'
+        uses: actions/upload-artifact@v4
+        with:
+          name: PullUp-${{ steps.version.outputs.version }}-${{ steps.version.outputs.build }}-provenance
+          path: ${{ runner.temp }}/provenance/provenance.json
+          if-no-files-found: ignore
+          retention-days: 90
 
       - name: Summary
         if: always()
@@ -221,7 +294,7 @@ jobs:
           {
             echo "### Pull Up ${{ steps.version.outputs.version }} (${{ steps.version.outputs.build }}), ${{ inputs.backend }} backend"
             echo
-            echo "Commit \`${{ github.sha }}\`."
+            echo "Commit \`${{ github.sha }}\`, run ${{ github.run_id }} attempt ${{ github.run_attempt }}. The provenance record is above and in the run's artifacts."
             echo "If the upload step passed, Apple has received the build. It is not on TestFlight until"
             echo "App Store Connect finishes processing it and shows it under TestFlight ▸ iOS Builds."
             if [ -n "$NOTES" ]; then echo; echo "**What to test:** $NOTES"; fi
@@ -229,4 +302,4 @@ jobs:
 
       - name: Remove the key
         if: always()
-        run: rm -rf "$RUNNER_TEMP/private_keys" native/ios/Config/Secrets.xcconfig
+        run: rm -rf "$RUNNER_TEMP/private_keys" "$RUNNER_TEMP/altool.log" native/ios/Config/Secrets.xcconfig

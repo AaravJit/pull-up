@@ -83,16 +83,32 @@ public final class SupabaseBackend: BackendService, @unchecked Sendable {
     public func deleteAccount(appleAuthorizationCode: String?) async throws -> AccountDeletion {
         struct Body: Encodable { let apple_authorization_code: String? }
         struct Result: Decodable { let deleted: Bool; let apple_revoked: Bool?; let apple_reason: String? }
-        let result: Result = try await client.functions.invoke(
-            "delete-account",
-            options: FunctionInvokeOptions(method: .post, body: Body(apple_authorization_code: appleAuthorizationCode))
-        )
+        let result: Result
+        do {
+            result = try await client.functions.invoke(
+                "delete-account",
+                options: FunctionInvokeOptions(method: .post, body: Body(apple_authorization_code: appleAuthorizationCode))
+            )
+        } catch let FunctionsError.httpError(code, data) {
+            // Nothing is signed out: the account still exists, and trying
+            // again (or the server's own retry) finishes the deletion.
+            throw Self.deletionFailure(status: code, body: data)
+        }
         try? await client.auth.signOut()
         switch result.apple_revoked {
         case nil: return AccountDeletion(apple: .notApplicable)
         case true?: return AccountDeletion(apple: .revoked)
         case false?: return AccountDeletion(apple: .notRevoked(reason: result.apple_reason ?? "unknown"))
         }
+    }
+
+    /// The message delete-account sent with a failure, or a plain one.
+    static func deletionFailure(status: Int, body: Data) -> BackendError {
+        struct Failure: Decodable { let message: String? }
+        if let message = (try? JSONDecoder().decode(Failure.self, from: body))?.message, !message.isEmpty {
+            return .server(message)
+        }
+        return .server("Your account couldn't be deleted right now (error \(status)). Try again in a minute.")
     }
 
     // MARK: Account
