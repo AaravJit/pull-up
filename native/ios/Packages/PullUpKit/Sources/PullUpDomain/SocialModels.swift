@@ -366,7 +366,8 @@ public enum LeaderboardMetric: String, Codable, CaseIterable, Sendable, Identifi
         }
     }
 
-    /// Performance boards only accept verified closed-course runs.
+    /// Speed and acceleration: never offered, and the server refuses to rank
+    /// them (20261024000100_content_reports_no_speed_boards.sql).
     public var isPerformance: Bool { self == .zeroToSixty || self == .topSpeed }
     /// Lower value ranks higher.
     public var ascending: Bool { self == .zeroToSixty }

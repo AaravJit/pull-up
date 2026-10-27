@@ -24,9 +24,10 @@ public struct RootView: View {
                 case .signedOut:
                     AuthView()
                 case .onboarding:
-                    OnboardingView()
+                    if app.consentGate { ConsentGateView() } else { OnboardingView() }
                 case .signedIn:
-                    MainTabView()
+                    // Never in the middle of a drive; it waits until the drive ends.
+                    if app.consentGate && !app.recorder.isRecording { ConsentGateView() } else { MainTabView() }
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -41,6 +42,7 @@ public struct RootView: View {
                     await app.verifyAppleCredential()
                     await app.catchUpMessages()
                     await app.foregrounded()
+                    await app.recheckConsent()
                 }
             }
         }

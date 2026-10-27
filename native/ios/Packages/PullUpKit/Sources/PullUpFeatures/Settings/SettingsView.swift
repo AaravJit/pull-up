@@ -408,7 +408,7 @@ struct DashboardLayoutView: View {
                 Text("Shown (\(metrics.count) of \(DashboardMetric.maximumCount))")
             }
             Section("Available") {
-                ForEach(DashboardMetric.allCases.filter { !metrics.contains($0) }) { metric in
+                ForEach(DashboardMetric.liveSelectable.filter { !metrics.contains($0) }) { metric in
                     Button {
                         metrics.append(metric)
                     } label: {

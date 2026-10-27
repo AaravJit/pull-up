@@ -36,7 +36,7 @@ struct LeaderboardView: View {
                 filters
                 optInStrip
                 rankings
-                Text("Pull Up doesn't rank speed or acceleration.")
+                Text("Pull Up doesn't rank speed or acceleration. Totals come from GPS estimates. Never drive farther, longer or while tired to climb a board.")
                     .font(ClusterFont.body(.caption))
                     .foregroundStyle(ClusterColor.inkTertiary)
             }
