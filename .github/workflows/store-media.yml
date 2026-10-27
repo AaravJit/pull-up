@@ -25,10 +25,19 @@ env:
   # Newest first. iOS 27.1 doesn't run every device type (iPhone 17 Pro is
   # "Incompatible device" there), so setup-device.sh falls back to 27.0.
   RUNTIMES: com.apple.CoreSimulator.SimRuntime.iOS-27-1 com.apple.CoreSimulator.SimRuntime.iOS-27-0
+  # The iPhone Duo simulator boots folded: the app runs on the outer display
+  # (screen 1) and the inner display (screen 3) stays black. Opening it is a
+  # Device Hub control with no command-line equivalent; `simctl io
+  # screenConfig power` crashes SpringBoard and resets on restart (runs
+  # 40575316515, 40596838804). So the inner-display pass is off until it can
+  # run on a simulator opened in Device Hub.
+  DUO_INNER_CAPTURE: "0"
 
 jobs:
   iphone:
     name: iPhone with Dynamic Island
+    # "[duo-only]" in the commit message reuses an earlier run's iPhone set.
+    if: ${{ !contains(github.event.head_commit.message, '[duo-only]') }}
     runs-on: xcode-27
     timeout-minutes: 120
     steps:
@@ -114,22 +123,16 @@ jobs:
           echo "DUO=$DUO" >> "$GITHUB_ENV"
           xcrun simctl io "$DUO" enumerate > "$MEDIA/probe/enumerate-boot.txt" 2>&1 || true
           BID=$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$APP/Info.plist")
-          # Where the app appears in each pose: both displays on (as booted),
-          # then only the outer, then only the inner (pose.sh restarts the
-          # simulator after each change; changing power live crashes SpringBoard).
-          look() {
-            xcrun simctl launch "$DUO" "$BID" -PullUpDemo -PullUpResetDefaults -PullUpStoreCapture -PullUpAppearance dark || true
-            sleep 40
-            for d in 1 3; do xcrun simctl io "$DUO" screenshot --mask=ignored --display=$d "$MEDIA/probe/$1-display$d.png" 2>&1 | tail -1 || true; done
-            xcrun simctl terminate "$DUO" "$BID" 2>&1 | tail -1 || true
-          }
-          look open
-          $S/pose.sh "$DUO" fold | tee "$MEDIA/probe/pose-fold.txt"
-          look folded
-          $S/pose.sh "$DUO" unfold | tee "$MEDIA/probe/pose-unfold.txt"
-          look unfolded
+          # Where the app appears as booted (both displays powered). Run
+          # 40596838804 also tried powering one display off and restarting:
+          # SpringBoard aborted on each change and both displays came back on.
+          xcrun simctl launch "$DUO" "$BID" -PullUpDemo -PullUpResetDefaults -PullUpStoreCapture -PullUpAppearance dark || true
+          sleep 40
+          for d in 1 3; do xcrun simctl io "$DUO" screenshot --mask=ignored --display=$d "$MEDIA/probe/open-display$d.png" 2>&1 | tail -1 || true; done
+          xcrun simctl terminate "$DUO" "$BID" 2>&1 | tail -1 || true
           for f in "$MEDIA"/probe/*.png; do echo "$(basename "$f") $(sips -g pixelWidth -g pixelHeight "$f" | tail -2 | tr '\n' ' ')"; done
       - name: Capture unfolded (inner display)
+        if: env.DUO_INNER_CAPTURE == '1'
         working-directory: native/ios
         run: |
           S=./scripts/store-media
@@ -144,9 +147,10 @@ jobs:
         working-directory: native/ios
         run: |
           S=./scripts/store-media
-          $S/pose.sh "$DUO" fold
+          # As booted, the app is on the outer display; the daemon checks the
+          # window size before every pass. No power change (see DUO_INNER_CAPTURE).
           fail=0
-          for t in testScreenshots testLandscape testPreviewCommunity; do
+          for t in testScreenshots testPreviewDrive testPreviewGarage testPreviewCommunity; do
             $S/pass.sh "$DUO" "$MEDIA/duo-outer" "$t" --display 1 --pose fold || fail=1
           done
           exit $fail

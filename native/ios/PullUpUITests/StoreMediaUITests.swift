@@ -108,8 +108,24 @@ final class StoreMediaUITests: XCTestCase {
     /// to any button with the tab's name.
     private func tab(_ app: XCUIApplication, _ name: String) {
         let inBar = app.tabBars.buttons[name].firstMatch
-        let button = inBar.waitForExistence(timeout: 5) ? inBar : app.buttons.matching(NSPredicate(format: "label == %@", name)).firstMatch
-        XCTAssertTrue(button.waitForExistence(timeout: 5), "Tab \(name) missing")
+        if inBar.waitForExistence(timeout: 5) {
+            inBar.tap()
+            settle(1)
+            return
+        }
+        // On the iPhone Duo outer display the tabs are a vertical bar along
+        // the trailing edge, not a UITabBar, and other buttons share a tab's
+        // label (the Map screen's "Meets" segment). Take the match closest
+        // to the window's trailing or bottom edge, where the tab bar sits.
+        let matches = app.buttons.matching(NSPredicate(format: "label == %@", name))
+        XCTAssertTrue(matches.firstMatch.waitForExistence(timeout: 5), "Tab \(name) missing")
+        let window = app.windows.firstMatch.frame
+        let edge: (XCUIElement) -> CGFloat = { element in
+            let f = element.frame
+            return max(f.maxX / max(window.width, 1), f.maxY / max(window.height, 1))
+        }
+        let candidates = matches.allElementsBoundByIndex.filter { $0.exists && $0.isHittable }
+        let button = candidates.max(by: { edge($0) < edge($1) }) ?? matches.firstMatch
         button.tap()
         settle(1)
     }
