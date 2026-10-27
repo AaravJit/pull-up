@@ -269,6 +269,38 @@ Deno.test({
         assert(kinds.includes(`like:${ben.id}`) && kinds.includes(`comment:${ben.id}`), `Ann's bell: ${kinds}`);
       });
 
+      await t.step("posts with photos appear complete or not at all", async () => {
+        // The app's flow (PostPublisher): upload every file under
+        // <uid>/<post id>/, then publish_post with the id it made for the draft.
+        const postID = crypto.randomUUID();
+        const path = (name: string) => `${ann.id}/${postID}/${name}.jpg`;
+        const media = (...names: string[]) => names.map((n) => ({ path: path(n), type: "image", width: 1, height: 1 }));
+        const publish = (u: User, items: unknown[]) =>
+          u.db.rpc("publish_post", { p_id: postID, p_caption: "Two photos", p_visibility: "friends", p_media: items });
+        const benSeesPost = async () =>
+          ok(await ben.db.from("posts").select("id").eq("id", postID), "Ben's view of the draft").length;
+
+        ok(await upload(ann, "post-media", path("one")), "first photo");
+        assertEquals(refused(await publish(ann, media("one", "two")), "publishing before the second photo is up"), "P0002");
+        assertEquals(await benSeesPost(), 0, "a failed upload leaves no post");
+        assertEquals(ok(await ann.db.from("posts").select("id").eq("id", postID), "Ann's view").length, 0, "not even for Ann");
+        assert(!(await canOpen(ben, "post-media", path("one"))), "Ben can't open a draft's photo");
+
+        ok(await upload(ann, "post-media", path("two")), "second photo");
+        assertEquals(ok(await publish(ann, media("one", "two")), "publish"), postID);
+        // A retry after a lost response is the same post, not a second one.
+        assertEquals(ok(await publish(ann, media("one", "two")), "retry"), postID);
+        const seen = ok(await ben.db.from("posts").select("id, media:post_media(storage_path)").eq("author_id", ann.id).eq("id", postID), "Ben's view");
+        assertEquals(seen.length, 1, "one post");
+        assertEquals((seen[0].media as { storage_path: string }[]).map((m) => m.storage_path).sort(), [path("one"), path("two")].sort());
+        assert(await canOpen(ben, "post-media", path("two")), "Ben opens the photos");
+        assert(!(await canOpen(cat, "post-media", path("two"))), "Cat, an outsider, can't");
+
+        refused(await publish(ben, []), "Ben reusing Ann's post id");
+        refused(await ann.db.from("post_media").insert({ post_id: postID, storage_path: path("three"), media_type: "image" }), "attaching media directly");
+        refused(await cat.db.rpc("post_orphaned_media", { p_limit: 10 }), "listing orphaned files");
+      });
+
       await t.step("meets, RSVPs and cancellation", async () => {
         const start = new Date(Date.now() + 24 * 3_600_000);
         const meet = ok(await ann.db.from("meets").insert({

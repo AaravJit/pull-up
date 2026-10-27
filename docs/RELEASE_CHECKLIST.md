@@ -31,8 +31,9 @@ still to do.
       2026-10-20; `015_follow_requests.sql` (#21) hasn't run there yet.
       The two-account API suite hasn't been rerun there since 2026-10-18.
 - [ ] Deploy edge functions: `supabase functions deploy delete-account send-push
-      dm-retention verify-subscription app-store-notifications`. All five
-      are on staging.
+      dm-retention post-media-cleanup verify-subscription app-store-notifications`.
+      The first five are on staging; `post-media-cleanup` (20261025000200)
+      isn't yet.
 - [ ] Generate a random push webhook secret (`openssl rand -hex 32`) and
       add `PUSH_WEBHOOK_SECRET` as a secret in the GitHub environment
       (`SUPABASE_SETUP.md` §3); the next Supabase deploy run with apply
@@ -173,7 +174,7 @@ Messages
       Supabase deploy run with apply ticked copies it to the project. Don't
       set it with `supabase secrets set`: a deploy removes any function
       secret that isn't in the environment. Then schedule
-      `dm-retention` daily: enable Integrations ▸ Cron (installs `pg_cron`)
+      `dm-retention` and `post-media-cleanup` daily: enable Integrations ▸ Cron (installs `pg_cron`)
       and Database ▸ Webhooks (installs `pg_net`, which makes the HTTP
       call), store the secret in Vault rather than pasting it into the
       job, and have the job send headers `x-pullup-cron-secret: <value>`

@@ -186,6 +186,9 @@ public final class AppModel {
         await garage.setOwner(user)
         await recorder.recoverInterrupted(vehicles: garage.vehicles)
         await recorder.syncPending()
+        // Files of a post the app was closed while uploading; off the launch path.
+        let backend = self.backend
+        Task { await backend.recoverInterruptedPosts() }
         await refreshNotifications()
         await refreshMessages()
         startMessagingUpdates()
