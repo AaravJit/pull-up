@@ -172,7 +172,9 @@
 			</array>
 		</dict>
 		<dict>
-			<!-- Vehicle details and derived driving statistics (distance, speeds, times, elevation, explored cells), privacy and notification settings. -->
+			<!-- Vehicle details and derived driving statistics (distance, speeds, times, elevation, explored cells), privacy and notification settings,
+			     which terms version the account accepted and when (public.terms_acceptances), and the self-declared, unverified minimum-age
+			     outcome (private.age_checks: meets the minimum or not, the minimum, method, time; never a birth date). Migration 20261025000400. -->
 			<key>NSPrivacyCollectedDataType</key>
 			<string>NSPrivacyCollectedDataTypeOtherDataTypes</string>
 			<key>NSPrivacyCollectedDataTypeLinked</key>
