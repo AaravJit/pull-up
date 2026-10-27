@@ -66,6 +66,7 @@ struct PostComposerView: View {
                         }
                     }
                     AudiencePicker(title: "Who can see this post", selection: $audience, allowed: allowedAudiences)
+                    ContentRulesNote(context: .post, failure: error)
                     if let error { ErrorLine(message: error) }
                 }
                 .padding(.horizontal, Space.gutter)

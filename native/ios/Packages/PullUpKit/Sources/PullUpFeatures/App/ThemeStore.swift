@@ -53,7 +53,7 @@ public final class ThemeStore {
         if let data = defaults.data(forKey: Self.key), let stored = try? JSONDecoder().decode(Stored.self, from: data) {
             theme = ClusterTheme(
                 accent: stored.accent, appearance: stored.appearance, speedometer: stored.speedometer,
-                unit: stored.unit, dashboard: Array(stored.dashboard.prefix(DashboardMetric.maximumCount))
+                unit: stored.unit, dashboard: Array(stored.dashboard.filter { DashboardMetric.liveSelectable.contains($0) }.prefix(DashboardMetric.maximumCount))
             )
         }
         if let appearance { theme.appearance = appearance }

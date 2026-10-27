@@ -4,6 +4,7 @@ The Supabase security advisor (lint 0029, "Signed-In Users Can Execute SECURITY 
 
 - **Advisor on staging** (2026-10-27): 38 such functions.
 - **Combined schema of main plus #31, #32 and #33:** 53. The 15 added since are the moderator calls, `publish_post` and `my_moderation_status`.
+- **With #37 (consent and minimum age) as well:** 56. It adds `my_consent_ok`, `my_consent_status` and `record_age_check`, all limited to the caller.
 
 **Checked everywhere.** Every function:
 - pins `search_path = ''`, checked by `006_security_surface.sql`;
@@ -52,9 +53,12 @@ The Supabase security advisor (lint 0029, "Signed-In Users Can Execute SECURITY 
 | leaderboard | Signed in; opted-in, non-private, non-blocked people only; performance boards empty (constraint in 20261024000100) | 001, 009, 014 |
 | meet_attendees | Visible meet; others shown only with `show_me` and only to attendees; blocked skipped | 001, 033 |
 | mod_* (11), moderation_summary | `moderation_actor()`: moderators only | 031, 032, 020 |
+| my_consent_ok | Answers for the caller only (`auth.uid()`); used by storage policies | 040, 041 |
+| my_consent_status | Caller's own terms acceptance and age check only | 040, 041 |
 | my_moderation_status | Own suspension only | 032 |
 | peer_read_at | Members only (`peer_of` checks the caller), active chats, both opted in to receipts | 003, 020 |
 | publish_post | Signed in; author forced to the caller; files must be in the caller's folder for that post id; table triggers still run (filter, rate limit, suspension) | 019 |
+| record_age_check | Writes the caller's own age answer only. One-way: a recorded "under the minimum" can't be flipped to "meets" (PUC02); an under-minimum answer makes the caller's own profile private and closes messages | 041 |
 | register_device_token | Signed in; token format checked; at most 10 per account. See finding D1. | 005 |
 | report_content, report_user | Signed in; only content the caller can see; not yourself; 5/15 min and 20/day | 016, 031, 034 |
 | respond_to_request | Own request row, else 42501 | 020 |

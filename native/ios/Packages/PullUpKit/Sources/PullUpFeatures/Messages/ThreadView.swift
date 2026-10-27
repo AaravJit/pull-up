@@ -177,6 +177,7 @@ struct ThreadView: View {
                 .foregroundStyle(ClusterColor.inkTertiary)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
+            ContentRulesNote(context: .message, failure: model.pending.compactMap(\.failure).last ?? model.error)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, Space.l)

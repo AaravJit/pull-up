@@ -53,6 +53,16 @@ public final class AppModel {
     @ObservationIgnored private var openedLaunchPush = false
     /// Name Apple shared on first sign-in, offered as the display name.
     var appleSuggestedName: String?
+    /// The minimum-age check and terms acceptance the server requires before
+    /// this account may publish (`my_consent_status`). Nil for a backend with
+    /// no such rules (demo) or when it couldn't be read; the server enforces
+    /// them either way.
+    public private(set) var consent: ConsentStatus?
+    /// The root shows the consent screen instead of the app (ConsentGateView).
+    /// Set at sign-in and on return to the foreground, never in the middle of
+    /// writing something: a composer whose post was refused offers the terms
+    /// in its own sheet so the draft isn't lost.
+    public private(set) var consentGate = false
     let appleCredentials: any AppleCredentialChecking
 
     /// The CarPlay scene and the phone UI must drive the same recorder.
@@ -167,6 +177,10 @@ public final class AppModel {
             // A failed lookup (offline) lets the person in rather than locking
             // them out; onboarding is shown whenever the server says it's due.
             account = try? await backend.account()
+            // Another account's answers never carry over.
+            consent = nil
+            consentGate = false
+            await refreshConsent(showGate: true)
             if let account, !account.isOnboarded {
                 phase = .onboarding(user)
                 return
@@ -286,6 +300,38 @@ public final class AppModel {
         account = try? await backend.account()
         appleSuggestedName = nil
         await enterApp(user)
+    }
+
+    // MARK: Terms and minimum age
+
+    var needsConsent: Bool { consent.map { !$0.isSatisfied } ?? false }
+
+    /// Reloads the consent status. `showGate` puts the consent screen in
+    /// front when something is missing; offline, the last status stays.
+    func refreshConsent(showGate: Bool) async {
+        guard let service = backend as? any ConsentService else {
+            consent = nil
+            consentGate = false
+            return
+        }
+        guard let status = try? await service.consentStatus() else { return }
+        applyConsent(status, showGate: showGate)
+    }
+
+    /// Records a status the server just returned (after an answer).
+    func applyConsent(_ status: ConsentStatus, showGate: Bool) {
+        consent = status
+        if status.isSatisfied {
+            consentGate = false
+        } else if showGate || status.isUnderMinimum {
+            consentGate = true
+        }
+    }
+
+    /// Back in the foreground: the terms may have changed meanwhile.
+    func recheckConsent() async {
+        guard userID != nil else { return }
+        await refreshConsent(showGate: true)
     }
 
     public func refreshAccount() async {

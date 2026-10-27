@@ -11,10 +11,22 @@ insert into auth.users (id, email, raw_user_meta_data) values
   ('51000000-0000-0000-0000-000000000002', 'ab@example.com', '{"username":"sx_alpha"}'),
   ('51000000-0000-0000-0000-000000000003', 'ab2@example.com', '{"username":"sxyalpha"}'),
   ('51000000-0000-0000-0000-000000000004', 'blocker@example.com', '{"username":"sx_blocker"}');
+-- These accounts confirmed the minimum age and accepted the current terms
+-- (20261025000400); 040/041 test what happens without that.
+insert into public.terms_acceptances (user_id, version)
+select p.id, v.version from public.profiles p, public.terms_versions v where v.is_current on conflict do nothing;
+insert into private.age_checks (user_id, meets_minimum, minimum_age, method)
+select id, true, 13, 'self_declared' from public.profiles on conflict do nothing;
 insert into auth.users (id, email, raw_user_meta_data)
   select ('52000000-0000-0000-0000-' || lpad(i::text, 12, '0'))::uuid, 'many' || i || '@example.com',
          json_build_object('username', 'manyuser' || lpad(i::text, 2, '0'))::jsonb
   from generate_series(1, 25) as i;
+-- These accounts confirmed the minimum age and accepted the current terms
+-- (20261025000400); 040/041 test what happens without that.
+insert into public.terms_acceptances (user_id, version)
+select p.id, v.version from public.profiles p, public.terms_versions v where v.is_current on conflict do nothing;
+insert into private.age_checks (user_id, meets_minimum, minimum_age, method)
+select id, true, 13, 'self_declared' from public.profiles on conflict do nothing;
 
 create or replace function pg_temp.act_as(uid uuid) returns void language plpgsql as $$
 begin

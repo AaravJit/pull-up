@@ -1,18 +1,22 @@
 # Pull Up Service and Content Terms
 
-Last updated: **October 24, 2026**
+Last updated: **October 27, 2026**
 
 Pull Up is operated by **Aarav Jit**. These service/content terms describe the account and community service. The iOS app license is governed by [Apple's Standard End User License Agreement](https://www.apple.com/legal/internet-services/itunes/dev/stdeula/), subject to applicable law. These terms do not represent Apple sponsorship or modify Apple's agreements with you.
 
+## Accepting these terms
+
+You accept these terms and the [community guidelines](community.md) by tapping **I agree** in the app. Pull Up records which version you accepted (its "Last updated" date) and when. If they change, the app asks you to review and accept the new version, and you can't post, comment, message, follow or upload until you do. You can still view your account, change privacy settings, delete your content, or delete your account.
+
 ## Accounts and permitted use
 
-Provide accurate account information and protect access to your account. Do not impersonate another person, bypass access restrictions, manipulate rankings, scrape private information, or interfere with the service. Pull Up is not intended for children under 13; applicable regional minimum-age rules may also apply. An App Store rating does not verify age or grant a driving license.
+Provide accurate account information and protect access to your account. Do not impersonate another person, bypass access restrictions, manipulate rankings, scrape private information, or interfere with the service. You must be at least 13 years old to use Pull Up; applicable regional minimum-age rules may also apply. When you create an account, the app asks for your date of birth on your iPhone and keeps only whether you meet the minimum age, never the date itself. Pull Up does not verify that answer. An account whose holder says they are under the minimum age can't post, comment, message or follow. An App Store rating does not verify age or grant a driving license.
 
 Use the service lawfully and follow the [community guidelines](community.md). You are responsible for permissions needed to organize a meet or use a venue. Pull Up is not an emergency service, driving instructor, traffic-law authority, event insurer, or vehicle/parts inspector.
 
 ## Your content and the permission to operate the service
 
-You keep ownership of content you submit. You must have the rights and permissions needed to upload and share it, including for photos, videos, music, text and identifiable people. Do not submit another person's protected or private material without permission.
+You keep ownership of content you submit. Each time you upload or post, you confirm that you own the content or have the rights and permissions needed to upload and share it, including for photos, videos, music, text and identifiable people. Do not submit another person's protected or private material without permission. Uploading something to Pull Up does not make you its owner or give Pull Up rights the owner hasn't granted; if someone reports that content infringes their rights, it may be removed.
 
 When you submit content under these terms, you grant Pull Up a non-exclusive, worldwide, royalty-free permission to store, reproduce, transmit, format and display it **only as reasonably needed to provide, secure and moderate the service**, respecting your selected audience and privacy settings. This includes necessary processing by service providers acting for those purposes. This permission does not authorize selling your content or using it for unrelated advertising or model training.
 

@@ -11,6 +11,12 @@ select plan(20);
 insert into auth.users (id, email, raw_user_meta_data) values
   ('de000000-0000-0000-0000-00000000000a', 'del-amy@example.com', '{"username":"del_amy"}'),
   ('de000000-0000-0000-0000-00000000000f', 'del-zed@example.com', '{"username":"del_zed"}');
+-- These accounts confirmed the minimum age and accepted the current terms
+-- (20261025000400); 040/041 test what happens without that.
+insert into public.terms_acceptances (user_id, version)
+select p.id, v.version from public.profiles p, public.terms_versions v where v.is_current on conflict do nothing;
+insert into private.age_checks (user_id, meets_minimum, minimum_age, method)
+select id, true, 13, 'self_declared' from public.profiles on conflict do nothing;
 insert into auth.identities (user_id, provider, provider_id, identity_data) values
   ('de000000-0000-0000-0000-00000000000f', 'apple', '001234.zed', '{"sub": "001234.zed"}');
 
