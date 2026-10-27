@@ -16,7 +16,12 @@ open.
 
 The deploy workflow's `staging` environment is set up, but no run has
 completed yet. #22 (merged 2026-10-24) connects through the IPv4 session
-pooler, and the next run from `main` is its first real test (step 4). No production project has been created.
+pooler, and the next run from `main` is its first real test (step 4).
+
+`pull-up-production` (ref `jxemvjxkspolyoknqkzr`, us-east-1, org Pull Up)
+was created on 2026-10-27 and was empty when checked that day: no
+migrations, tables, functions, users or buckets. Nothing has been deployed
+to it.
 
 ## What lives where
 
@@ -24,7 +29,7 @@ pooler, and the next run from `main` is its first real test (step 4). No product
 | --- | --- | --- |
 | Tables, policies, functions, triggers, storage buckets and their policies, realtime publication | `supabase/migrations/` | `supabase db push` in the deploy workflow |
 | Edge functions | `supabase/functions/` | `supabase functions deploy` in the deploy workflow |
-| Function secrets (push, Apple, App Store) | GitHub environment secrets | copied by the deploy workflow; one deleted here is removed from the project on the next deploy |
+| Function secrets (push, Apple, App Store) | GitHub environment secrets | copied by the deploy workflow; one deleted here stays on the project unless a run ticks `remove_absent_secrets` |
 | Auth providers, sign-up switches, redirect URLs, database webhook, cron | Supabase dashboard | **You**, once per project (step 5) |
 | App's project URL and anon key | GitHub environment variables `SUPABASE_PROJECT_REF` and `SUPABASE_ANON_KEY` (`testflight.yml` reads variables, not secrets), or your local `Config/Secrets.xcconfig` | the iOS build |
 
@@ -36,10 +41,7 @@ The service-role key and database password never go in the app or in git.
 1. In the Supabase dashboard, create a project named `pull-up-staging`.
    Choose a region near you and save the database password in your password
    manager.
-2. Later, before inviting real users, create `pull-up-production` the same
-   way. A free organization only allows a limited number of active
-   projects, and your current organization already has `veyora-dev`, so
-   production may need a paid plan; check supabase.com/pricing first. Keep
+2. Create `pull-up-production` the same way (done on 2026-10-27). Keep
    Pull Up's projects out of the Veyora project.
 3. Note each project's **ref**: the part before `.supabase.co` in Project
    Settings ▸ API ▸ Project URL.
@@ -58,11 +60,20 @@ Repository ▸ Settings ▸ Environments ▸ New environment:
 | `staging` | `SUPABASE_PROJECT_REF` = staging ref | `SUPABASE_ACCESS_TOKEN`, `SUPABASE_DB_PASSWORD` (staging's) | deployment branches: `main` only |
 | `production` | `SUPABASE_PROJECT_REF` = production ref | `SUPABASE_ACCESS_TOKEN`, `SUPABASE_DB_PASSWORD` (production's) | **Required reviewers: you**; deployment branches: `main` only |
 
+The workflow ties each environment to one project ref
+(`staging` = `hllfsfbuexuniosdewob`, `production` = `jxemvjxkspolyoknqkzr`)
+and stops if `SUPABASE_PROJECT_REF` names any other project. Production
+runs also stop unless they come from `main`. A new project means changing
+that mapping in `.github/workflows/supabase-deploy.yml` in a reviewed pull
+request.
+
 Optional secrets, per environment, copied to the project's function
-secrets on each deploy, and removed from them once deleted here. Functions
-answer "not configured" without them. Add them here, not with
-`supabase secrets set`: a deploy removes any of these function secrets
-that isn't in the environment.
+secrets on each deploy. Functions answer "not configured" without them.
+Add them here, not with `supabase secrets set`, so the environment stays
+the record. A secret deleted here is left on the project: every run, dry
+runs included, lists it as "kept on the project although absent here", and
+only a run with **remove_absent_secrets** ticked deletes it. That keeps a
+routine deploy from wiping a secret that was never copied into GitHub.
 
 | Secret | Used by | Where it comes from |
 | --- | --- | --- |
@@ -100,7 +111,12 @@ no run has used it yet.
      garage, photos, drives, feed, meets, messages, realtime, push tokens,
      Pro and account deletion, then delete themselves.
 3. `production`: dry run first, then apply. It waits for your approval and
-   runs no tests that write data.
+   runs no tests that write data. Leave **remove_absent_secrets** unticked
+   unless you mean to delete the secrets the run lists as kept.
+
+Every run's summary shows the environment, project ref and commit, the
+pending migrations, the function secret names it would set, keep or remove
+(never their values), and the edge functions it deploys.
 
 The workflow reaches the database through the project's session pooler
 (Supavisor, port 5432), because GitHub's runners have no IPv6 and the

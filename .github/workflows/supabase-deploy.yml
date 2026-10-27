@@ -14,6 +14,12 @@ name: Supabase deploy
 #   APNS_*, APPLE_*, APPSTORE_*, MODERATION_WEBHOOK_URL,
 #   MODERATION_WEBHOOK_SECRET (copied to the project only when present)
 #
+# Each environment name is tied to one project ref below, so a variable set
+# on the wrong environment fails the run instead of deploying elsewhere.
+# Function secrets this environment lacks are left on the project unless
+# the run asks to remove them. Every run, dry runs included, lists which
+# secret names would be set, kept or removed, and which functions deploy.
+#
 # Staging runs also run the pgTAP suite and the two-account API tests
 # against the project. Production never runs tests that write data.
 #
@@ -32,6 +38,10 @@ on:
         default: staging
       apply:
         description: Apply the changes (unticked = dry run that only lists them)
+        type: boolean
+        default: false
+      remove_absent_secrets:
+        description: Also delete function secrets the project has but this environment doesn't (only with apply)
         type: boolean
         default: false
 
@@ -69,6 +79,20 @@ jobs:
             echo "::error::The ${{ inputs.environment }} environment is missing:${missing%,}. See docs/SUPABASE_SETUP.md."
             exit 1
           fi
+          # The only project each environment may point at.
+          case "${{ inputs.environment }}" in
+            staging) expected=hllfsfbuexuniosdewob ;;
+            production) expected=jxemvjxkspolyoknqkzr ;;
+          esac
+          if [ "$PROJECT_REF" != "$expected" ]; then
+            echo "::error::SUPABASE_PROJECT_REF in the ${{ inputs.environment }} environment is '$PROJECT_REF', not the ${{ inputs.environment }} project ($expected)."
+            exit 1
+          fi
+          if [ "${{ inputs.environment }}" = production ] && [ "$GITHUB_REF" != refs/heads/main ]; then
+            echo "::error::Production runs only from main (this run is on $GITHUB_REF)."
+            exit 1
+          fi
+          echo "${{ inputs.environment }} → project $PROJECT_REF, from $GITHUB_REF at $GITHUB_SHA" | tee -a "$GITHUB_STEP_SUMMARY"
 
       # Read-only, and it never fails the run: shows whether the sign-in
       # settings the app needs are on, so they can be checked without
@@ -181,9 +205,15 @@ jobs:
         if: inputs.apply
         run: supabase db push --db-url "$(cat "$RUNNER_TEMP/db-url")"
 
-      - name: Copy function secrets from this environment
-        if: inputs.apply
+      # Runs on dry runs too, where it only reports. Names only: values are
+      # never printed. Secrets the project has but this environment lacks are
+      # kept unless the run ticks remove_absent_secrets, so a secret set in
+      # the dashboard (or missing from GitHub by mistake) isn't deleted by a
+      # routine deploy.
+      - name: Function secrets from this environment
         env:
+          APPLY: ${{ inputs.apply }}
+          REMOVE_ABSENT: ${{ inputs.remove_absent_secrets }}
           PUSH_WEBHOOK_SECRET: ${{ secrets.PUSH_WEBHOOK_SECRET }}
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
           APNS_KEY_ID: ${{ secrets.APNS_KEY_ID }}
@@ -213,28 +243,58 @@ jobs:
                       MODERATION_WEBHOOK_URL MODERATION_WEBHOOK_SECRET PULLUP_ENVIRONMENT_NAME; do
             value="${!name}"
             if [ -z "$value" ]; then absent="$absent $name"; continue; fi
-            printf '%s="%s"\n' "$name" "$value" >> "$file"
+            [ "$APPLY" = true ] && printf '%s="%s"\n' "$name" "$value" >> "$file"
             names="$names $name"
           done
-          # This environment is the source of truth: a secret deleted here
-          # (say, a revoked key) is removed from the project too.
-          existing=$(curl -fsS -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
-            "https://api.supabase.com/v1/projects/$PROJECT_REF/secrets" | jq -r '.[].name')
+          set -o pipefail
+          if ! existing=$(curl -fsS -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+            "https://api.supabase.com/v1/projects/$PROJECT_REF/secrets" | jq -r '.[].name'); then
+            if [ "$APPLY" = true ] && [ "$REMOVE_ABSENT" = true ]; then
+              echo "::error::Couldn't list the project's function secrets, so none can be removed safely."
+              rm -f "$file"; exit 1
+            fi
+            echo "::warning::Couldn't list the project's function secrets with SUPABASE_ACCESS_TOKEN; nothing will be removed."
+            existing=""
+            unknown=1
+          fi
           stale=""
           for name in $absent; do
             grep -qx "$name" <<<"$existing" && stale="$stale $name"
           done
-          if [ -n "$stale" ]; then
-            supabase secrets unset --project-ref "$PROJECT_REF" $stale
-            echo "Removed (no longer in this environment):$stale"
-          fi
-          if [ -n "$names" ]; then
-            supabase secrets set --project-ref "$PROJECT_REF" --env-file "$file"
-            echo "Set:$names"
-          else
-            echo "No function secrets in this environment; functions that need them answer \"not configured\"."
+          if [ "$APPLY" = true ]; then verb=""; else verb="would be "; fi
+          {
+            echo "### ${{ inputs.environment }}: function secrets (names only)"
+            echo "- ${verb}set:${names:- none}"
+            if [ -n "${unknown:-}" ]; then
+              echo "- couldn't list the project's secrets, so none are removed"
+            elif [ -z "$stale" ]; then
+              echo "- nothing on the project is absent here"
+            elif [ "$REMOVE_ABSENT" = true ]; then
+              echo "- ${verb}removed (absent from this environment):$stale"
+            else
+              echo "- kept on the project although absent here:$stale (tick remove_absent_secrets to delete them)"
+            fi
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+          if [ "$APPLY" = true ]; then
+            if [ -n "$stale" ] && [ "$REMOVE_ABSENT" = true ]; then
+              supabase secrets unset --project-ref "$PROJECT_REF" $stale
+            fi
+            if [ -n "$names" ]; then
+              supabase secrets set --project-ref "$PROJECT_REF" --env-file "$file"
+            fi
           fi
           rm -f "$file"
+
+      - name: Edge functions to deploy
+        run: |
+          {
+            echo "### ${{ inputs.environment }}: edge functions"
+            for dir in supabase/functions/*/; do
+              name=$(basename "$dir")
+              case "$name" in _*) continue ;; esac
+              echo "- \`$name\`"
+            done
+          } | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Deploy edge functions
         if: inputs.apply
