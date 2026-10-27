@@ -188,6 +188,19 @@ Deno.test({
         }
         const name = (u: User) => `pu${u.name}${run}`;
         assertEquals(ok(await ann.db.rpc("username_status", { p_username: name(ann) }), "username_status"), "available");
+        // The app's first screens: the age question, then the current terms
+        // (20261025000400). Until both are done nothing can be published.
+        const consent = ok(await ann.db.rpc("my_consent_status"), "my_consent_status");
+        assertEquals([consent.terms_accepted, consent.age_check], [false, null]);
+        const early = { p_username: name(ann), p_display_name: "Ann" };
+        assertEquals(refused(await ann.db.rpc("claim_username", early), "a username before the age check"), "PUC02");
+        assertEquals(refused(await ann.db.from("posts").insert({ author_id: ann.id, kind: "moment", caption: "too early", visibility: "public" }),
+          "a post straight through REST before the age check"), "PUC02");
+        for (const u of users) ok(await u.db.rpc("record_age_check", { p_meets_minimum: true }), "record_age_check");
+        assertEquals(refused(await ann.db.rpc("claim_username", early), "a username before accepting the terms"), "PUC01");
+        assertEquals(refused(await ann.db.from("terms_acceptances").insert({ user_id: ben.id, version: consent.terms_version }),
+          "Ann accepting the terms for Ben"), "42501");
+        for (const u of users) ok(await u.db.rpc("accept_terms", { p_version: consent.terms_version }), "accept_terms");
         for (const u of users) {
           ok(await u.db.rpc("claim_username", { p_username: name(u), p_display_name: `Test ${u.name}` }), "claim_username");
           ok(await u.db.rpc("complete_onboarding"), "complete_onboarding");

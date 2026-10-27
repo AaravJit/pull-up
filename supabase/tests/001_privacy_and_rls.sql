@@ -12,6 +12,12 @@ insert into auth.users (id, email, raw_user_meta_data) values
   ('22222222-2222-2222-2222-222222222222', 'friend@example.com', '{"username":"friend"}'),
   ('33333333-3333-3333-3333-333333333333', 'stranger@example.com', '{"username":"stranger"}'),
   ('44444444-4444-4444-4444-444444444444', 'host@example.com', '{"username":"host"}');
+-- These accounts confirmed the minimum age and accepted the current terms
+-- (20261025000400); 040/041 test what happens without that.
+insert into public.terms_acceptances (user_id, version)
+select p.id, v.version from public.profiles p, public.terms_versions v where v.is_current on conflict do nothing;
+insert into private.age_checks (user_id, meets_minimum, minimum_age, method)
+select id, true, 13, 'self_declared' from public.profiles on conflict do nothing;
 
 create or replace function pg_temp.act_as(uid uuid) returns void language plpgsql as $$
 begin
