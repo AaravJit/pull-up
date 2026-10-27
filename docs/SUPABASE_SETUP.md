@@ -51,6 +51,23 @@ The service-role key and database password never go in the app or in git.
 Account ▸ Access Tokens ▸ Generate new token, named `pull-up github
 deploy`. It acts as you, so store it only as a GitHub secret (next step).
 
+A scoped token needs only these permissions on its project:
+
+| Permission | Access | Used for |
+| --- | --- | --- |
+| Auth Config | Read | the "Report the sign-in settings" step |
+| Connection Pooling | Read | finding the IPv4 session pooler |
+| Edge Function Secrets | Read-write | listing, setting and (only when asked) removing function secrets |
+| Edge Functions | Read-write | deploying the functions |
+
+Migrations go through the database password, which token permissions
+don't limit. Staging's two-account API tests also read the project's API
+keys, so the staging token additionally needs API Keys and API Key Secrets
+(Read). Production's doesn't: give it neither, so the token can't reveal
+the service-role key. The mapping comes from Supabase's
+[access token page](https://supabase.com/docs/guides/platform/personal-access-tokens);
+a run that lacks one stops at the step that needs it.
+
 ## 3. Add GitHub environments (**You**)
 
 Repository ▸ Settings ▸ Environments ▸ New environment:

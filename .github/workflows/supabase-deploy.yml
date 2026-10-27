@@ -8,7 +8,8 @@ name: Supabase deploy
 #
 # Environment settings (docs/SUPABASE_SETUP.md):
 #   variable SUPABASE_PROJECT_REF   the project's ref
-#   secret   SUPABASE_ACCESS_TOKEN  a personal access token of the project owner
+#   secret   SUPABASE_ACCESS_TOKEN  an access token of the project owner (the
+#                                   permissions it needs are in SUPABASE_SETUP.md)
 #   secret   SUPABASE_DB_PASSWORD   the project's database password
 #   optional secrets for the functions: PUSH_WEBHOOK_SECRET, CRON_SECRET,
 #   APNS_*, APPLE_*, APPSTORE_*, MODERATION_WEBHOOK_URL,
@@ -119,11 +120,13 @@ jobs:
             show("external_anonymous_users_enabled")
           ' <<<"$config" | tee -a "$GITHUB_STEP_SUMMARY" || echo "::warning::Couldn't parse the auth settings."
 
-      - name: Link the project
-        run: supabase link --project-ref "$PROJECT_REF" --password "$SUPABASE_DB_PASSWORD"
-
-      # The connection string comes from the Management API, the same source
-      # `supabase link` uses, and is checked before use: the host must be a
+      # No `supabase link`: every command below names the project with
+      # --db-url or --project-ref, and link would need the token to read the
+      # project's API key secrets (service_role included), which nothing
+      # here uses on production.
+      #
+      # The connection string comes from the Management API and is checked
+      # before use: the host must be a
       # supabase.com pooler and the user must name this project. TLS is
       # required for migration list and db push (no fallback to an
       # unencrypted connection). `supabase test db` passes pg_prove only the
