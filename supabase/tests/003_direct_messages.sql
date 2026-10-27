@@ -168,16 +168,17 @@ select is((select count(*)::int from public.inbox('active') where peer_username 
 
 -- 38–40: suspensions, mute and rate limits ---------------------------------------------
 select pg_temp.as_admin();
-update public.profiles set messaging_suspended_until = now() + interval '1 day' where id = 'd1000000-0000-0000-0000-00000000000c';
+-- Pauses live in private.messaging_pauses since 20261025000330.
+insert into private.messaging_pauses (user_id, paused_until) values ('d1000000-0000-0000-0000-00000000000c', now() + interval '1 day');
 select pg_temp.act_as('d1000000-0000-0000-0000-00000000000c');
 select throws_ok($$ insert into public.messages (conversation_id, sender_id, body)
   values ((select id from ids where name = 'ca'), auth.uid(), 'still here') $$,
   '42501', null, 'a suspended account cannot send');
 update public.profiles set messaging_suspended_until = null where id = auth.uid();
 select pg_temp.as_admin();
-select isnt((select messaging_suspended_until from public.profiles where id = 'd1000000-0000-0000-0000-00000000000c'), null,
+select isnt((select paused_until from private.messaging_pauses where user_id = 'd1000000-0000-0000-0000-00000000000c'), null,
   'people cannot lift their own suspension');
-update public.profiles set messaging_suspended_until = null where id = 'd1000000-0000-0000-0000-00000000000c';
+delete from private.messaging_pauses where user_id = 'd1000000-0000-0000-0000-00000000000c';
 
 select pg_temp.act_as('d1000000-0000-0000-0000-00000000000a');
 insert into public.messages (conversation_id, sender_id, body)

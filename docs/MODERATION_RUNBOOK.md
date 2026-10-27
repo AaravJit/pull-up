@@ -166,6 +166,7 @@ written to `private.moderation_audit`, which can't be edited or deleted
    | Profile (handle, name, bio, avatar) | `select public.mod_reset_profile('<user>', array['bio','avatar'], '<id>', 'why');` Fields: `display_name`, `bio`, `avatar`, `username` (resets to a placeholder `driver_…`; the app has no handle change after onboarding, so the person keeps it unless support changes it). |
    | Repeated or serious abuse | `select public.mod_suspend_user('<user>', now() + interval '7 days', 'Reason shown to the person', '<id>', false);` Pass `null` as the date for an indefinite suspension, and `true` as the last argument to also remove all of their posts, comments, meets and vehicles. |
    | Lift a suspension | `select public.mod_unsuspend_user('<user>', 'why');` |
+   | Pause messaging only | SQL editor: `insert into private.messaging_pauses (user_id, paused_until, note) values ('<user>', now() + interval '7 days', 'why') on conflict (user_id) do update set paused_until = excluded.paused_until, note = excluded.note;` Lift with `delete from private.messaging_pauses where user_id = '<user>';`. Only the person (`my_moderation_status`) and moderators (`mod_report`) can see a pause. |
 
    Write the reason for a suspension as a sentence you'd say to the
    person: the app shows it to them word for word.
