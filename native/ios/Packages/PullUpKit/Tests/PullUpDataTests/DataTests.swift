@@ -93,6 +93,29 @@ struct LocalDriveStoreTests {
         #expect(await store.all().isEmpty)
     }
 
+    /// Account deletion: the account's drives (GPS tracks) leave the phone,
+    /// finished or not, along with drafts no account owns. Another account's
+    /// unsent drives on a shared phone stay.
+    @Test func deletingAnAccountRemovesItsDrafts() async throws {
+        let store = makeStore()
+        let mine = UUID(), theirs = UUID()
+        let recording = DriveDraft(ownerID: mine, vehicleID: nil, startedAt: .now)
+        let unsent = DriveDraft(ownerID: mine, vehicleID: nil, startedAt: .now, endedAt: .now.addingTimeInterval(60))
+        var refused = DriveDraft(ownerID: mine, vehicleID: nil, startedAt: .now, endedAt: .now.addingTimeInterval(60))
+        refused.rejectedAt = .now
+        let ownerless = DriveDraft(ownerID: nil, vehicleID: nil, startedAt: .now, endedAt: .now.addingTimeInterval(60))
+        let other = DriveDraft(ownerID: theirs, vehicleID: nil, startedAt: .now, endedAt: .now.addingTimeInterval(60))
+        for draft in [recording, unsent, refused, ownerless, other] { try await store.save(draft) }
+        await store.deleteAll(owner: mine)
+        #expect(await store.all().map(\.id) == [other.id])
+    }
+
+    @Test func deletionFailuresShowTheServersMessage() {
+        let body = Data(#"{"error":"storage_incomplete","message":"Your account is being deleted, but some of your files couldn't be removed yet.","deleted":false}"#.utf8)
+        #expect(SupabaseBackend.deletionFailure(status: 503, body: body).errorDescription?.hasPrefix("Your account is being deleted") == true)
+        #expect(SupabaseBackend.deletionFailure(status: 502, body: Data("Bad Gateway".utf8)).errorDescription?.contains("502") == true)
+    }
+
     @Test func onlyRefusedDataIsPermanent() {
         #expect(DriveDraft.isPermanentRejection(RefusedByServer(sqlState: "23514")), "check constraint, e.g. distance bounds")
         #expect(DriveDraft.isPermanentRejection(RefusedByServer(sqlState: "22023")), "track too large")

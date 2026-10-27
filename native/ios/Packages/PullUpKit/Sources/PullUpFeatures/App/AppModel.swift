@@ -38,6 +38,11 @@ public final class AppModel {
     private(set) var messagingPulse = MessagingPulse()
     /// The signed-in person's own account (username, sign-in methods).
     public private(set) var account: AccountState?
+    /// People this account has blocked since it signed in on this phone.
+    /// Screens that already loaded their posts, comments, meets or
+    /// conversations drop them at once instead of waiting for a refetch. The
+    /// server enforces the block itself (RLS, `is_blocked_between`).
+    public private(set) var blockedUsers: Set<UserID> = []
     /// Shown once on the sign-in screen after the app signed someone out on
     /// its own (Apple credential revoked, account deleted).
     public var signedOutNotice: String?
@@ -48,6 +53,16 @@ public final class AppModel {
     @ObservationIgnored private var openedLaunchPush = false
     /// Name Apple shared on first sign-in, offered as the display name.
     var appleSuggestedName: String?
+    /// The minimum-age check and terms acceptance the server requires before
+    /// this account may publish (`my_consent_status`). Nil for a backend with
+    /// no such rules (demo) or when it couldn't be read; the server enforces
+    /// them either way.
+    public private(set) var consent: ConsentStatus?
+    /// The root shows the consent screen instead of the app (ConsentGateView).
+    /// Set at sign-in and on return to the foreground, never in the middle of
+    /// writing something: a composer whose post was refused offers the terms
+    /// in its own sheet so the draft isn't lost.
+    public private(set) var consentGate = false
     let appleCredentials: any AppleCredentialChecking
 
     /// The CarPlay scene and the phone UI must drive the same recorder.
@@ -74,6 +89,7 @@ public final class AppModel {
     init(options: LaunchOptions, appleCredentials: any AppleCredentialChecking, store: (any StoreClient)? = nil) {
         self.options = options
         self.appleCredentials = appleCredentials
+        Self.keepMediaOffDisk()
         let defaults = UserDefaults.standard
         if options.resetDefaults, let domain = Bundle.main.bundleIdentifier {
             defaults.removePersistentDomain(forName: domain)
@@ -161,6 +177,10 @@ public final class AppModel {
             // A failed lookup (offline) lets the person in rather than locking
             // them out; onboarding is shown whenever the server says it's due.
             account = try? await backend.account()
+            // Another account's answers never carry over.
+            consent = nil
+            consentGate = false
+            await refreshConsent(showGate: true)
             if let account, !account.isOnboarded {
                 phase = .onboarding(user)
                 return
@@ -170,6 +190,7 @@ public final class AppModel {
             guard !recorder.isRecording else { return }
             phase = .signedOut
             account = nil
+            blockedUsers = []
             messagingTask?.cancel()
             messagingTask = nil
             unreadMessages = UnreadMessages()
@@ -180,11 +201,15 @@ public final class AppModel {
     }
 
     private func enterApp(_ user: UserID) async {
+        blockedUsers = []
         phase = .signedIn(user)
         recorder.ownerID = user
         await garage.setOwner(user)
         await recorder.recoverInterrupted(vehicles: garage.vehicles)
         await recorder.syncPending()
+        // Files of a post the app was closed while uploading; off the launch path.
+        let backend = self.backend
+        Task { await backend.recoverInterruptedPosts() }
         await refreshNotifications()
         await refreshMessages()
         startMessagingUpdates()
@@ -252,6 +277,21 @@ public final class AppModel {
     func foregrounded() async {
         guard case .signedIn = phase else { return }
         await recorder.syncPending()
+        // Picks up a suspension placed (or lifted) while the app was away.
+        await refreshAccount()
+    }
+
+    // MARK: Blocking
+
+    /// Blocks on the server, then hides the person everywhere in the app.
+    public func block(_ user: UserID) async throws {
+        try await backend.block(user)
+        noteBlocked(user)
+    }
+
+    /// Records a block made through a conversation's own model.
+    public func noteBlocked(_ user: UserID) {
+        blockedUsers.insert(user)
     }
 
     /// Called by onboarding once the server has marked it complete.
@@ -260,6 +300,38 @@ public final class AppModel {
         account = try? await backend.account()
         appleSuggestedName = nil
         await enterApp(user)
+    }
+
+    // MARK: Terms and minimum age
+
+    var needsConsent: Bool { consent.map { !$0.isSatisfied } ?? false }
+
+    /// Reloads the consent status. `showGate` puts the consent screen in
+    /// front when something is missing; offline, the last status stays.
+    func refreshConsent(showGate: Bool) async {
+        guard let service = backend as? any ConsentService else {
+            consent = nil
+            consentGate = false
+            return
+        }
+        guard let status = try? await service.consentStatus() else { return }
+        applyConsent(status, showGate: showGate)
+    }
+
+    /// Records a status the server just returned (after an answer).
+    func applyConsent(_ status: ConsentStatus, showGate: Bool) {
+        consent = status
+        if status.isSatisfied {
+            consentGate = false
+        } else if showGate || status.isUnderMinimum {
+            consentGate = true
+        }
+    }
+
+    /// Back in the foreground: the terms may have changed meanwhile.
+    func recheckConsent() async {
+        guard userID != nil else { return }
+        await refreshConsent(showGate: true)
     }
 
     public func refreshAccount() async {
@@ -305,7 +377,29 @@ public final class AppModel {
         try? await backend.signOut()
         appleCredentials.store(userID: nil)
         DriveProSection.removeExports()
+        Self.clearMediaCache()
         await apply(nil)
+    }
+
+    /// Photos are fetched through URLSession.shared (AsyncImage) from signed
+    /// URLs stored with a one-year cache lifetime. Signed URLs change, so a
+    /// disk copy is never reused across launches; keeping the shared cache
+    /// in memory means no copy of anyone's photos is left in Caches.
+    static func keepMediaOffDisk() {
+        guard URLCache.shared.diskCapacity > 0 else { return }
+        URLCache.shared.removeAllCachedResponses() // whatever an earlier build wrote
+        URLCache.shared = URLCache(memoryCapacity: 32 * 1024 * 1024, diskCapacity: 0, directory: nil)
+    }
+
+    /// Drops the in-memory copies on sign-out and account deletion.
+    static func clearMediaCache(_ cache: URLCache = .shared) {
+        cache.removeAllCachedResponses()
+        cache.removeCachedResponses(since: .distantPast)
+        // removeAll doesn't reliably drop responses already in memory;
+        // emptying the memory capacity does.
+        let memory = cache.memoryCapacity
+        cache.memoryCapacity = 0
+        cache.memoryCapacity = memory
     }
 
     /// Deletes the account on the server. `appleAuthorizationCode` comes from
@@ -318,6 +412,7 @@ public final class AppModel {
         // either. Before apply(nil), which keeps a drive that's recording.
         if let owner { await recorder.eraseLocalData(for: owner) }
         DriveProSection.removeExports()
+        Self.clearMediaCache()
         appleCredentials.store(userID: nil)
         await apply(nil)
         switch result.apple {

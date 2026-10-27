@@ -16,7 +16,7 @@ public struct MeetsView: View {
     public init() {}
 
     private var filtered: [Meet] {
-        meets.filter { focus == .all || $0.focus == .all || $0.focus == focus }
+        meets.filter { (focus == .all || $0.focus == .all || $0.focus == focus) && !app.blockedUsers.contains($0.hostID) }
     }
 
     private var grouped: [(day: Date, meets: [Meet])] {
@@ -409,7 +409,7 @@ struct MeetDetailView: View {
 
     private func blockHost() async {
         do {
-            try await app.backend.block(meet.hostID)
+            try await app.block(meet.hostID)
             hostWasBlocked()
             dismiss()
         } catch {

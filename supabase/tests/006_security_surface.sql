@@ -9,6 +9,12 @@ insert into auth.users (id, email, raw_user_meta_data) values
   ('f1000000-0000-0000-0000-00000000000a', 'sec-ann@example.com', '{"username":"sec_ann"}'),
   ('f1000000-0000-0000-0000-00000000000b', 'sec-ben@example.com', '{"username":"sec_ben"}'),
   ('f1000000-0000-0000-0000-00000000000c', 'sec-cat@example.com', '{"username":"sec_cat"}');
+-- These accounts confirmed the minimum age and accepted the current terms
+-- (20261025000400); 040/041 test what happens without that.
+insert into public.terms_acceptances (user_id, version)
+select p.id, v.version from public.profiles p, public.terms_versions v where v.is_current on conflict do nothing;
+insert into private.age_checks (user_id, meets_minimum, minimum_age, method)
+select id, true, 13, 'self_declared' from public.profiles on conflict do nothing;
 
 create or replace function pg_temp.act_as(uid uuid) returns void language plpgsql as $$
 begin
@@ -119,7 +125,7 @@ select is(
   (select coalesce(array_agg(p.proname::text order by p.proname), '{}') from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'private' and p.prosecdef and p.prorettype <> 'trigger'::regtype
      and has_function_privilege('authenticated', p.oid, 'execute')),
-  array['can_read_message', 'can_view_shared', 'dm_path_member', 'drive_visible', 'is_member', 'peer_of', 'username_problem', 'within_storage_quota']::text[],
+  array['account_exists', 'can_read_message', 'can_view_shared', 'dm_path_member', 'drive_visible', 'is_member', 'is_suspended', 'peer_of', 'username_problem', 'within_storage_quota']::text[],
   'only reviewed private definer helpers are callable by signed-in users (they answer for the caller only)');
 select is(
   (select coalesce(array_agg(tablename || ':' || policyname order by 1), '{}') from pg_policies

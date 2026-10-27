@@ -104,6 +104,29 @@ struct AccountFlowTests {
         #expect(!FileManager.default.fileExists(atPath: DriveProSection.exportsFolder.path))
     }
 
+    @Test func mediaIsNeverCachedOnDisk() {
+        _ = model()
+        #expect(URLCache.shared.diskCapacity == 0)
+    }
+
+    @Test func clearingTheMediaCacheDropsWhatWasShown() async throws {
+        let cache = URLCache(memoryCapacity: 1024 * 1024, diskCapacity: 0, directory: nil)
+        let request = URLRequest(url: URL(string: "https://example.supabase.co/storage/v1/object/sign/avatars/me.jpg?token=t")!)
+        let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: ["Cache-Control": "max-age=31536000"])!
+        cache.storeCachedResponse(CachedURLResponse(response: response, data: Data([0xff, 0xd8])), for: request)
+        // URLCache stores on its own queue; let the entry land first.
+        for _ in 0..<30 where cache.cachedResponse(for: request) == nil {
+            try await Task.sleep(for: .milliseconds(100))
+        }
+        AppModel.clearMediaCache(cache)
+        var cached = cache.cachedResponse(for: request)
+        for _ in 0..<30 where cached != nil {
+            try await Task.sleep(for: .milliseconds(100))
+            cached = cache.cachedResponse(for: request)
+        }
+        #expect(cached == nil)
+    }
+
     @Test func authMessagesAreReadable() {
         struct Server: LocalizedError { let errorDescription: String? }
         #expect(AuthMessages.server(Server(errorDescription: "automatic account linking is disabled: sign in with your existing method")).contains("signs in another way"))

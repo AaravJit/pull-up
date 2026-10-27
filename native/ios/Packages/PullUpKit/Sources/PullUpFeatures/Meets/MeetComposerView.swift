@@ -56,6 +56,7 @@ struct MeetComposerView: View {
                     FieldRow(label: "Details", text: $details, prompt: "Rules, parking, what to bring", axis: .vertical)
                     FieldRow(label: "Capacity", text: $capacityText, prompt: "No limit", keyboard: .numberPad)
                     AudiencePicker(title: "Who can see this meet", selection: $audience, allowed: [.public, .friends])
+                    ContentRulesNote(context: .meet, failure: error)
                     if kind == .trackDay {
                         NoticeStrip("Closed-course events only. Pull Up doesn't rank speed or acceleration.")
                     }

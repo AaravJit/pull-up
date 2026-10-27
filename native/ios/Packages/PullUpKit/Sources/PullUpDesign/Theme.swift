@@ -62,6 +62,11 @@ public enum DashboardMetric: String, Codable, CaseIterable, Sendable, Identifiab
         }
     }
 
+    /// What the live dashboard offers. A running 0–60 readout while driving
+    /// would invite launches on public roads, so 0–60 appears only after a
+    /// drive, as an estimate (DriveSummaryView).
+    public static let liveSelectable = allCases.filter { $0 != .zeroToSixty }
+
     public static let defaultLayout: [DashboardMetric] = [.distance, .elapsed, .topSpeed, .averageSpeed, .elevationGain, .gpsAccuracy]
     public static let maximumCount = 6
 }

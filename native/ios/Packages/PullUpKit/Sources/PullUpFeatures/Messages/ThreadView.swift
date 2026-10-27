@@ -177,6 +177,7 @@ struct ThreadView: View {
                 .foregroundStyle(ClusterColor.inkTertiary)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
+            ContentRulesNote(context: .message, failure: model.pending.compactMap(\.failure).last ?? model.error)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, Space.l)
@@ -291,6 +292,7 @@ struct ThreadView: View {
         guard let model else { return }
         do {
             try await model.block()
+            app.noteBlocked(model.peer.id)
             await app.refreshMessages()
             dismiss()
         } catch {

@@ -23,7 +23,8 @@ supabase/
                            distance, follow requests; api/ has the two-account API tests.
                            Staging has run 001–014 (2026-10-20), not 015
   functions/               Edge functions: delete-account, send-push (APNs), dm-retention,
-                           verify-subscription, app-store-notifications; _shared/ has Deno tests
+                           post-media-cleanup, verify-subscription, app-store-notifications;
+                           _shared/ has Deno tests
 ```
 
 ## Module layering

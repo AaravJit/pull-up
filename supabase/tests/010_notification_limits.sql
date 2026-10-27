@@ -10,6 +10,12 @@ insert into auth.users (id, email, raw_user_meta_data) values
   ('ea000000-0000-0000-0000-00000000000a', 'limit-ann@example.com', '{"username":"limit_ann"}'),
   ('ea000000-0000-0000-0000-00000000000b', 'limit-ben@example.com', '{"username":"limit_ben"}'),
   ('ea000000-0000-0000-0000-00000000000c', 'limit-cat@example.com', '{"username":"limit_cat"}');
+-- These accounts confirmed the minimum age and accepted the current terms
+-- (20261025000400); 040/041 test what happens without that.
+insert into public.terms_acceptances (user_id, version)
+select p.id, v.version from public.profiles p, public.terms_versions v where v.is_current on conflict do nothing;
+insert into private.age_checks (user_id, meets_minimum, minimum_age, method)
+select id, true, 13, 'self_declared' from public.profiles on conflict do nothing;
 
 create or replace function pg_temp.act_as(uid uuid) returns void language plpgsql as $$
 begin
@@ -50,10 +56,20 @@ select pg_temp.as_admin();
 select is(pg_temp.count_for('like', 'ea000000-0000-0000-0000-00000000000b'), 1, 'G4: liking the same post again doesn''t notify again');
 select is(pg_temp.count_for('follow', 'ea000000-0000-0000-0000-00000000000b'), 1, 'G4: following again doesn''t notify again');
 
--- Then posts 40 comments.
+-- Then posts 40 comments. Comments are rate limited too (10 a minute,
+-- 20261025000320), so the limit's log is cleared between batches of ten:
+-- this test is about notifications.
+do $$
+begin
+  for batch in 0..3 loop
+    perform pg_temp.as_admin();
+    delete from private.function_calls where user_id = 'ea000000-0000-0000-0000-00000000000b';
+    perform pg_temp.act_as('ea000000-0000-0000-0000-00000000000b');
+    insert into public.comments (post_id, author_id, body)
+    select 'ea100000-0000-0000-0000-000000000001', auth.uid(), 'comment ' || (batch * 10 + i) from generate_series(1, 10) as i;
+  end loop;
+end $$;
 select pg_temp.act_as('ea000000-0000-0000-0000-00000000000b');
-insert into public.comments (post_id, author_id, body)
-select 'ea100000-0000-0000-0000-000000000001', auth.uid(), 'comment ' || i from generate_series(1, 40) as i;
 select is((select count(*)::int from public.comments where post_id = 'ea100000-0000-0000-0000-000000000001'), 40,
   'G4: every comment is still posted');
 

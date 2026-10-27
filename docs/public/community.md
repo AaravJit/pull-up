@@ -1,8 +1,8 @@
 # Pull Up Community Guidelines
 
-Last updated: **October 24, 2026**
+Last updated: **October 27, 2026**
 
-Pull Up is for sharing vehicles, journeys, builds and meets while respecting other people. These rules apply to profiles, handles, bios, photos, videos, vehicle content, posts, comments, meets, messages and shared cards.
+Pull Up is for sharing vehicles, journeys, builds and meets while respecting other people. You accept these guidelines together with the [service and content terms](terms.md) in the app, and again when either changes. These rules apply to profiles, handles, bios, photos, videos, vehicle content, posts, comments, meets, messages and shared cards.
 
 ## Keep driving safe
 
@@ -23,7 +23,7 @@ Occasional non-targeted profanity or incidental adult references do not excuse h
 
 ## Share only what you may share
 
-Use photos, videos, music and text you own or have permission to publish. Obtain appropriate permission from people shown or whose private material you share. Do not upload copyrighted media, misleading claims of sponsorship, stolen parts offers, or another person's work as your own.
+Use photos, videos, music and text you own or have permission to publish. Each post, meet, comment and message you send is your confirmation that it follows these rules. Obtain appropriate permission from people shown or whose private material you share. Do not upload copyrighted media, misleading claims of sponsorship, stolen parts offers, or another person's work as your own.
 
 Do not post spam, manipulated engagement, deceptive events, false affiliations, or fake safety/fitment guarantees. Hosts must accurately describe events and have the permissions needed to use the venue.
 

@@ -259,8 +259,8 @@ struct DriveSummaryView: View {
                 Spacer()
             }
             Text(drive.zeroToSixtySeconds == nil
-                 ? "No clean run from a standstill to 60 mph was detected."
-                 : "Estimated from phone GPS at about one fix per second\(drive.zeroToSixtyQuality == .consistent ? ", with consistent data" : ""). It isn't a measured time. Pull Up doesn't rank speed or acceleration.")
+                 ? "No 0–60 estimate for this drive."
+                 : "Estimated from phone GPS at about one fix per second\(drive.zeroToSixtyQuality == .consistent ? ", with consistent data" : ""). It isn't a measured time. Pull Up doesn't rank speed or acceleration; never try for a time on a public road.")
                 .font(ClusterFont.body(.footnote))
                 .foregroundStyle(ClusterColor.inkSecondary)
                 .fixedSize(horizontal: false, vertical: true)
