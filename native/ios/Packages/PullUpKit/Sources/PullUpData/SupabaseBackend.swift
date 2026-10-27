@@ -224,10 +224,9 @@ public final class SupabaseBackend: BackendService, @unchecked Sendable {
     public func searchProfiles(_ query: String) async throws -> [ProfileStub] {
         let q = query.trimmingCharacters(in: .whitespaces).lowercased()
         guard q.count >= 2 else { return [] }
-        return try await client.from("profiles")
-            .select("id, username, display_name, avatar_path")
-            .ilike("username", pattern: "\(q)%")
-            .limit(20).execute().value
+        // An RPC (POST body), not a filtered GET, so the term isn't in a
+        // request URL the API gateway logs. Same columns, RLS and limit.
+        return try await client.rpc("search_profiles", params: ["p_prefix": q]).execute().value
     }
 
     // MARK: Privacy
