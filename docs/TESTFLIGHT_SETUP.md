@@ -138,9 +138,10 @@ same environments `SUPABASE_SETUP.md` creates):
 `SUPABASE_PROJECT_REF` is already there from the Supabase setup. Keep
 `production` limited to the `main` branch with you as required reviewer,
 so a production build always waits for your approval. `staging` also
-allows deployments from `main` only. The workflow also refuses a
-production build that isn't from `main`, that points at the staging
-project, or that has no privacy policy URL.
+allows deployments from `main` only. The workflow also refuses a build
+whose `SUPABASE_PROJECT_REF` isn't that environment's project (`staging` =
+`hllfsfbuexuniosdewob`, `production` = `jxemvjxkspolyoknqkzr`), and a
+production build that isn't from `main` or has no privacy policy URL.
 
 The app is iPhone only for now (`TARGETED_DEVICE_FAMILY` 1 in
 `native/ios/project.yml`), so App Store Connect needs iPhone screenshots
