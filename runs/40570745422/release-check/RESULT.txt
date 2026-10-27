@@ -1,0 +1,3 @@
+commit f3b66bc9bb31d70ee0409b5a7be64c02eadf6e90, Release configuration, Xcode: Xcode 27.1 Build version 27A9275 
+files containing -PullUpDemo (sanity, expected >= 1): 0
+files containing -PullUpStoreCapture (expected 0): 0
