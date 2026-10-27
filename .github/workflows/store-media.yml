@@ -1,8 +1,8 @@
 name: Store media
 
 # App Store screenshots and app previews, captured from the real app on the
-# simulator: iPhone with Dynamic Island (iPhone 17 Pro, 1206x2622, the
-# required size, plus iPhone 17 Pro Max, 1320x2868) and iPhone Duo (outer
+# simulator: iPhone with Dynamic Island (iPhone 18 Pro or 17 Pro, the
+# required size, plus the Pro Max) and iPhone Duo (outer
 # display 1398x2034 folded, inner display 2007x2853 unfolded). The UI test
 # StoreMediaUITests drives the app on the demo backend with
 # -PullUpStoreCapture (debug builds only); scripts/store-media take the
@@ -22,7 +22,9 @@ permissions:
 
 env:
   XCODE: /Applications/Xcode_27.1.app
-  RUNTIME: com.apple.CoreSimulator.SimRuntime.iOS-27-1
+  # Newest first. iOS 27.1 doesn't run every device type (iPhone 17 Pro is
+  # "Incompatible device" there), so setup-device.sh falls back to 27.0.
+  RUNTIMES: com.apple.CoreSimulator.SimRuntime.iOS-27-1 com.apple.CoreSimulator.SimRuntime.iOS-27-0
 
 jobs:
   iphone:
@@ -57,13 +59,17 @@ jobs:
           APP="$DD/Build/Products/Debug-iphonesimulator/PullUp.app"
           mkdir -p "$MEDIA"
           fail=0
-          PRO=$($S/setup-device.sh "Store iPhone 17 Pro" com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro "$RUNTIME" "$APP")
+          # Positive control for the Release check: the debug app does contain the switch.
+          grep -r -a -l -- "-PullUpStoreCapture" "$APP" | head -3
+          T=com.apple.CoreSimulator.SimDeviceType
+          # iPhone with Dynamic Island, medium display (the required size); large display.
+          PRO=$($S/setup-device.sh "Store iPhone Pro" "$APP" $T.iPhone-18-Pro $T.iPhone-17-Pro)
           for t in testScreenshots testLandscape testPreviewDrive testPreviewGarage testPreviewCommunity; do
-            $S/pass.sh "$PRO" "$MEDIA/iphone-17-pro" "$t" || fail=1
+            $S/pass.sh "$PRO" "$MEDIA/iphone-pro" "$t" || fail=1
           done
-          MAX=$($S/setup-device.sh "Store iPhone 17 Pro Max" com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro-Max "$RUNTIME" "$APP")
-          $S/pass.sh "$MAX" "$MEDIA/iphone-17-pro-max" testScreenshots || fail=1
-          python3 $S/provenance.py "$MEDIA" "$APP" "iphone-17-pro=$PRO" "iphone-17-pro-max=$MAX"
+          MAX=$($S/setup-device.sh "Store iPhone Pro Max" "$APP" $T.iPhone-18-Pro-Max $T.iPhone-17-Pro-Max)
+          $S/pass.sh "$MAX" "$MEDIA/iphone-pro-max" testScreenshots || fail=1
+          python3 $S/provenance.py "$MEDIA" "$APP" "iphone-pro=$PRO" "iphone-pro-max=$MAX"
           exit $fail
       - name: Upload
         if: always()
@@ -106,7 +112,7 @@ jobs:
           S=./scripts/store-media
           APP="$DD/Build/Products/Debug-iphonesimulator/PullUp.app"
           mkdir -p "$MEDIA/probe"
-          DUO=$($S/setup-device.sh "Store iPhone Duo" com.apple.CoreSimulator.SimDeviceType.iPhone-Duo "$RUNTIME" "$APP")
+          DUO=$($S/setup-device.sh "Store iPhone Duo" "$APP" com.apple.CoreSimulator.SimDeviceType.iPhone-Duo)
           echo "DUO=$DUO" >> "$GITHUB_ENV"
           xcrun simctl io "$DUO" enumerate > "$MEDIA/probe/enumerate-boot.txt" 2>&1 || true
           BID=$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$APP/Info.plist")
@@ -181,11 +187,14 @@ jobs:
           APP="$RUNNER_TEMP/dd/Build/Products/Release-iphonesimulator/PullUp.app"
           mkdir -p "$RUNNER_TEMP/media/release-check"
           OUT="$RUNNER_TEMP/media/release-check/RESULT.txt"
-          demo=$(grep -r -a -l -- "-PullUpDemo" "$APP" | wc -l | tr -d ' ')
+          # Control: a launch argument that Release keeps. It has to be longer
+          # than 15 bytes, like the switch: Swift keeps shorter literals inline
+          # in code (small strings), where grep can't see them.
+          demo=$(grep -r -a -l -- "-PullUpResetDefaults" "$APP" | wc -l | tr -d ' ')
           capture=$(grep -r -a -l -- "-PullUpStoreCapture" "$APP" | wc -l | tr -d ' ')
           {
             echo "commit $GITHUB_SHA, Release configuration, Xcode: $(xcodebuild -version | tr '\n' ' ')"
-            echo "files containing -PullUpDemo (sanity, expected >= 1): $demo"
+            echo "files containing -PullUpResetDefaults (control, expected >= 1): $demo"
             echo "files containing -PullUpStoreCapture (expected 0): $capture"
           } | tee "$OUT"
           [ "$demo" -ge 1 ] && [ "$capture" -eq 0 ]
