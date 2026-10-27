@@ -204,7 +204,12 @@ struct StartDrivePicker: View {
     private func carousel(cardWidth: CGFloat) -> some View {
         ScrollViewReader { proxy in
             ScrollView(.horizontal, showsIndicators: false) {
-                LazyHStack(spacing: Space.m) {
+                // HStack, not LazyHStack. In CI (iOS 26.5 simulator, run
+                // 40165990545) the app trapped on Swift's main-actor check
+                // inside this card builder, called from LazyHStack's sizing
+                // pass for the vertical fixedSize below, off the main queue.
+                // A plain stack builds its few cards during the normal update.
+                HStack(spacing: Space.m) {
                     ForEach(choices, id: \.self) { choice in
                         let vehicle = vehicle(for: choice)
                         VehicleChoiceCard(vehicle: vehicle, isSelected: choice == selection, width: cardWidth) {
