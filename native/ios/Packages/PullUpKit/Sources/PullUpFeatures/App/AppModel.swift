@@ -76,6 +76,9 @@ public final class AppModel {
     }
 
     public var isDemo: Bool { backend.mode == .demo }
+    /// Demo mode is announced on screen. Only Store media capture, which
+    /// exists in debug builds alone (StoreCapture), turns the labels off.
+    public var showsDemoLabels: Bool { isDemo && !StoreCapture.isActive }
 
     private var authTask: Task<Void, Never>?
     private var messagingTask: Task<Void, Never>?

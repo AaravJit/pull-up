@@ -1,0 +1,243 @@
+name: Store media
+
+# App Store screenshots and app previews, captured from the real app on the
+# simulator: iPhone with Dynamic Island (iPhone 17 Pro, 1206x2622, the
+# required size, plus iPhone 17 Pro Max, 1320x2868) and iPhone Duo (outer
+# display 1398x2034 folded, inner display 2007x2853 unfolded). The UI test
+# StoreMediaUITests drives the app on the demo backend with
+# -PullUpStoreCapture (debug builds only); scripts/store-media take the
+# pixels with simctl and encode the previews to Apple's specification.
+# Results are committed to the ci/store-media branch, one folder per run.
+on:
+  push:
+    branches: ["claude/store-media"]
+    paths: ["native/ios/**", ".github/workflows/store-media.yml"]
+
+concurrency:
+  group: store-media-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  XCODE: /Applications/Xcode_27.1.app
+  RUNTIME: com.apple.CoreSimulator.SimRuntime.iOS-27-1
+
+jobs:
+  iphone:
+    name: iPhone with Dynamic Island
+    runs-on: xcode-27
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - name: Toolchain
+        run: |
+          sudo xcode-select -s "$XCODE"
+          xcodebuild -version
+          sw_vers
+          echo "DD=$RUNNER_TEMP/dd" >> "$GITHUB_ENV"
+          echo "MEDIA=$RUNNER_TEMP/media/iphone" >> "$GITHUB_ENV"
+      - name: Generate project
+        working-directory: native/ios
+        run: brew install xcodegen && xcodegen generate && ./scripts/pin-packages.sh
+      - name: Build app and UI tests (Debug)
+        working-directory: native/ios
+        run: |
+          ./scripts/xcodebuild-ci.sh build-for-testing -project PullUp.xcodeproj -scheme PullUp \
+            -destination "generic/platform=iOS Simulator" -derivedDataPath "$DD" \
+            -skipPackagePluginValidation -disableAutomaticPackageResolution CODE_SIGNING_ALLOWED=NO
+      - name: Capture
+        working-directory: native/ios
+        run: |
+          S=./scripts/store-media
+          APP="$DD/Build/Products/Debug-iphonesimulator/PullUp.app"
+          mkdir -p "$MEDIA"
+          fail=0
+          PRO=$($S/setup-device.sh "Store iPhone 17 Pro" com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro "$RUNTIME" "$APP")
+          for t in testScreenshots testLandscape testPreviewDrive testPreviewGarage testPreviewCommunity; do
+            $S/pass.sh "$PRO" "$MEDIA/iphone-17-pro" "$t" || fail=1
+          done
+          MAX=$($S/setup-device.sh "Store iPhone 17 Pro Max" com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro-Max "$RUNTIME" "$APP")
+          $S/pass.sh "$MAX" "$MEDIA/iphone-17-pro-max" testScreenshots || fail=1
+          python3 $S/provenance.py "$MEDIA" "$APP" "iphone-17-pro=$PRO" "iphone-17-pro-max=$MAX"
+          exit $fail
+      - name: Upload
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: media-iphone
+          path: ${{ runner.temp }}/media
+          if-no-files-found: ignore
+
+  duo:
+    name: iPhone Duo
+    runs-on: xcode-27
+    timeout-minutes: 150
+    env:
+      TEST_RUNNER_STORE_MEDIA_FOLDABLE: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Toolchain
+        run: |
+          sudo xcode-select -s "$XCODE"
+          xcodebuild -version
+          sw_vers
+          echo "DD=$RUNNER_TEMP/dd" >> "$GITHUB_ENV"
+          echo "MEDIA=$RUNNER_TEMP/media/duo" >> "$GITHUB_ENV"
+      - name: Generate project
+        working-directory: native/ios
+        run: brew install xcodegen && xcodegen generate && ./scripts/pin-packages.sh
+      - name: Build app and UI tests (Debug)
+        working-directory: native/ios
+        run: |
+          ./scripts/xcodebuild-ci.sh build-for-testing -project PullUp.xcodeproj -scheme PullUp \
+            -destination "generic/platform=iOS Simulator" -derivedDataPath "$DD" \
+            -skipPackagePluginValidation -disableAutomaticPackageResolution CODE_SIGNING_ALLOWED=NO
+      - name: Boot iPhone Duo and check each display
+        working-directory: native/ios
+        run: |
+          S=./scripts/store-media
+          APP="$DD/Build/Products/Debug-iphonesimulator/PullUp.app"
+          mkdir -p "$MEDIA/probe"
+          DUO=$($S/setup-device.sh "Store iPhone Duo" com.apple.CoreSimulator.SimDeviceType.iPhone-Duo "$RUNTIME" "$APP")
+          echo "DUO=$DUO" >> "$GITHUB_ENV"
+          xcrun simctl io "$DUO" enumerate > "$MEDIA/probe/enumerate-boot.txt" 2>&1 || true
+          BID=$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$APP/Info.plist")
+          # The first launch on the Duo simulator can take minutes (Xcode 27.1 notes).
+          xcrun simctl launch "$DUO" "$BID" -PullUpDemo -PullUpResetDefaults -PullUpStoreCapture -PullUpAppearance dark
+          sleep 40
+          snap() { for d in 1 3; do xcrun simctl io "$DUO" screenshot --mask=ignored --display=$d "$MEDIA/probe/$1-display$d.png" 2>&1 | tail -2 || true; done; }
+          snap boot
+          $S/pose.sh "$DUO" fold | tee "$MEDIA/probe/pose-fold.txt"
+          sleep 6; snap folded
+          $S/pose.sh "$DUO" unfold | tee "$MEDIA/probe/pose-unfold.txt"
+          sleep 6; snap unfolded
+          xcrun simctl terminate "$DUO" "$BID" || true
+          for f in "$MEDIA"/probe/*.png; do sips -g pixelWidth -g pixelHeight "$f" | tail -2 | tr '\n' ' '; echo; done
+      - name: Capture unfolded (inner display)
+        working-directory: native/ios
+        run: |
+          S=./scripts/store-media
+          $S/pose.sh "$DUO" unfold
+          fail=0
+          for t in testScreenshots testLandscape testPreviewDrive testPreviewGarage; do
+            $S/pass.sh "$DUO" "$MEDIA/duo-inner" "$t" --display 3 --fold-display 1 --unfold-display 3 --pose unfold || fail=1
+          done
+          exit $fail
+      - name: Capture folded (outer display)
+        if: always()
+        working-directory: native/ios
+        run: |
+          S=./scripts/store-media
+          $S/pose.sh "$DUO" fold
+          fail=0
+          for t in testScreenshots testLandscape testPreviewCommunity; do
+            $S/pass.sh "$DUO" "$MEDIA/duo-outer" "$t" --display 1 --fold-display 1 --unfold-display 3 --pose fold || fail=1
+          done
+          exit $fail
+      - name: Fold and unfold during a drive
+        if: always()
+        working-directory: native/ios
+        run: |
+          S=./scripts/store-media
+          $S/pose.sh "$DUO" unfold
+          $S/pass.sh "$DUO" "$MEDIA/duo-fold" testFoldContinuity --display 3 --fold-display 1 --unfold-display 3 --pose unfold
+      - name: Provenance
+        if: always()
+        working-directory: native/ios
+        run: python3 ./scripts/store-media/provenance.py "$MEDIA" "$DD/Build/Products/Debug-iphonesimulator/PullUp.app" "iphone-duo=$DUO"
+      - name: Upload
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: media-duo
+          path: ${{ runner.temp }}/media
+          if-no-files-found: ignore
+
+  release-check:
+    name: Release build has no capture switch
+    runs-on: xcode-27
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Release for the simulator
+        working-directory: native/ios
+        run: |
+          sudo xcode-select -s "$XCODE"
+          brew install xcodegen && xcodegen generate && ./scripts/pin-packages.sh
+          ./scripts/xcodebuild-ci.sh build -project PullUp.xcodeproj -scheme PullUp -configuration Release \
+            -destination "generic/platform=iOS Simulator" -derivedDataPath "$RUNNER_TEMP/dd" \
+            -skipPackagePluginValidation -disableAutomaticPackageResolution CODE_SIGNING_ALLOWED=NO
+      - name: Check
+        run: |
+          APP="$RUNNER_TEMP/dd/Build/Products/Release-iphonesimulator/PullUp.app"
+          mkdir -p "$RUNNER_TEMP/media/release-check"
+          OUT="$RUNNER_TEMP/media/release-check/RESULT.txt"
+          demo=$(grep -r -a -l -- "-PullUpDemo" "$APP" | wc -l | tr -d ' ')
+          capture=$(grep -r -a -l -- "-PullUpStoreCapture" "$APP" | wc -l | tr -d ' ')
+          {
+            echo "commit $GITHUB_SHA, Release configuration, Xcode: $(xcodebuild -version | tr '\n' ' ')"
+            echo "files containing -PullUpDemo (sanity, expected >= 1): $demo"
+            echo "files containing -PullUpStoreCapture (expected 0): $capture"
+          } | tee "$OUT"
+          [ "$demo" -ge 1 ] && [ "$capture" -eq 0 ]
+      - name: Upload
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: media-release-check
+          path: ${{ runner.temp }}/media
+          if-no-files-found: ignore
+
+  publish:
+    name: Encode previews and publish to ci/store-media
+    needs: [iphone, duo, release-check]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    permissions:
+      contents: write # pushes results to the ci/store-media branch
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: media-*
+          path: ${{ runner.temp }}/media
+          merge-multiple: true
+      - name: Encode app previews
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg > /dev/null
+          ffmpeg -version | head -1
+          python3 native/ios/scripts/store-media/encode.py "$RUNNER_TEMP/media"
+      - name: Publish
+        env:
+          MEDIA: ${{ runner.temp }}/media
+        run: |
+          [ -n "$(ls -A "$MEDIA" 2>/dev/null)" ] || { echo "Nothing captured"; exit 0; }
+          # Raw recordings over GitHub's 100 MB file limit stay in the run's artifact only.
+          find "$MEDIA" -path "*/video-raw/*.mov" -size +95M -print -exec sh -c 'mv "$1" "$1.too-big" && echo "$(basename "$1") is over 95 MB; kept in the run artifact only" > "$1.README.txt"' _ {} \;
+          find "$MEDIA" -name "*.too-big" -delete
+          find "$MEDIA" -name "requests" -type d -prune -exec rm -rf {} +
+          BRANCH="ci/store-media"
+          DIR="runs/${GITHUB_RUN_ID}"
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          WORK="$RUNNER_TEMP/media-repo"
+          REMOTE="https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git"
+          git clone --depth 1 --branch "$BRANCH" "$REMOTE" "$WORK" 2>/dev/null || {
+            git init "$WORK"; git -C "$WORK" checkout --orphan "$BRANCH"; git -C "$WORK" remote add origin "$REMOTE"; }
+          mkdir -p "$WORK/$DIR"
+          cp -R "$MEDIA"/. "$WORK/$DIR/"
+          {
+            echo "commit=${GITHUB_SHA}"
+            echo "branch=${GITHUB_REF_NAME}"
+            echo "run_id=${GITHUB_RUN_ID}"
+            echo "run_attempt=${GITHUB_RUN_ATTEMPT}"
+            echo "workflow=${GITHUB_WORKFLOW}"
+          } > "$WORK/$DIR/RUN.txt"
+          echo "$DIR" > "$WORK/LATEST"
+          cd "$WORK"
+          git add -A
+          git commit -q -m "Store media for ${GITHUB_REF_NAME} @ ${GITHUB_SHA::7} (run ${GITHUB_RUN_ID})" || exit 0
+          git push origin "HEAD:$BRANCH"

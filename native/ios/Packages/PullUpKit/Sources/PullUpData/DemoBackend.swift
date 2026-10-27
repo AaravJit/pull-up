@@ -81,6 +81,7 @@ public final class DemoBackend: BackendService, Sendable {
             seed.notifications.append(AppNotification(id: UUID(), kind: .followRequest, actor: ProfileStub(id: DemoSeed.samID, username: "sam.ek9", displayName: "Sam"),
                                                       createdAt: now.addingTimeInterval(-300)))
         }
+        if StoreCapture.isActive { DemoSeed.applyStoreCapture(to: &seed) }
         state = Mutex(seed)
     }
 

@@ -169,7 +169,7 @@ struct ThreadView: View {
             Text("@\(target.peer.username)")
                 .font(ClusterFont.body(.caption))
                 .foregroundStyle(ClusterColor.inkSecondary)
-            if app.isDemo {
+            if app.showsDemoLabels {
                 NoticeStrip("Demo conversation. Replies here are simulated on this device.", tone: .estimate)
             }
             Text("Messages aren't end-to-end encrypted. Pull Up reviews a message only when someone reports it. Locations and routes are never shared here.")

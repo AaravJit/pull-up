@@ -198,12 +198,39 @@ enum DemoSeed {
                              value: (value * scale).rounded(), vehicleTitle: person.3)
         }
         if includeMe, query.vehicleKind != .motorcycle {
-            entries.append(LeaderboardEntry(rank: 0, user: ProfileStub(id: meID, username: "you", displayName: "Demo Driver"),
+            let me = StoreCapture.isActive ? ProfileStub(id: meID, username: captureUsername, displayName: captureDisplayName)
+                : ProfileStub(id: meID, username: "you", displayName: "Demo Driver")
+            entries.append(LeaderboardEntry(rank: 0, user: me,
                                             value: (base[2] * 0.93 * scale).rounded(), vehicleTitle: "1994 Mazda RX-7", isMe: true))
         }
         entries.sort { $0.value > $1.value }
         for i in entries.indices { entries[i].rank = i + 1 }
         return entries
+    }
+}
+
+extension DemoSeed {
+    static let captureUsername = "alex.fd3s"
+    static let captureDisplayName = "Alex"
+
+    /// Store media capture (StoreCapture, debug builds only): the demo
+    /// driver gets an ordinary fictional name instead of "Demo Driver", and
+    /// meets held at named real businesses or circuits move to generic,
+    /// made-up venues. Everything else stays as seeded.
+    static func applyStoreCapture(to s: inout DemoBackend.State) {
+        s.profiles[meID]?.profile.username = captureUsername
+        s.profiles[meID]?.profile.displayName = captureDisplayName
+        let venues: [String: (title: String?, venue: String, address: String?)] = [
+            "Cars & Coffee Arden": ("Saturday Cars & Coffee", "Riverside Lot B", "North Sacramento"),
+            "Elk Grove Bike Night": (nil, "Laguna Plaza", nil),
+            "Thunderhill Open Track": ("Valley Open Track Day", "Valley Motorsport Park", "Willows, CA"),
+        ]
+        for i in s.meets.indices {
+            guard let change = venues[s.meets[i].title] else { continue }
+            if let title = change.title { s.meets[i].title = title }
+            s.meets[i].venueName = change.venue
+            if let address = change.address { s.meets[i].address = address }
+        }
     }
 }
 

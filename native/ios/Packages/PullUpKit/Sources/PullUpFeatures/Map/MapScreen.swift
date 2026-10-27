@@ -123,7 +123,7 @@ public struct MapScreen: View {
                     .foregroundStyle(ClusterColor.ink)
                     .accessibilityAddTraits(.isHeader)
                 Spacer()
-                if app.isDemo { Legend("Demo", color: ClusterColor.estimate) }
+                if app.showsDemoLabels { Legend("Demo", color: ClusterColor.estimate) }
             }
             SwitchBank(Layer.allCases, selection: $layer) { $0.label }
             Text(layer == .meets

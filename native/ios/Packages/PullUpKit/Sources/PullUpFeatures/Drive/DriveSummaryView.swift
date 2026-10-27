@@ -121,9 +121,9 @@ struct DriveSummaryView: View {
                 Spacer()
                 if isStored {
                     // The demo backend has no server checks, so it never claims a verdict.
-                    if app.isDemo {
+                    if app.showsDemoLabels {
                         Legend("Demo · not server-checked", color: ClusterColor.estimate)
-                    } else {
+                    } else if !app.isDemo {
                         ValidationBadge(drive.validationStatus)
                     }
                 }
