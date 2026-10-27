@@ -1,0 +1,24 @@
+{
+ "commit": "276e134032372e9803f4d43197825388f12cbd91",
+ "ref": "claude/store-media",
+ "run_id": "40570241450",
+ "run_attempt": "1",
+ "job": "duo",
+ "runner": {
+  "os": "ProductName:\t\tmacOS\nProductVersion:\t\t27.0.1\nBuildVersion:\t\t26A434",
+  "label": "xcode-27"
+ },
+ "xcode": "Xcode 27.1\nBuild version 27A9275",
+ "app": {
+  "CFBundleIdentifier": null,
+  "CFBundleShortVersionString": null,
+  "CFBundleVersion": null,
+  "DTSDKName": null,
+  "DTPlatformVersion": null,
+  "DTXcode": null,
+  "DTXcodeBuild": null,
+  "PullUpProOffered": null
+ },
+ "configuration": "Debug (simulator); launch arguments -PullUpDemo -PullUpResetDefaults -PullUpStoreCapture -PullUpAppearance dark",
+ "devices": {}
+}
