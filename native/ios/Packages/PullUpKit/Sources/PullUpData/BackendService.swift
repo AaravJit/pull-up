@@ -77,7 +77,15 @@ public protocol BackendService: AnyObject, Sendable {
 
     // Feed
     func feed(_ scope: FeedScope, before: Date?) async throws -> [Post]
+    /// Uploads the draft's media, then publishes the post with all of it at
+    /// once (see `PostPublisher`). Calling it again with the same draft
+    /// returns the same post.
     func createPost(_ post: NewPost) async throws -> Post
+    /// Abandons an unpublished draft and deletes the files it uploaded.
+    func discardPostDraft(_ id: UUID) async
+    /// After the app was closed mid-post: deletes the files of drafts that
+    /// never published. Run at sign-in.
+    func recoverInterruptedPosts() async
     func setLiked(_ liked: Bool, post: UUID) async throws
     func comments(post: UUID) async throws -> [Comment]
     func addComment(_ body: String, post: UUID) async throws -> Comment
@@ -205,13 +213,16 @@ public struct LeaderboardQuery: Hashable, Sendable {
 
 public struct NewPost: Sendable {
     public struct Media: Sendable {
+        /// Names the uploaded file, so a retry recognises what's already up.
+        public var id: UUID
         public var data: Data
         public var type: PostMedia.MediaType
         public var width: Int
         public var height: Int
         public var duration: Double?
 
-        public init(data: Data, type: PostMedia.MediaType, width: Int, height: Int, duration: Double? = nil) {
+        public init(id: UUID = UUID(), data: Data, type: PostMedia.MediaType, width: Int, height: Int, duration: Double? = nil) {
+            self.id = id
             self.data = data
             self.type = type
             self.width = width
@@ -220,6 +231,9 @@ public struct NewPost: Sendable {
         }
     }
 
+    /// The post's id, made once per draft. Submitting the same draft again
+    /// (a double tap, or a retry after a lost response) can't make a second post.
+    public var id: UUID
     public var kind: Post.Kind
     public var caption: String
     public var audience: Audience
@@ -228,7 +242,8 @@ public struct NewPost: Sendable {
     public var driveID: UUID?
     public var media: [Media]
 
-    public init(kind: Post.Kind, caption: String, audience: Audience, vehicleID: UUID? = nil, meetID: UUID? = nil, driveID: UUID? = nil, media: [Media] = []) {
+    public init(id: UUID = UUID(), kind: Post.Kind, caption: String, audience: Audience, vehicleID: UUID? = nil, meetID: UUID? = nil, driveID: UUID? = nil, media: [Media] = []) {
+        self.id = id
         self.kind = kind
         self.caption = caption
         self.audience = audience
@@ -368,6 +383,8 @@ public enum TrackEncoding {
 
 public extension BackendService {
     func handleAuthCallback(_ url: URL) async throws {}
+    func discardPostDraft(_ id: UUID) async {}
+    func recoverInterruptedPosts() async {}
     func followRequests() async throws -> [ProfileStub] { throw BackendError.notConfigured }
     func answerFollowRequest(from id: UserID, accept: Bool) async throws { throw BackendError.notConfigured }
 }

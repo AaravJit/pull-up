@@ -23,7 +23,8 @@ supabase/
                            distance, follow requests; api/ has the two-account API tests.
                            Staging has run 001–014 (2026-10-20), not 015
   functions/               Edge functions: delete-account, send-push (APNs), dm-retention,
-                           verify-subscription, app-store-notifications; _shared/ has Deno tests
+                           post-media-cleanup, verify-subscription, app-store-notifications;
+                           _shared/ has Deno tests
 ```
 
 ## Module layering
@@ -234,8 +235,12 @@ live dashboard says it is replaying a recorded track.
 * `.github/workflows/ios.yml` (macos-26 runners, latest stable Xcode):
   * `PullUpKit tests`: Swift Testing suites for every package module on an
     iOS simulator.
-  * `App build, UI tests, screenshots`: `xcodegen generate`, build, run the
-    UI tests, upload the xcresult and screenshots, and publish the PNGs to
+  * `App build, UI tests, screenshots`: `xcodegen generate`, then
+    `scripts/pin-packages.sh` (package versions come from the committed
+    `native/ios/Package.resolved` and
+    `native/ios/Packages/PullUpKit/Package.resolved`; CI passes
+    `-disableAutomaticPackageResolution`, so it never picks newer ones),
+    build, run the UI tests, upload the xcresult and screenshots, and publish the PNGs to
     the `ci/screenshots` branch (one folder per branch).
   * The app build also runs `PullUpStoreTests` (StoreKit purchases, Ask to
     Buy and expiry against `PullUpPro.storekit`, simulator only) in a step

@@ -15,15 +15,16 @@ PULLUP_SUPABASE_ANON_KEY =
 // Settings > About so a tester can tell which backend a build talks to.
 PULLUP_BACKEND_ENVIRONMENT =
 
-// Privacy policy shown with the Pull Up Pro subscription, WITHOUT the
-// scheme (https is added), e.g. pullup.app/privacy. Required before Pro can
-// be submitted to App Review. Also shown in Settings > About. Empty = no
-// link shown.
-PULLUP_PRIVACY_POLICY =
-
-// Support page shown in Settings > About, WITHOUT the scheme (https is
-// added), e.g. pullup.app/support. Empty = no Support row.
-PULLUP_SUPPORT_URL =
+// Public pages (docs/public, rendered by GitHub; docs/PUBLIC_PAGES_RELEASE.md),
+// WITHOUT the scheme: xcconfig reads "//" as a comment, and the app adds
+// https (LegalLinks). Shown in Settings > About; the privacy policy also
+// with Pull Up Pro. Every build gets these. A GitHub environment variable
+// of the same name (TestFlight workflow) overrides one only when it is set;
+// an empty value = that link isn't shown.
+PULLUP_PRIVACY_POLICY = github.com/AaravJit/pull-up/blob/main/docs/public/privacy.md
+PULLUP_SUPPORT_URL = github.com/AaravJit/pull-up/blob/main/docs/public/support.md
+PULLUP_TERMS_URL = github.com/AaravJit/pull-up/blob/main/docs/public/terms.md
+PULLUP_COMMUNITY_URL = github.com/AaravJit/pull-up/blob/main/docs/public/community.md
 
 // Whether Pull Up Pro is on sale in this build. NO hides every Pro entry
 // point (people who already have Pro keep it and still see it). Set YES once

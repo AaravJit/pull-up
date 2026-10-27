@@ -24,10 +24,14 @@ public struct AccountState: Hashable, Sendable {
     /// Apple's Hide My Email relay. The address is stored by the auth server
     /// only, and Pull Up never shows any email to other people.
     public var usesPrivateRelayEmail: Bool
+    /// Set while a moderator has suspended the account
+    /// (`my_moderation_status`). The server refuses its writes either way.
+    public var suspension: Suspension?
 
     public init(
         id: UserID, username: String, displayName: String, avatarPath: String? = nil,
-        isOnboarded: Bool, signInMethods: [SignInMethod], usesPrivateRelayEmail: Bool = false
+        isOnboarded: Bool, signInMethods: [SignInMethod], usesPrivateRelayEmail: Bool = false,
+        suspension: Suspension? = nil
     ) {
         self.id = id
         self.username = username
@@ -36,6 +40,7 @@ public struct AccountState: Hashable, Sendable {
         self.isOnboarded = isOnboarded
         self.signInMethods = signInMethods
         self.usesPrivateRelayEmail = usesPrivateRelayEmail
+        self.suspension = suspension
     }
 
     /// The username the server assigns before onboarding.
@@ -43,6 +48,33 @@ public struct AccountState: Hashable, Sendable {
 
     public static func isPrivateRelay(_ email: String?) -> Bool {
         email?.lowercased().hasSuffix("@privaterelay.appleid.com") ?? false
+    }
+}
+
+/// A moderator's suspension of the signed-in account. While it lasts the
+/// person can still read, change settings, sign out and delete the account;
+/// posting, commenting, messaging, following, RSVPs and uploads are refused
+/// by the server.
+public struct Suspension: Hashable, Sendable {
+    /// Nil until a moderator lifts it.
+    public var until: Date?
+    /// What the moderator told the person; may be empty.
+    public var reason: String
+
+    public init(until: Date?, reason: String) {
+        self.until = until
+        self.reason = reason
+    }
+
+    public var title: String {
+        guard let until else { return "Your account is suspended" }
+        return "Your account is suspended until \(until.formatted(date: .abbreviated, time: .shortened))"
+    }
+
+    public var message: String {
+        let why = reason.trimmingCharacters(in: .whitespacesAndNewlines)
+        let rest = "You can still look around, change settings, sign out or delete your account, but you can't post, comment, message, follow or RSVP."
+        return why.isEmpty ? rest : "\(why) \(rest)"
     }
 }
 
