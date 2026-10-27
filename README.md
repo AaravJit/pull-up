@@ -1,36 +1,44 @@
-# pull-up
+# Pull Up
 
-A social map and garage app for car and motorcycle enthusiasts.
+**Pull Up is a native iPhone app for drivers and riders.** Its release app is written in Swift and SwiftUI under `native/ios/`. The top-level Expo/React Native code is an **older prototype**, not the iOS build intended for App Store submission.
 
-Expo / React Native (TypeScript) app implementing the Map, Garage, Meets,
-Activity, and You screens designed in Claude Design.
+Product order: **driving first, community second, parts discovery third.** The native app has five tabs: Drive, Map, Feed, Meets, and Garage, with supporting flows for profiles, settings, messages, leaderboards, onboarding, and account deletion. Speed and acceleration are not competitive leaderboard metrics. GPS measurements are estimates, not certified instrumentation.
 
-## Run it
+## Repository map
 
+| Path | Purpose |
+| --- | --- |
+| `native/ios/` | Native SwiftUI app, XcodeGen project specification, app shell and UI tests |
+| `native/ios/Packages/PullUpKit/` | Swift packages for domain, telemetry, data, Core Location, design system and features |
+| `supabase/` | Database migrations, RLS tests, Edge Functions, rollback scripts and API tests |
+| `.github/workflows/ios.yml` | Package tests, iOS simulator tests and CI screenshots |
+| `.github/workflows/testflight.yml` | Release archive / TestFlight path; distinguish unsigned builds from signed uploads |
+| `.github/workflows/supabase-deploy.yml` | Manual, environment-scoped backend dry run or deployment |
+| `docs/PROGRESS.md` and `docs/RELEASE_CHECKLIST.md` | Status and unresolved owner/device work |
+| `src/` | Legacy Expo prototype; **not** the native release app |
+
+## Open the native project
+
+On a Mac with a compatible Xcode toolchain and XcodeGen:
+
+```sh
+cd native/ios
+xcodegen generate
+open PullUp.xcodeproj
 ```
-npm install
-npm start
-```
 
-Then open in Expo Go, or `npm run ios` / `npm run android` with a
-simulator.
+`native/ios/project.yml` is the source of truth for the generated Xcode project. `Config/Base.xcconfig` holds safe defaults; copy `Config/Secrets.example.xcconfig` to the gitignored `Config/Secrets.xcconfig` to configure a personal signed build or a real Supabase backend. **Never commit private API keys, service-role keys, Apple signing material or user data.** The app labels demo data explicitly when no backend is configured.
 
-## Structure
+For reproducible tests, see the iOS and Backend GitHub Actions workflows and `docs/DEVICE_TEST_PLAN.md`. Passing simulator tests is not a substitute for testing Apple sign-in, location recording with the phone locked, notifications, and other device-dependent behavior on a physical iPhone.
 
-- `src/screens/` — the five tab screens (`MapScreen`, `GarageScreen`,
-  `MeetsScreen`, `ActivityScreen`, `YouScreen`)
-- `src/components/` — shared UI: `Avatar`, `ImageSlot` (photo-placeholder
-  stand-in), `GlassPill` (blurred pill chrome), `Sheet` (bottom sheet),
-  `TabBar` (custom bottom nav), map markers/art, icons
-- `src/store.ts` — app state (Zustand): selected map marker, sharing mode,
-  currently-driving vehicle, unread activity count, plus the mock
-  friends/garage/meets data
-- `src/theme.ts` — colors and the Inter font-weight helper
+## Release status
 
-The Map screen's markers are placed at fixed design-canvas coordinates and
-scaled to the device width via `ScaledCanvas` rather than re-derived as a
-flex layout, to stay faithful to the original absolute-position design.
+**Pre-release; production readiness has not been demonstrated.** As of the October 26, 2026 audit of `main` at `2addf202`, the checked-in app marketing version is `0.1.0`. A signed `0.1.0 (233)` staging-backed build was uploaded on October 24, but successful App Store Connect processing and installation were not confirmed in the repository. Version `1.0` changes and other release-critical fixes are under review in separate draft PRs; do not treat those branches as shipped.
 
-Photo slots (map marker plates, meet/vehicle covers) currently render an
-empty placeholder tile — swap `ImageSlot` for a real `<Image>` once photo
-upload is wired up.
+Start with `docs/RELEASE_INTEGRATION_GATES_20261026.md`, `docs/RELEASE_CHECKLIST.md`, and `docs/PROGRESS.md` before making release claims. The public launch requires owner approval and evidence from the actual signed app, hosted backend, and physical-device testing.
+
+The app does **not** advertise CarPlay, verified eBay fitment, live friend locations, or paid Pull Up Pro subscriptions as supported launch features.
+
+## Legacy Expo prototype
+
+The original Expo prototype remains at the root; `npm install` / `npm start` work on that **prototype**, not on the shipping SwiftUI app. Do not send App Store release contributors to it by default.
