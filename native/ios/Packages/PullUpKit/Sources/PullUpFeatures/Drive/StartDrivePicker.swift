@@ -202,23 +202,28 @@ struct StartDrivePicker: View {
     }
 
     private func carousel(cardWidth: CGFloat) -> some View {
-        ScrollViewReader { proxy in
+        // Everything the cards show is worked out here, on the main actor.
+        let cards = choices.map { choice in
+            CarouselCard(choice: choice, vehicle: vehicle(for: choice), isSelected: choice == selection, width: cardWidth)
+        }
+        let taps = CarouselTaps()
+        return ScrollViewReader { proxy in
+            let _ = taps.handle { choice in
+                select(choice)
+                withAnimation(Motion.resolved(Motion.select, reduceMotion: reduceMotion)) {
+                    proxy.scrollTo(choice, anchor: .center)
+                }
+            }
             ScrollView(.horizontal, showsIndicators: false) {
-                // HStack, not LazyHStack. In CI (iOS 26.5 simulator, run
-                // 40165990545) the app trapped on Swift's main-actor check
-                // inside this card builder, called from LazyHStack's sizing
-                // pass for the vertical fixedSize below, off the main queue.
-                // A plain stack builds its few cards during the normal update.
-                HStack(spacing: Space.m) {
-                    ForEach(choices, id: \.self) { choice in
-                        let vehicle = vehicle(for: choice)
-                        VehicleChoiceCard(vehicle: vehicle, isSelected: choice == selection, width: cardWidth) {
-                            select(choice)
-                            withAnimation(Motion.resolved(Motion.select, reduceMotion: reduceMotion)) {
-                                proxy.scrollTo(choice, anchor: .center)
-                            }
-                        }
-                        .id(choice)
+                LazyHStack(spacing: Space.m) {
+                    // Not isolated to the main actor: SwiftUI can call this
+                    // builder from a layout pass off the main thread (CI, iOS
+                    // 26.5 simulator, picker opened in landscape, runs
+                    // 40165990545 and 40384301739), and a main-actor builder
+                    // traps there on Swift's isolation check. It only stores
+                    // plain values; the card is built in CarouselCardItem.body.
+                    ForEach(cards, id: \.choice) { @Sendable card in
+                        CarouselCardItem(card: card, taps: taps)
                     }
                 }
                 .scrollTargetLayout()
@@ -397,6 +402,44 @@ struct StartDrivePicker: View {
                 }
                 if shouldClose, !isStarting { onClose() }
             }
+    }
+}
+
+/// What one carousel card shows, as plain values.
+struct CarouselCard: Hashable, Sendable {
+    let choice: DriveRecorder.Choice
+    let vehicle: Vehicle?
+    let isSelected: Bool
+    let width: CGFloat
+}
+
+/// Where a tapped carousel card reports to. Main-actor isolated, so it can be
+/// handed to the carousel's nonisolated item builder.
+@MainActor
+final class CarouselTaps {
+    private var onSelect: ((DriveRecorder.Choice) -> Void)?
+    nonisolated init() {}
+
+    func handle(_ action: @escaping (DriveRecorder.Choice) -> Void) { onSelect = action }
+    func select(_ choice: DriveRecorder.Choice) { onSelect?(choice) }
+}
+
+/// The carousel's ForEach item. Its init is nonisolated so the item builder
+/// can run anywhere; `body`, which builds the card, runs on the main actor.
+struct CarouselCardItem: View {
+    let card: CarouselCard
+    let taps: CarouselTaps
+
+    nonisolated init(card: CarouselCard, taps: CarouselTaps) {
+        self.card = card
+        self.taps = taps
+    }
+
+    var body: some View {
+        VehicleChoiceCard(vehicle: card.vehicle, isSelected: card.isSelected, width: card.width) {
+            taps.select(card.choice)
+        }
+        .id(card.choice)
     }
 }
 
