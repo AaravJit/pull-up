@@ -20,7 +20,7 @@ TEST_RUNNER_STORE_MEDIA_DIR="$REQ" ./scripts/xcodebuild-ci.sh test-without-build
   -derivedDataPath "$DD" \
   -resultBundlePath "$RUNNER_TEMP/xcresults/$(basename "$OUT")-$TEST-$$.xcresult" \
   -only-testing:"PullUpUITests/StoreMediaUITests/$TEST" \
-  -skipPackagePluginValidation -disableAutomaticPackageResolution \
+  -skipPackagePluginValidation \
   CODE_SIGNING_ALLOWED=NO
 status=$?
 kill "$DAEMON" 2>/dev/null
