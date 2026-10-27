@@ -89,10 +89,15 @@ membership, and nothing below works without it. Note your **Team ID**
    check the version shown under the app's iOS App section before
    submitting.
 3. App Store Connect ▸ the app ▸ App Privacy: answer to match
-   `native/ios/PullUp/PrivacyInfo.xcprivacy`: precise location, email,
-   name, user ID, device ID (push token), photos, messages, other user
-   content and purchase history, all linked to the person, all for app
-   functionality, none for tracking.
+   `native/ios/PullUp/PrivacyInfo.xcprivacy`, which declares 11 data types:
+   precise location, email address, name, contacts, emails or text
+   messages, photos or videos, other user content, user ID, device ID
+   (push token), product interaction and other data types. All are linked
+   to the person and collected for app functionality only; none is used
+   for tracking. There is no purchase history and no search history. The
+   required-reason APIs are UserDefaults (CA92.1) and file timestamps
+   (C617.1). Xcode's privacy report (Organizer ▸ the archive ▸ Generate
+   Privacy Report) has to be made on a Mac; CI can't produce it.
 
 ## 3. App Store Connect API key (**You**)
 

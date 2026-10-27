@@ -141,10 +141,19 @@ TestFlight, stage by stage:
 
 App Store:
 
-- [ ] App Privacy answers, matching `PrivacyInfo.xcprivacy`: precise
-      location, photos or videos, email, name, user ID, device ID (push
-      token), messages, other user content and purchase history, all linked
-      to the user, for app functionality. No tracking.
+- [ ] App Privacy answers, matching `PrivacyInfo.xcprivacy`, which declares
+      11 data types: precise location, email address, name, contacts,
+      emails or text messages, photos or videos, other user content, user
+      ID, device ID (push token), product interaction and other data types.
+      All are linked to the user and collected for app functionality only;
+      none is used for tracking. No purchase history and no search history.
+      Required-reason APIs: UserDefaults (CA92.1) and file timestamps
+      (C617.1).
+- [ ] Xcode privacy report: on a Mac, open the archive in Xcode ▸ Organizer
+      and choose Generate Privacy Report, then check it against the App
+      Privacy answers above. CI can't produce this report (`xcodebuild` has
+      no command for it); the TestFlight workflow only checks that the
+      signed app contains a valid `PrivacyInfo.xcprivacy`.
 - [ ] Review notes: explain background location (only while a drive is
       recording, started by the user; When In Use only, never Always),
       account deletion (Settings ▸ Account ▸ Delete account, server side), and

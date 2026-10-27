@@ -42,6 +42,9 @@ jobs:
             -resultBundlePath "$RUNNER_TEMP/PullUpKit.xcresult" \
             -skipPackagePluginValidation \
             CODE_SIGNING_ALLOWED=NO
+      - name: Print resolved packages (temporary, to pin them)
+        if: always()
+        run: find native/ios/Packages/PullUpKit -name Package.resolved -not -path "*/checkouts/*" -print -exec cat {} \;
       - name: Telemetry replay report
         # The replay scenario tests attach one line each with their measured
         # error (docs/TELEMETRY_VALIDATION.md). Synthetic tracks, not a phone.
@@ -104,6 +107,9 @@ jobs:
             -skip-testing:PullUpStoreTests \
             -skipPackagePluginValidation \
             CODE_SIGNING_ALLOWED=NO
+      - name: Print resolved packages (temporary, to pin them)
+        if: always()
+        run: find native/ios/PullUp.xcodeproj -name Package.resolved -print -exec cat {} \;
       - name: StoreKit tests
         # `xcodebuild test` from the command line doesn't hand the StoreKit
         # configuration to the simulator's storekitd on iOS 26.4 and 26.5, so
