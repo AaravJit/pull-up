@@ -1,0 +1,29 @@
++ screenConfig --display=3 power on
+Screen 3 power state set to on
++ screenConfig --display=1 power off
+Screen 1 power state set to off
+    Power state: On
+    Power state: On
+    Power state: On
+    Power state: On
+    Power state: On
+    Power state: On
+    Power state: On
+    (1) LCD:
+        Pixel Size: {1398, 2034}
+    (2) TVOut:
+        Pixel Size: {720, 480}
+    (3) LCD-1:
+        Pixel Size: {2007, 2853}
+    (4) Wireless:
+        Pixel Size: {720, 480}
+    (5) Resizable:
+        Pixel Size: {7680, 4320}
+    Power state: On
+    Power state: On
+    Power state: On
+    Power state: On
+    Power state: On
+    Power state: On
+    Power state: On
+    Power state: On
