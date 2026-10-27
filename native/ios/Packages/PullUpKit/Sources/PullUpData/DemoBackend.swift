@@ -399,11 +399,15 @@ public final class DemoBackend: BackendService, Sendable {
     public func createPost(_ post: NewPost) async throws -> Post {
         let me = try me()
         let created = Post(
-            authorID: me, kind: post.kind, caption: post.caption, vehicleID: post.vehicleID, meetID: post.meetID,
+            id: post.id, authorID: me, kind: post.kind, caption: post.caption, vehicleID: post.vehicleID, meetID: post.meetID,
             driveID: post.driveID, visibility: post.audience, createdAt: .now
         )
-        state.withLock { $0.posts.append(created) }
-        return created
+        // Same rule as publish_post: the same draft twice is one post.
+        return state.withLock { s in
+            if let existing = s.posts.first(where: { $0.id == post.id }) { return existing }
+            s.posts.append(created)
+            return created
+        }
     }
 
     public func setLiked(_ liked: Bool, post: UUID) async throws {

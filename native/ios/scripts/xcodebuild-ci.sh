@@ -51,7 +51,15 @@ images = report.get("usedImages", [])
 for thread in report.get("threads", []):
     if not thread.get("triggered"):
         continue
-    for frame in thread.get("frames", [])[:30]:
+    frames = thread.get("frames", [])
+    # Which thread and queue crashed, then the top frames and, for a deep
+    # stack, the bottom ones too, which show what started the work.
+    print("  thread:", thread.get("name", ""), "queue:", thread.get("queue", ""), "frames:", len(frames))
+    shown = frames if len(frames) <= 45 else frames[:30] + [None] + frames[-15:]
+    for frame in shown:
+        if frame is None:
+            print("   ...")
+            continue
         image = images[frame.get("imageIndex", 0)].get("name", "?") if images else "?"
         print("  ", image, frame.get("symbol", hex(frame.get("imageOffset", 0))), frame.get("sourceFile", ""), frame.get("sourceLine", ""))
 PY

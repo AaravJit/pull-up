@@ -119,7 +119,7 @@ select is(
   (select coalesce(array_agg(p.proname::text order by p.proname), '{}') from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'private' and p.prosecdef and p.prorettype <> 'trigger'::regtype
      and has_function_privilege('authenticated', p.oid, 'execute')),
-  array['can_read_message', 'can_view_shared', 'dm_path_member', 'drive_visible', 'is_member', 'is_suspended', 'peer_of', 'username_problem', 'within_storage_quota']::text[],
+  array['account_exists', 'can_read_message', 'can_view_shared', 'dm_path_member', 'drive_visible', 'is_member', 'is_suspended', 'peer_of', 'username_problem', 'within_storage_quota']::text[],
   'only reviewed private definer helpers are callable by signed-in users (they answer for the caller only)');
 select is(
   (select coalesce(array_agg(tablename || ':' || policyname order by 1), '{}') from pg_policies

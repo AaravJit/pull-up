@@ -20,8 +20,11 @@ Constraints for driving-task apps (CarPlay Developer Guide, iOS 16+):
 
 ## What's built
 
-`native/ios/PullUp/CarPlaySceneDelegate.swift`, declared in `Info.plist`
-under `CPTemplateApplicationSceneSessionRoleApplication`.
+`native/ios/PullUp/CarPlaySceneDelegate.swift`. It is compiled into every
+build but **not declared** in `Info.plist` until Apple grants the
+entitlement, so the App Store build doesn't claim a CarPlay scene it can't
+show (the TestFlight workflow's provenance check fails a build that
+declares one). Step 3 below adds the declaration back.
 
 * Root: an information template with recording status, vehicle, distance,
   elapsed time and GPS state, refreshed every two seconds.
@@ -33,8 +36,8 @@ under `CPTemplateApplicationSceneSessionRoleApplication`.
   authority, and Apple's guidance discourages duplicating it.
 
 It compiles in every CI build and runs in Xcode's CarPlay simulator
-(I/O ▸ External Displays ▸ CarPlay) once the entitlement is present in the
-signed build.
+(I/O ▸ External Displays ▸ CarPlay) once the scene is declared and the
+entitlement is present in the signed build.
 
 ## Remaining actions (need the Apple Developer account holder)
 
@@ -54,7 +57,31 @@ signed build.
    secret or variable sets it, so workflow builds always use
    `PullUp/PullUp.entitlements` (`Base.xcconfig`). A CarPlay TestFlight
    build needs a pull request that adds the setting to the workflow or
-   changes `Base.xcconfig` first.
+   changes `Base.xcconfig` first. The same pull request adds the scene back
+   to `native/ios/PullUp/Info.plist`, inside `UIApplicationSceneManifest`:
+
+   ```xml
+   <key>UISceneConfigurations</key>
+   <dict>
+       <key>CPTemplateApplicationSceneSessionRoleApplication</key>
+       <array>
+           <dict>
+               <key>UISceneClassName</key>
+               <string>CPTemplateApplicationScene</string>
+               <key>UISceneConfigurationName</key>
+               <string>CarPlay</string>
+               <key>UISceneDelegateClassName</key>
+               <string>$(PRODUCT_MODULE_NAME).CarPlaySceneDelegate</string>
+           </dict>
+       </array>
+   </dict>
+   ```
+
+   and, in `native/ios/scripts/release-provenance.sh`, drops the CarPlay
+   scene check and adds `com.apple.developer.carplay-driving-task` to the
+   allowed entitlements. A Mac build with the
+   CarPlay entitlements file also needs the scene declared to appear in
+   the CarPlay simulator.
 4. Test on a real head unit or a CarPlay-capable aftermarket unit; the
    simulator doesn't exercise the real connection lifecycle.
 

@@ -31,8 +31,9 @@ still to do.
       2026-10-20; `015_follow_requests.sql` (#21) hasn't run there yet.
       The two-account API suite hasn't been rerun there since 2026-10-18.
 - [ ] Deploy edge functions: `supabase functions deploy delete-account send-push
-      dm-retention verify-subscription app-store-notifications`. All five
-      are on staging.
+      dm-retention post-media-cleanup verify-subscription app-store-notifications`.
+      The first five are on staging; `post-media-cleanup` (20261025000200)
+      isn't yet.
 - [ ] Generate a random push webhook secret (`openssl rand -hex 32`) and
       add `PUSH_WEBHOOK_SECRET` as a secret in the GitHub environment
       (`SUPABASE_SETUP.md` §3); the next Supabase deploy run with apply
@@ -105,7 +106,23 @@ still to do.
 
 ## 4. Signing, TestFlight, App Store
 
-- [ ] Create the app record in App Store Connect with the bundle ID.
+- [x] Create the app record in App Store Connect with the bundle ID:
+      "Pull Up – Drive & Meet".
+- [ ] App Store version 1.0. `MARKETING_VERSION` is `1.0` in
+      `native/ios/project.yml`; confirm App Store Connect shows 1.0 for the
+      version being submitted. Build numbers come from
+      `native/ios/scripts/build-number.sh` (above 233, the one upload so
+      far).
+- [ ] App Store Connect ▸ the app ▸ Pricing and Availability: turn off
+      **Make this app available on Mac** (Apple silicon) and **Apple Vision
+      Pro**. The build already opts out
+      (`SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD` and
+      `SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD` are `NO` in `project.yml`),
+      but the store setting is separate.
+- [ ] The submitted build's provenance record (job summary and
+      `PullUp-1.0-<build>-provenance` artifact of its TestFlight run) shows
+      the expected commit on `main`, the `production` environment, and no
+      problems.
 - [ ] Archive: either on a Mac (`xcodegen generate`, open `PullUp.xcodeproj`,
       Product ▸ Archive), or run Actions ▸ TestFlight from `main`, which
       archives with an App Store Connect API key and
@@ -125,10 +142,19 @@ TestFlight, stage by stage:
 
 App Store:
 
-- [ ] App Privacy answers, matching `PrivacyInfo.xcprivacy`: precise
-      location, photos or videos, email, name, user ID, device ID (push
-      token), messages, other user content and purchase history, all linked
-      to the user, for app functionality. No tracking.
+- [ ] App Privacy answers, matching `PrivacyInfo.xcprivacy`, which declares
+      11 data types: precise location, email address, name, contacts,
+      emails or text messages, photos or videos, other user content, user
+      ID, device ID (push token), product interaction and other data types.
+      All are linked to the user and collected for app functionality only;
+      none is used for tracking. No purchase history and no search history.
+      Required-reason APIs: UserDefaults (CA92.1) and file timestamps
+      (C617.1).
+- [ ] Xcode privacy report: on a Mac, open the archive in Xcode ▸ Organizer
+      and choose Generate Privacy Report, then check it against the App
+      Privacy answers above. CI can't produce this report (`xcodebuild` has
+      no command for it); the TestFlight workflow only checks that the
+      signed app contains a valid `PrivacyInfo.xcprivacy`.
 - [ ] Review notes: explain background location (only while a drive is
       recording, started by the user; When In Use only, never Always),
       account deletion (Settings ▸ Account ▸ Delete account, server side), and
@@ -148,7 +174,7 @@ Messages
       Supabase deploy run with apply ticked copies it to the project. Don't
       set it with `supabase secrets set`: a deploy removes any function
       secret that isn't in the environment. Then schedule
-      `dm-retention` daily: enable Integrations ▸ Cron (installs `pg_cron`)
+      `dm-retention` and `post-media-cleanup` daily: enable Integrations ▸ Cron (installs `pg_cron`)
       and Database ▸ Webhooks (installs `pg_net`, which makes the HTTP
       call), store the secret in Vault rather than pasting it into the
       job, and have the job send headers `x-pullup-cron-secret: <value>`
@@ -196,11 +222,16 @@ Pull Up Pro (nothing here is done; prices are placeholders)
       set both the Production and Sandbox URL to
       `https://<project-ref>.supabase.co/functions/v1/app-store-notifications`,
       Version 2. Send a test notification and check the function log shows it.
-- [ ] Publish a privacy policy and set `PULLUP_PRIVACY_POLICY` (without
-      `https://`): in `Secrets.xcconfig` for your own build, or as the
-      GitHub environment variable of the same name for TestFlight builds.
-      App Store Connect asks for a privacy policy URL for every app, not
-      only for Pro. The paywall links Apple's standard Terms of Use.
+- [x] Publish a privacy policy and set `PULLUP_PRIVACY_POLICY` (without
+      `https://`). The public pages are in `docs/public/` (#30), and
+      `native/ios/Config/Base.xcconfig` sets `PULLUP_PRIVACY_POLICY`,
+      `PULLUP_SUPPORT_URL`, `PULLUP_TERMS_URL` and `PULLUP_COMMUNITY_URL` to
+      their GitHub pages for every build (Settings ▸ About lists all four;
+      `LegalLinks` in PullUpFeatures reads them). A GitHub environment
+      variable or `Secrets.xcconfig` overrides one only when set.
+      App Store Connect still needs the complete https URLs typed in
+      (`PUBLIC_PAGES_RELEASE.md`). The paywall links Apple's standard
+      Terms of Use for the subscription.
 - [ ] Sandbox test on a device with a sandbox Apple Account: buy, renew,
       cancel, refund (via the sandbox settings), Ask to Buy, and restore on a
       second phone. Only then submit the products with the app version.
@@ -245,7 +276,9 @@ See `docs/CARPLAY.md`. Request the Driving Task entitlement, enable it on
 the App ID, set `PULLUP_ENTITLEMENTS = PullUp/PullUp-CarPlay.entitlements`
 in `Secrets.xcconfig`. The TestFlight workflow doesn't write that setting,
 so its builds use `PullUp/PullUp.entitlements` (no CarPlay) until a pull
-request changes the workflow or `Base.xcconfig`.
+request changes the workflow or `Base.xcconfig`. That pull request also
+declares the CarPlay scene in `Info.plist` again (`CARPLAY.md` step 3);
+the shipping build declares none.
 
 ## 6. Physical-device testing (cannot be done in a simulator)
 
