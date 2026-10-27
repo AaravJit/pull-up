@@ -74,6 +74,7 @@ public final class AppModel {
     init(options: LaunchOptions, appleCredentials: any AppleCredentialChecking, store: (any StoreClient)? = nil) {
         self.options = options
         self.appleCredentials = appleCredentials
+        Self.keepMediaOffDisk()
         let defaults = UserDefaults.standard
         if options.resetDefaults, let domain = Bundle.main.bundleIdentifier {
             defaults.removePersistentDomain(forName: domain)
@@ -309,9 +310,17 @@ public final class AppModel {
         await apply(nil)
     }
 
-    /// Photos are fetched through URLSession.shared from signed URLs stored
-    /// with a one-year cache lifetime, so copies sit in the app's Caches
-    /// folder. They go on sign-out and account deletion.
+    /// Photos are fetched through URLSession.shared (AsyncImage) from signed
+    /// URLs stored with a one-year cache lifetime. Signed URLs change, so a
+    /// disk copy is never reused across launches; keeping the shared cache
+    /// in memory means no copy of anyone's photos is left in Caches.
+    static func keepMediaOffDisk() {
+        guard URLCache.shared.diskCapacity > 0 else { return }
+        URLCache.shared.removeAllCachedResponses() // whatever an earlier build wrote
+        URLCache.shared = URLCache(memoryCapacity: 32 * 1024 * 1024, diskCapacity: 0, directory: nil)
+    }
+
+    /// Drops the in-memory copies on sign-out and account deletion.
     static func clearMediaCache(_ cache: URLCache = .shared) {
         cache.removeAllCachedResponses()
         cache.removeCachedResponses(since: .distantPast)

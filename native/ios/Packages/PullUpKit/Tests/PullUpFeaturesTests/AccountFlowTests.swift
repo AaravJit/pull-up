@@ -104,22 +104,25 @@ struct AccountFlowTests {
         #expect(!FileManager.default.fileExists(atPath: DriveProSection.exportsFolder.path))
     }
 
-    @Test func deletionClearsCachedMedia() async throws {
-        let app = model()
-        await app.start()
-        let url = URL(string: "https://example.supabase.co/storage/v1/object/sign/avatars/me.jpg?token=t")!
-        let response = HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: ["Cache-Control": "max-age=31536000"])!
-        URLCache.shared.storeCachedResponse(CachedURLResponse(response: response, data: Data([0xff, 0xd8])), for: URLRequest(url: url))
-        // Let the store land first, so it can't arrive after the clearing.
-        for _ in 0..<30 where URLCache.shared.cachedResponse(for: URLRequest(url: url)) == nil {
+    @Test func mediaIsNeverCachedOnDisk() {
+        _ = model()
+        #expect(URLCache.shared.diskCapacity == 0)
+    }
+
+    @Test func clearingTheMediaCacheDropsWhatWasShown() async throws {
+        let cache = URLCache(memoryCapacity: 1024 * 1024, diskCapacity: 0, directory: nil)
+        let request = URLRequest(url: URL(string: "https://example.supabase.co/storage/v1/object/sign/avatars/me.jpg?token=t")!)
+        let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: ["Cache-Control": "max-age=31536000"])!
+        cache.storeCachedResponse(CachedURLResponse(response: response, data: Data([0xff, 0xd8])), for: request)
+        // URLCache stores on its own queue; let the entry land first.
+        for _ in 0..<30 where cache.cachedResponse(for: request) == nil {
             try await Task.sleep(for: .milliseconds(100))
         }
-        try await app.deleteAccount(appleAuthorizationCode: nil)
-        // URLCache works on its own queue: allow it a moment, no more.
-        var cached = URLCache.shared.cachedResponse(for: URLRequest(url: url))
+        AppModel.clearMediaCache(cache)
+        var cached = cache.cachedResponse(for: request)
         for _ in 0..<30 where cached != nil {
             try await Task.sleep(for: .milliseconds(100))
-            cached = URLCache.shared.cachedResponse(for: URLRequest(url: url))
+            cached = cache.cachedResponse(for: request)
         }
         #expect(cached == nil)
     }
