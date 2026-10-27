@@ -1,0 +1,109 @@
+{
+ "commit": "f1d8382d2bbcb1c9158ffb4c08eba370ad14324c",
+ "ref": "claude/store-media",
+ "run_id": "40596838804",
+ "run_attempt": "1",
+ "job": "iphone",
+ "runner": {
+  "os": "ProductName:\t\tmacOS\nProductVersion:\t\t27.0.1\nBuildVersion:\t\t26A434",
+  "label": "xcode-27"
+ },
+ "xcode": "Xcode 27.1\nBuild version 27A9275",
+ "app": {
+  "CFBundleIdentifier": "app.pullup.ios",
+  "CFBundleShortVersionString": "1.0",
+  "CFBundleVersion": "1",
+  "DTSDKName": "iphonesimulator27.1",
+  "DTPlatformVersion": "27.1",
+  "DTXcode": "2710",
+  "DTXcodeBuild": "27A9275",
+  "PullUpProOffered": "NO"
+ },
+ "configuration": "Debug (simulator); launch arguments -PullUpDemo -PullUpResetDefaults -PullUpStoreCapture -PullUpAppearance dark",
+ "devices": {
+  "iphone-pro": {
+   "udid": "DB5F30AC-15A2-4497-9C0B-12F70A3C1241",
+   "name": "Store iPhone Pro",
+   "device_type": "com.apple.CoreSimulator.SimDeviceType.iPhone-18-Pro",
+   "runtime": "com.apple.CoreSimulator.SimRuntime.iOS-27-0",
+   "ios": "27.0",
+   "ios_build": "24A434",
+   "screens": [
+    {
+     "id": 1,
+     "name": "LCD",
+     "pixels": [
+      1206,
+      2622
+     ]
+    },
+    {
+     "id": 2,
+     "name": "TVOut",
+     "pixels": [
+      720,
+      480
+     ]
+    },
+    {
+     "id": 3,
+     "name": "Wireless",
+     "pixels": [
+      720,
+      480
+     ]
+    },
+    {
+     "id": 4,
+     "name": "Resizable",
+     "pixels": [
+      7680,
+      4320
+     ]
+    }
+   ]
+  },
+  "iphone-pro-max": {
+   "udid": "99E8742F-DAF6-4D19-8AFB-1A8E802F2C57",
+   "name": "Store iPhone Pro Max",
+   "device_type": "com.apple.CoreSimulator.SimDeviceType.iPhone-18-Pro-Max",
+   "runtime": "com.apple.CoreSimulator.SimRuntime.iOS-27-0",
+   "ios": "27.0",
+   "ios_build": "24A434",
+   "screens": [
+    {
+     "id": 1,
+     "name": "LCD",
+     "pixels": [
+      1320,
+      2868
+     ]
+    },
+    {
+     "id": 2,
+     "name": "TVOut",
+     "pixels": [
+      720,
+      480
+     ]
+    },
+    {
+     "id": 3,
+     "name": "Wireless",
+     "pixels": [
+      720,
+      480
+     ]
+    },
+    {
+     "id": 4,
+     "name": "Resizable",
+     "pixels": [
+      7680,
+      4320
+     ]
+    }
+   ]
+  }
+ }
+}

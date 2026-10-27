@@ -1,0 +1,10 @@
++ screenConfig --display=3 power on
+Screen 3 power state set to on
++ screenConfig --display=1 power off
+Screen 1 power state set to off
++ restart the simulator so SpringBoard starts in this configuration
+Device already booted, nothing to do.
+
+display 2007x2853 power On
+display 1398x2034 power On
+SpringBoard crash reports in the last 3 minutes: 1

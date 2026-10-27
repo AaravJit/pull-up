@@ -1,0 +1,3 @@
+commit f1d8382d2bbcb1c9158ffb4c08eba370ad14324c, Release configuration, Xcode: Xcode 27.1 Build version 27A9275 
+files containing -PullUpResetDefaults (control, expected >= 1): 1
+files containing -PullUpStoreCapture (expected 0): 0
