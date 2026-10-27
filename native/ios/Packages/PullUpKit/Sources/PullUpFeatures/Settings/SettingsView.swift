@@ -276,22 +276,20 @@ struct SettingsView: View {
             SpecRow(label: "Version", value: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "–")
             SpecRow(label: "Build", value: Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "–")
             SpecRow(label: "Data", value: app.isDemo ? "Demo (on this device only)" : serverName)
-            if let policy = ProLinks.privacy {
-                LinkRow(label: "Privacy Policy", destination: policy)
-                    .accessibilityIdentifier("privacy-policy")
-            }
-            if let support = Self.supportURL {
-                LinkRow(label: "Support", destination: support)
-                    .accessibilityIdentifier("support")
+            // Privacy Policy, Support, Terms, Community Guidelines; a page
+            // whose build setting is empty is left out.
+            ForEach(LegalLinks.Page.allCases, id: \.self) { page in
+                if let url = LegalLinks.url(for: page) {
+                    LinkRow(label: page.title, destination: url)
+                        .accessibilityIdentifier(page == .privacy ? "privacy-policy" : page.rawValue)
+                }
             }
         }
     }
 
     /// Set per build (`PULLUP_SUPPORT_URL`, without the scheme), the same
     /// way as the privacy policy; nil when unset.
-    static var supportURL: URL? {
-        ProLinks.privacyURL(from: Bundle.main.object(forInfoDictionaryKey: "PullUpSupportURL") as? String)
-    }
+    static var supportURL: URL? { LegalLinks.support }
 
     /// Staging builds say so, so testers know their data isn't production's.
     private var serverName: String {

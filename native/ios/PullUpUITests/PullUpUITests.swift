@@ -166,6 +166,10 @@ final class PullUpUITests: XCTestCase {
         app.swipeUp()
         settle()
         snap("17-settings-privacy")
+        // The public pages from Base.xcconfig reach the app (LegalLinks).
+        for id in ["privacy-policy", "support", "terms", "community"] {
+            XCTAssertTrue(element(app, id).exists, "Settings ▸ About should link \(id)")
+        }
 
         tab(app, "Meets")
         settle(1.5)
