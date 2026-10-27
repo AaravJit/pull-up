@@ -40,11 +40,8 @@ jobs:
             -scheme PullUpKit-Package \
             -destination "id=$SIM" \
             -resultBundlePath "$RUNNER_TEMP/PullUpKit.xcresult" \
-            -skipPackagePluginValidation \
+            -skipPackagePluginValidation -disableAutomaticPackageResolution \
             CODE_SIGNING_ALLOWED=NO
-      - name: Print resolved packages (temporary, to pin them)
-        if: always()
-        run: find native/ios/Packages/PullUpKit -name Package.resolved -not -path "*/checkouts/*" -print -exec cat {} \;
       - name: Telemetry replay report
         # The replay scenario tests attach one line each with their measured
         # error (docs/TELEMETRY_VALIDATION.md). Synthetic tracks, not a phone.
@@ -85,10 +82,13 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/Library/Developer/Xcode/DerivedData/**/SourcePackages
-          key: spm-app-${{ runner.os }}-${{ hashFiles('native/ios/Packages/PullUpKit/Package.swift', 'native/ios/project.yml') }}
+          key: spm-app-${{ runner.os }}-${{ hashFiles('native/ios/Package.resolved', 'native/ios/Packages/PullUpKit/Package.swift', 'native/ios/project.yml') }}
       - name: Generate project
         working-directory: native/ios
-        run: xcodegen generate
+        # pin-packages.sh puts the committed package versions into the
+        # generated project; -disableAutomaticPackageResolution below makes
+        # xcodebuild use exactly those.
+        run: xcodegen generate && ./scripts/pin-packages.sh
       - name: Build and run UI tests
         working-directory: native/ios
         env:
@@ -105,11 +105,8 @@ jobs:
             -destination "id=$SIM" \
             -resultBundlePath "$RUNNER_TEMP/PullUp.xcresult" \
             -skip-testing:PullUpStoreTests \
-            -skipPackagePluginValidation \
+            -skipPackagePluginValidation -disableAutomaticPackageResolution \
             CODE_SIGNING_ALLOWED=NO
-      - name: Print resolved packages (temporary, to pin them)
-        if: always()
-        run: find native/ios/PullUp.xcodeproj -name Package.resolved -print -exec cat {} \;
       - name: StoreKit tests
         # `xcodebuild test` from the command line doesn't hand the StoreKit
         # configuration to the simulator's storekitd on iOS 26.4 and 26.5, so
@@ -127,7 +124,7 @@ jobs:
             -destination "id=$SIM" \
             -resultBundlePath "$RUNNER_TEMP/PullUpStore.xcresult" \
             -only-testing:PullUpStoreTests \
-            -skipPackagePluginValidation \
+            -skipPackagePluginValidation -disableAutomaticPackageResolution \
             CODE_SIGNING_ALLOWED=NO
       - name: Upload screenshots
         if: always()

@@ -58,7 +58,8 @@ jobs:
       - run: brew install xcodegen
       - name: Generate project
         working-directory: native/ios
-        run: xcodegen generate
+        # Pinned package versions (native/ios/Package.resolved), used as is.
+        run: xcodegen generate && ./scripts/pin-packages.sh
       - name: Pick the build number
         id: version
         run: |
@@ -72,7 +73,7 @@ jobs:
         run: |
           ./scripts/xcodebuild-ci.sh archive -project PullUp.xcodeproj -scheme PullUp -configuration Release \
             -destination generic/platform=iOS -archivePath "$RUNNER_TEMP/PullUp.xcarchive" \
-            -skipPackagePluginValidation CODE_SIGNING_ALLOWED=NO \
+            -skipPackagePluginValidation -disableAutomaticPackageResolution CODE_SIGNING_ALLOWED=NO \
             CURRENT_PROJECT_VERSION=${{ steps.version.outputs.build }}
       - name: Check the archive
         run: |
@@ -180,6 +181,7 @@ jobs:
           mkdir -p "$RUNNER_TEMP/private_keys"
           printf '%s\n' "$ASC_PRIVATE_KEY" > "$RUNNER_TEMP/private_keys/AuthKey_$ASC_KEY_ID.p8"
           xcodegen generate
+          ./scripts/pin-packages.sh
 
       - name: Pick the build number
         id: version
@@ -196,7 +198,7 @@ jobs:
         run: |
           ./scripts/xcodebuild-ci.sh archive -project PullUp.xcodeproj -scheme PullUp -configuration Release \
             -destination generic/platform=iOS -archivePath "$RUNNER_TEMP/PullUp.xcarchive" \
-            -skipPackagePluginValidation -allowProvisioningUpdates \
+            -skipPackagePluginValidation -disableAutomaticPackageResolution -allowProvisioningUpdates \
             -authenticationKeyPath "$RUNNER_TEMP/private_keys/AuthKey_$ASC_KEY_ID.p8" \
             -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
             CURRENT_PROJECT_VERSION=${{ steps.version.outputs.build }}

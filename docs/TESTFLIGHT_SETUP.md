@@ -246,6 +246,7 @@ dSYMs artifact `PullUp-0.1.0-233-dSYMs`, delivery UUID
 
 | Message | Cause | Fix |
 | --- | --- | --- |
+| "a resolved file is required" or "out-of-date resolved file" | `native/ios/Package.resolved` is missing or no longer matches the package requirements | update the pins as `native/ios/scripts/pin-packages.sh` explains and commit both `Package.resolved` files |
 | "The staging environment is missing: …" | a secret or variable from step 4 isn't set | add it |
 | "Branch … is not allowed to deploy to staging" | the run was started from a branch other than `main` | run it from `main` (step 5) |
 | "No profiles for 'app.pullup.ios' were found" or a certificate error | the API key isn't Admin, or the App ID is missing | step 3 role, step 2.1 |
