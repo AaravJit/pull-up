@@ -1,0 +1,43 @@
+{
+ "source": "video-raw/P3-community.mov",
+ "source_size": [
+  1398,
+  2034
+ ],
+ "source_seconds": 41.412,
+ "file": "video-upload/P3-community.mp4",
+ "size": [
+  886,
+  1920
+ ],
+ "seconds": 29.5,
+ "fps": "30/1",
+ "codec": "h264",
+ "profile": "High",
+ "level": 40,
+ "video_bit_rate": 10963352,
+ "audio": [
+  {
+   "codec": "aac",
+   "channels": 2,
+   "sample_rate": "48000",
+   "bit_rate": 2277
+  }
+ ],
+ "bytes": 40469587,
+ "geometry": "scaled 1398x2034 -> 886x1290 (uniform), centred on a 886x1920 black frame",
+ "checks": {
+  "size 886x1920": true,
+  "codec h264": true,
+  "High profile": true,
+  "level <= 4.0": true,
+  "progressive": true,
+  "30 fps": true,
+  "video 10-12 Mbps": true,
+  "duration 15-30 s": true,
+  "stereo AAC 48 kHz": true,
+  "audio AAC-LC, 256 kbps target": true,
+  "<= 500 MB": true
+ },
+ "compliant": true
+}
