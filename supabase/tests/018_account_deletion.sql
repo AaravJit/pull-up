@@ -38,7 +38,13 @@ select is(
   0, 'every foreign key to an account cascades or is cleared when the account is deleted');
 
 -- Columns that hold an account id without a foreign key would survive the
--- delete. Only these are known, and none holds personal data.
+-- delete. Only these are known:
+-- * profiles.id is the account itself.
+-- * private.moderation_audit (moderation PR) keeps actor and subject ids on
+--   purpose: it is the append-only record of moderator actions, kept two
+--   years and disclosed in the privacy policy. The ids point at nothing once
+--   the account is gone. A foreign key would either block deletion or
+--   rewrite the append-only log.
 select is(
   (select array_agg(format('%s.%s', a.attrelid::regclass, a.attname) order by 1)
      from pg_attribute a
@@ -48,7 +54,9 @@ select is(
       and a.atttypid = 'uuid'::regtype
       and a.attname ~ '(^|_)(user|owner|author|sender|recipient|actor|host|reporter|subject|follower|followee|blocker|blocked|created_by|user_a|user_b|moderator)(_id)?$'
       and not exists (select 1 from pg_constraint c where c.contype = 'f' and c.conrelid = a.attrelid and a.attnum = any(c.conkey))
-      and not (t.relname = 'profiles' and a.attname = 'id')),
+      and not (t.relname = 'profiles' and a.attname = 'id')
+      and not (t.relnamespace = 'private'::regnamespace and t.relname = 'moderation_audit'
+               and a.attname in ('actor_id', 'subject_id'))),
   null::text[], 'no account id column without a foreign key');
 
 -- Zed's data, everywhere it can be, as the app would create it ------------
