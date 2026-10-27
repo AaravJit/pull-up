@@ -15,6 +15,9 @@ public struct RootView: View {
         let theme = app.themeStore.theme
         VStack(spacing: 0) {
             if app.isDemo { DemoStrip() }
+            if case .signedIn = app.phase, let suspension = app.account?.suspension {
+                SuspendedStrip(suspension: suspension)
+            }
             Group {
                 switch app.phase {
                 case .launching:

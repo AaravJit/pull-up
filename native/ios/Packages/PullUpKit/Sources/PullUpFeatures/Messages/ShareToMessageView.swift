@@ -119,6 +119,7 @@ struct VehicleGlanceView: View {
     @State private var conversation: ConversationTarget?
     @State private var busy = false
     @State private var error: String?
+    @State private var reporting = false
 
     var body: some View {
         NavigationStack {
@@ -164,6 +165,22 @@ struct VehicleGlanceView: View {
             .clusterNavigation(vehicle.displayName)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } }
+                if owner.id != app.userID {
+                    ToolbarItem(placement: .primaryAction) {
+                        Button { reporting = true } label: { Label("Report", systemImage: "flag") }
+                            .accessibilityIdentifier("report-vehicle")
+                    }
+                }
+            }
+            .sheet(isPresented: $reporting) {
+                // Name, description, mods and photos are copied for review.
+                ReportPersonView(
+                    person: owner,
+                    question: "What's wrong with this \(vehicle.kind == .car ? "car" : "bike")?",
+                    content: ReportedContent(.vehicle, id: vehicle.id),
+                    onBlocked: { dismiss() }
+                )
+                .clusterTheme(app.themeStore.theme)
             }
             .navigationDestination(item: $conversation) { ThreadView(target: $0) }
         }

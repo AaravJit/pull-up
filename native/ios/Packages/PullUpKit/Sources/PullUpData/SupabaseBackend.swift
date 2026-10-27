@@ -29,12 +29,15 @@ public final class SupabaseBackend: BackendService, @unchecked Sendable {
     public let client: SupabaseClient
     public var mode: BackendMode { .live }
     private let urlCache = SignedURLCache()
+    private let publisher: PostPublisher
 
     public init(configuration: BackendConfiguration) {
-        client = SupabaseClient(
+        let client = SupabaseClient(
             supabaseURL: configuration.url, supabaseKey: configuration.anonKey,
             options: SupabaseClientOptions(auth: .init(storage: SessionKeychain()))
         )
+        self.client = client
+        publisher = PostPublisher(transport: SupabasePostTransport(client: client), journal: FilePostUploadJournal.standard())
     }
 
     private func uid() async throws -> UserID {
@@ -80,16 +83,32 @@ public final class SupabaseBackend: BackendService, @unchecked Sendable {
     public func deleteAccount(appleAuthorizationCode: String?) async throws -> AccountDeletion {
         struct Body: Encodable { let apple_authorization_code: String? }
         struct Result: Decodable { let deleted: Bool; let apple_revoked: Bool?; let apple_reason: String? }
-        let result: Result = try await client.functions.invoke(
-            "delete-account",
-            options: FunctionInvokeOptions(method: .post, body: Body(apple_authorization_code: appleAuthorizationCode))
-        )
+        let result: Result
+        do {
+            result = try await client.functions.invoke(
+                "delete-account",
+                options: FunctionInvokeOptions(method: .post, body: Body(apple_authorization_code: appleAuthorizationCode))
+            )
+        } catch let FunctionsError.httpError(code, data) {
+            // Nothing is signed out: the account still exists, and trying
+            // again (or the server's own retry) finishes the deletion.
+            throw Self.deletionFailure(status: code, body: data)
+        }
         try? await client.auth.signOut()
         switch result.apple_revoked {
         case nil: return AccountDeletion(apple: .notApplicable)
         case true?: return AccountDeletion(apple: .revoked)
         case false?: return AccountDeletion(apple: .notRevoked(reason: result.apple_reason ?? "unknown"))
         }
+    }
+
+    /// The message delete-account sent with a failure, or a plain one.
+    static func deletionFailure(status: Int, body: Data) -> BackendError {
+        struct Failure: Decodable { let message: String? }
+        if let message = (try? JSONDecoder().decode(Failure.self, from: body))?.message, !message.isEmpty {
+            return .server(message)
+        }
+        return .server("Your account couldn't be deleted right now (error \(status)). Try again in a minute.")
     }
 
     // MARK: Account
@@ -100,10 +119,15 @@ public final class SupabaseBackend: BackendService, @unchecked Sendable {
         let row: Row = try await client.from("profiles").select("username, display_name, avatar_path, onboarded_at")
             .eq("id", value: user.id).single().execute().value
         let methods = (user.identities ?? []).compactMap { AccountState.SignInMethod(rawValue: $0.provider) }
+        // A server without the moderation migration (or offline) reads as not
+        // suspended; the server still refuses a suspended account's writes.
+        struct Moderation: Decodable { let suspended: Bool; let suspended_until: Date?; let reason: String? }
+        let moderation = try? await client.rpc("my_moderation_status").execute().value as Moderation
         return AccountState(
             id: user.id, username: row.username, displayName: row.display_name, avatarPath: row.avatar_path,
             isOnboarded: row.onboarded_at != nil, signInMethods: methods,
-            usesPrivateRelayEmail: AccountState.isPrivateRelay(user.email)
+            usesPrivateRelayEmail: AccountState.isPrivateRelay(user.email),
+            suspension: moderation.flatMap { $0.suspended ? Suspension(until: $0.suspended_until, reason: $0.reason ?? "") : nil }
         )
     }
 
@@ -200,10 +224,9 @@ public final class SupabaseBackend: BackendService, @unchecked Sendable {
     public func searchProfiles(_ query: String) async throws -> [ProfileStub] {
         let q = query.trimmingCharacters(in: .whitespaces).lowercased()
         guard q.count >= 2 else { return [] }
-        return try await client.from("profiles")
-            .select("id, username, display_name, avatar_path")
-            .ilike("username", pattern: "\(q)%")
-            .limit(20).execute().value
+        // An RPC (POST body), not a filtered GET, so the term isn't in a
+        // request URL the API gateway logs. Same columns, RLS and limit.
+        return try await client.rpc("search_profiles", params: ["p_prefix": q]).execute().value
     }
 
     // MARK: Privacy
@@ -362,32 +385,17 @@ public final class SupabaseBackend: BackendService, @unchecked Sendable {
 
     public func createPost(_ post: NewPost) async throws -> Post {
         let me = try await uid()
-        let id = UUID()
-        struct Row: Encodable {
-            let id: UUID; let author_id: UUID; let kind: Post.Kind; let caption: String
-            let vehicle_id: UUID?; let meet_id: UUID?; let drive_id: UUID?; let visibility: Audience
-        }
-        try await client.from("posts").insert(Row(
-            id: id, author_id: me, kind: post.kind, caption: post.caption, vehicle_id: post.vehicleID,
-            meet_id: post.meetID, drive_id: post.driveID, visibility: post.audience
-        )).execute()
-        struct MediaRow: Encodable {
-            let post_id: UUID; let storage_path: String; let media_type: PostMedia.MediaType
-            let width: Int; let height: Int; let duration_s: Double?; let position: Int
-        }
-        for (index, media) in post.media.enumerated() {
-            let ext = media.type == .video ? "mp4" : "jpg"
-            let path = "\(me.uuidString.lowercased())/\(id.uuidString.lowercased())/\(index).\(ext)"
-            try await client.storage.from(MediaBucket.postMedia.rawValue).upload(
-                path, data: media.data,
-                options: FileOptions(cacheControl: "31536000", contentType: media.type == .video ? "video/mp4" : "image/jpeg")
-            )
-            try await client.from("post_media").insert(MediaRow(
-                post_id: id, storage_path: path, media_type: media.type, width: media.width, height: media.height,
-                duration_s: media.duration, position: index
-            )).execute()
-        }
+        let id = try await publisher.publish(post, author: me)
         return try await client.from("posts").select(Self.postColumns).eq("id", value: id).single().execute().value
+    }
+
+    public func discardPostDraft(_ id: UUID) async {
+        await publisher.discard(id)
+    }
+
+    public func recoverInterruptedPosts() async {
+        guard let me = await currentUserID() else { return }
+        await publisher.recoverInterrupted(author: me)
     }
 
     public func setLiked(_ liked: Bool, post: UUID) async throws {
@@ -703,7 +711,8 @@ public final class SupabaseBackend: BackendService, @unchecked Sendable {
     static func messagingMessage(_ error: PostgrestError) -> String {
         switch error.code {
         case "54000":
-            if error.message.contains("reports") { return "You've sent a lot of reports today. Try again tomorrow." }
+            if error.message.contains("reports today") { return "You've sent a lot of reports today. Try again tomorrow." }
+            if error.message.contains("reports") { return "You've sent a lot of reports in a short time. Try again in an hour." }
             return error.message.contains("accept") ? "Wait for them to accept your request before sending more." : "You're sending a lot right now. Try again in a minute."
         case "42501":
             if error.message.contains("paused") { return "Messaging is paused on your account." }
@@ -782,6 +791,37 @@ private func conversationID(of action: AnyAction) -> UUID? {
     case let .insert(insert): insert.record["conversation_id"]?.stringValue.flatMap(UUID.init(uuidString:))
     case let .update(update): update.record["conversation_id"]?.stringValue.flatMap(UUID.init(uuidString:))
     case .delete: nil
+    }
+}
+
+/// Post uploads and `publish_post` (migration 20261025000200) for `PostPublisher`.
+struct SupabasePostTransport: PostUploadTransport, @unchecked Sendable {
+    // `SupabaseClient` is thread-safe.
+    let client: SupabaseClient
+
+    func upload(path: String, data: Data, contentType: String) async throws {
+        // upsert: an upload that timed out may have reached storage anyway.
+        try await client.storage.from(MediaBucket.postMedia.rawValue).upload(
+            path, data: data, options: FileOptions(cacheControl: "31536000", contentType: contentType, upsert: true)
+        )
+    }
+
+    func remove(paths: [String]) async throws {
+        _ = try await client.storage.from(MediaBucket.postMedia.rawValue).remove(paths: paths)
+    }
+
+    func publish(_ publication: PostPublication) async throws -> UUID {
+        do {
+            return try await client.rpc("publish_post", params: publication).execute().value
+        } catch let error as PostgrestError where error.code == "P0002" {
+            throw PostPublishError.mediaMissing
+        }
+    }
+
+    func postExists(_ id: UUID) async throws -> Bool {
+        struct Row: Decodable { let id: UUID }
+        let rows: [Row] = try await client.from("posts").select("id").eq("id", value: id).execute().value
+        return !rows.isEmpty
     }
 }
 

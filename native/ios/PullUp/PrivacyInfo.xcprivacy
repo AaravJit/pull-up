@@ -2,8 +2,13 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!--
   Pull Up's privacy manifest. App Store Connect reads it at upload; keep it in
-  step with the App Privacy answers in App Store Connect
-  (docs/TESTFLIGHT_SETUP.md). No tracking, no third-party analytics or ads.
+  step with the App Privacy answers in App Store Connect and with
+  docs/submission/PRIVACY_INVENTORY.md, which gives the source of each entry.
+  No tracking, no third-party analytics, ads or crash reporting.
+  Search History is not listed: profile search is an RPC whose term travels
+  in the request body, which provider logs don't keep (20261025000350).
+  Purchase History is not listed: Pull Up Pro is not offered in this build
+  (PULLUP_PRO_OFFERED = NO). Add it back before Pro goes on sale.
 -->
 <plist version="1.0">
 <dict>
@@ -14,7 +19,7 @@
 	<key>NSPrivacyAccessedAPITypes</key>
 	<array>
 		<dict>
-			<!-- Theme, last-used vehicle and the in-progress drive's recovery state. -->
+			<!-- App-only preferences: theme, units, dashboard layout, last-used vehicle. -->
 			<key>NSPrivacyAccessedAPIType</key>
 			<string>NSPrivacyAccessedAPICategoryUserDefaults</string>
 			<key>NSPrivacyAccessedAPITypeReasons</key>
@@ -22,11 +27,22 @@
 				<string>CA92.1</string>
 			</array>
 		</dict>
+		<dict>
+			<!-- supabase-swift Storage reads the size of files in the app container
+			     (FileManager.attributesOfItem) when it builds an upload. No timestamps
+			     leave the device. -->
+			<key>NSPrivacyAccessedAPIType</key>
+			<string>NSPrivacyAccessedAPICategoryFileTimestamp</string>
+			<key>NSPrivacyAccessedAPITypeReasons</key>
+			<array>
+				<string>C617.1</string>
+			</array>
+		</dict>
 	</array>
 	<key>NSPrivacyCollectedDataTypes</key>
 	<array>
 		<dict>
-			<!-- Drive routes and speeds, uploaded to the person's account. -->
+			<!-- Drive routes (raw GPS track, owner-only), the derived shared route, privacy-zone centres and meet venue coordinates. -->
 			<key>NSPrivacyCollectedDataType</key>
 			<string>NSPrivacyCollectedDataTypePreciseLocation</string>
 			<key>NSPrivacyCollectedDataTypeLinked</key>
@@ -39,7 +55,7 @@
 			</array>
 		</dict>
 		<dict>
-			<!-- Sign in with Apple address (often a private relay address). -->
+			<!-- Sign in with Apple address (often a private relay address), or the email of an email sign-in account. -->
 			<key>NSPrivacyCollectedDataType</key>
 			<string>NSPrivacyCollectedDataTypeEmailAddress</string>
 			<key>NSPrivacyCollectedDataTypeLinked</key>
@@ -52,7 +68,7 @@
 			</array>
 		</dict>
 		<dict>
-			<!-- Display name. -->
+			<!-- Display name, prefilled from the name Sign in with Apple shares, if any. -->
 			<key>NSPrivacyCollectedDataType</key>
 			<string>NSPrivacyCollectedDataTypeName</string>
 			<key>NSPrivacyCollectedDataTypeLinked</key>
@@ -65,9 +81,9 @@
 			</array>
 		</dict>
 		<dict>
-			<!-- Account id. -->
+			<!-- Social graph: follows, follow requests and blocks. No address book access. -->
 			<key>NSPrivacyCollectedDataType</key>
-			<string>NSPrivacyCollectedDataTypeUserID</string>
+			<string>NSPrivacyCollectedDataTypeContacts</string>
 			<key>NSPrivacyCollectedDataTypeLinked</key>
 			<true/>
 			<key>NSPrivacyCollectedDataTypeTracking</key>
@@ -78,33 +94,7 @@
 			</array>
 		</dict>
 		<dict>
-			<!-- Push token, to deliver notifications. -->
-			<key>NSPrivacyCollectedDataType</key>
-			<string>NSPrivacyCollectedDataTypeDeviceID</string>
-			<key>NSPrivacyCollectedDataTypeLinked</key>
-			<true/>
-			<key>NSPrivacyCollectedDataTypeTracking</key>
-			<false/>
-			<key>NSPrivacyCollectedDataTypePurposes</key>
-			<array>
-				<string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
-			</array>
-		</dict>
-		<dict>
-			<!-- Profile, vehicle, post and message photos. -->
-			<key>NSPrivacyCollectedDataType</key>
-			<string>NSPrivacyCollectedDataTypePhotosorVideos</string>
-			<key>NSPrivacyCollectedDataTypeLinked</key>
-			<true/>
-			<key>NSPrivacyCollectedDataTypeTracking</key>
-			<false/>
-			<key>NSPrivacyCollectedDataTypePurposes</key>
-			<array>
-				<string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
-			</array>
-		</dict>
-		<dict>
-			<!-- Direct messages. -->
+			<!-- Direct messages, their photos and reactions. -->
 			<key>NSPrivacyCollectedDataType</key>
 			<string>NSPrivacyCollectedDataTypeEmailsOrTextMessages</string>
 			<key>NSPrivacyCollectedDataTypeLinked</key>
@@ -117,7 +107,20 @@
 			</array>
 		</dict>
 		<dict>
-			<!-- Posts, comments, bios, vehicles and meets. -->
+			<!-- Avatar, vehicle, post and message photos; post videos, which keep their sound track. -->
+			<key>NSPrivacyCollectedDataType</key>
+			<string>NSPrivacyCollectedDataTypePhotosorVideos</string>
+			<key>NSPrivacyCollectedDataTypeLinked</key>
+			<true/>
+			<key>NSPrivacyCollectedDataTypeTracking</key>
+			<false/>
+			<key>NSPrivacyCollectedDataTypePurposes</key>
+			<array>
+				<string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+			</array>
+		</dict>
+		<dict>
+			<!-- Posts, comments, bio, vehicle and mod notes, meets, drive titles, and reports with their snapshots. -->
 			<key>NSPrivacyCollectedDataType</key>
 			<string>NSPrivacyCollectedDataTypeOtherUserContent</string>
 			<key>NSPrivacyCollectedDataTypeLinked</key>
@@ -130,9 +133,48 @@
 			</array>
 		</dict>
 		<dict>
-			<!-- Pull Up Pro status, checked with Apple on the server. -->
+			<!-- The account id the backend assigns, and the Apple user identifier. -->
 			<key>NSPrivacyCollectedDataType</key>
-			<string>NSPrivacyCollectedDataTypePurchaseHistory</string>
+			<string>NSPrivacyCollectedDataTypeUserID</string>
+			<key>NSPrivacyCollectedDataTypeLinked</key>
+			<true/>
+			<key>NSPrivacyCollectedDataTypeTracking</key>
+			<false/>
+			<key>NSPrivacyCollectedDataTypePurposes</key>
+			<array>
+				<string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+			</array>
+		</dict>
+		<dict>
+			<!-- Apple push notification device token. -->
+			<key>NSPrivacyCollectedDataType</key>
+			<string>NSPrivacyCollectedDataTypeDeviceID</string>
+			<key>NSPrivacyCollectedDataTypeLinked</key>
+			<true/>
+			<key>NSPrivacyCollectedDataTypeTracking</key>
+			<false/>
+			<key>NSPrivacyCollectedDataTypePurposes</key>
+			<array>
+				<string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+			</array>
+		</dict>
+		<dict>
+			<!-- Likes, message reactions, RSVPs, read state of messages and notifications, muted and hidden conversations. -->
+			<key>NSPrivacyCollectedDataType</key>
+			<string>NSPrivacyCollectedDataTypeProductInteraction</string>
+			<key>NSPrivacyCollectedDataTypeLinked</key>
+			<true/>
+			<key>NSPrivacyCollectedDataTypeTracking</key>
+			<false/>
+			<key>NSPrivacyCollectedDataTypePurposes</key>
+			<array>
+				<string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+			</array>
+		</dict>
+		<dict>
+			<!-- Vehicle details and derived driving statistics (distance, speeds, times, elevation, explored cells), privacy and notification settings. -->
+			<key>NSPrivacyCollectedDataType</key>
+			<string>NSPrivacyCollectedDataTypeOtherDataTypes</string>
 			<key>NSPrivacyCollectedDataTypeLinked</key>
 			<true/>
 			<key>NSPrivacyCollectedDataTypeTracking</key>

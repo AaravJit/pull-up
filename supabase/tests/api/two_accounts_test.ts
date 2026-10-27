@@ -19,6 +19,7 @@
 
 import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2.45.4";
 import { assert, assertEquals, assertExists, assertMatch } from "jsr:@std/assert@1";
+import { listTree, removeTree as removeStorageTree } from "../../functions/_shared/storage_cleanup.ts";
 
 const target = Deno.env.get("PULLUP_API_TARGET");
 if (target !== "local" && target !== "staging") {
@@ -55,24 +56,10 @@ async function makeUser(name: string, created: Created[]): Promise<User> {
   return { name, id: entry.id, db, email };
 }
 
-/** Removes every object under root, the same walk delete-account does. */
+/** Removes every object under root, with the same paged walk delete-account uses. */
 async function removeTree(bucket: string, root: string): Promise<string | null> {
-  const queue = [root];
-  while (queue.length > 0) {
-    const prefix = queue.pop()!;
-    const { data: entries, error } = await admin.storage.from(bucket).list(prefix, { limit: 1000 });
-    if (error) return `listing ${bucket}/${prefix}: ${error.message}`;
-    const files: string[] = [];
-    for (const entry of entries ?? []) {
-      if (entry.id === null) queue.push(`${prefix}/${entry.name}`);
-      else files.push(`${prefix}/${entry.name}`);
-    }
-    if (files.length > 0) {
-      const { error: removeError } = await admin.storage.from(bucket).remove(files);
-      if (removeError) return `removing from ${bucket}/${prefix}: ${removeError.message}`;
-    }
-  }
-  return null;
+  const result = await removeStorageTree(admin.storage, bucket, root);
+  return result.ok ? null : result.error;
 }
 
 /** Fallback when delete-account fails: the account's files, then the account. */
@@ -295,6 +282,38 @@ Deno.test({
         assert(kinds.includes(`like:${ben.id}`) && kinds.includes(`comment:${ben.id}`), `Ann's bell: ${kinds}`);
       });
 
+      await t.step("posts with photos appear complete or not at all", async () => {
+        // The app's flow (PostPublisher): upload every file under
+        // <uid>/<post id>/, then publish_post with the id it made for the draft.
+        const postID = crypto.randomUUID();
+        const path = (name: string) => `${ann.id}/${postID}/${name}.jpg`;
+        const media = (...names: string[]) => names.map((n) => ({ path: path(n), type: "image", width: 1, height: 1 }));
+        const publish = (u: User, items: unknown[]) =>
+          u.db.rpc("publish_post", { p_id: postID, p_caption: "Two photos", p_visibility: "friends", p_media: items });
+        const benSeesPost = async () =>
+          ok(await ben.db.from("posts").select("id").eq("id", postID), "Ben's view of the draft").length;
+
+        ok(await upload(ann, "post-media", path("one")), "first photo");
+        assertEquals(refused(await publish(ann, media("one", "two")), "publishing before the second photo is up"), "P0002");
+        assertEquals(await benSeesPost(), 0, "a failed upload leaves no post");
+        assertEquals(ok(await ann.db.from("posts").select("id").eq("id", postID), "Ann's view").length, 0, "not even for Ann");
+        assert(!(await canOpen(ben, "post-media", path("one"))), "Ben can't open a draft's photo");
+
+        ok(await upload(ann, "post-media", path("two")), "second photo");
+        assertEquals(ok(await publish(ann, media("one", "two")), "publish"), postID);
+        // A retry after a lost response is the same post, not a second one.
+        assertEquals(ok(await publish(ann, media("one", "two")), "retry"), postID);
+        const seen = ok(await ben.db.from("posts").select("id, media:post_media(storage_path)").eq("author_id", ann.id).eq("id", postID), "Ben's view");
+        assertEquals(seen.length, 1, "one post");
+        assertEquals((seen[0].media as { storage_path: string }[]).map((m) => m.storage_path).sort(), [path("one"), path("two")].sort());
+        assert(await canOpen(ben, "post-media", path("two")), "Ben opens the photos");
+        assert(!(await canOpen(cat, "post-media", path("two"))), "Cat, an outsider, can't");
+
+        refused(await publish(ben, []), "Ben reusing Ann's post id");
+        refused(await ann.db.from("post_media").insert({ post_id: postID, storage_path: path("three"), media_type: "image" }), "attaching media directly");
+        refused(await cat.db.rpc("post_orphaned_media", { p_limit: 10 }), "listing orphaned files");
+      });
+
       await t.step("meets, RSVPs and cancellation", async () => {
         const start = new Date(Date.now() + 24 * 3_600_000);
         const meet = ok(await ann.db.from("meets").insert({
@@ -507,6 +526,29 @@ Deno.test({
       });
 
       await t.step("account deletion removes the account and its data", async () => {
+        // Files in nested folders in every bucket, and (locally) more than one
+        // listing page in one folder. Seeded by the service role so the
+        // upload quota and rate limits don't get in the way.
+        const seeded: [string, string][] = [
+          ["avatars", `${cat.id}/avatar-${run}.jpg`],
+          ["avatars", `${cat.id}/a/b/c/d/deep.jpg`],
+          ["vehicle-media", `${cat.id}/${crypto.randomUUID()}/photo.jpg`],
+          ["post-media", `${cat.id}/${crypto.randomUUID()}/0.jpg`],
+          ["dm-media", `${ids.request}/${cat.id}/${crypto.randomUUID()}.jpg`],
+        ];
+        if (target === "local") {
+          for (let i = 0; i < 1005; i++) seeded.push(["post-media", `${cat.id}/bulk/${String(i).padStart(4, "0")}.jpg`]);
+        }
+        for (let i = 0; i < seeded.length; i += 50) {
+          await Promise.all(seeded.slice(i, i + 50).map(async ([bucket, path]) =>
+            ok(await admin.storage.from(bucket).upload(path, jpeg, { contentType: "image/jpeg", upsert: true }), `seeding ${bucket}/${path}`)
+          ));
+        }
+        const roots: [string, string][] = [["avatars", cat.id], ["vehicle-media", cat.id], ["post-media", cat.id], ["dm-media", ids.request]];
+        let before = 0;
+        for (const [bucket, root] of roots) before += (await listTree(admin.storage.from(bucket), root)).files.length;
+        assert(before >= seeded.length, `seeded files are listed (${before})`);
+
         const deleted = await cat.db.functions.invoke("delete-account", { body: {} });
         assertEquals(deleted.error, null, `delete-account: ${deleted.error}`);
         assertEquals((deleted.data as { deleted?: boolean }).deleted, true);
@@ -516,6 +558,18 @@ Deno.test({
         assertEquals(ok(await ann.db.from("profiles").select("id").eq("id", cat.id), "Cat's profile"), []);
         const requests = ok(await ann.db.rpc("inbox", { p_state: "request" }), "requests") as { conversation_id: string }[];
         assert(!requests.some((r) => r.conversation_id === ids.request), "her conversations went with her");
+        for (const [bucket, root] of roots) {
+          const left = await listTree(admin.storage.from(bucket), root);
+          assertEquals(left.error, null, `listing ${bucket}`);
+          assertEquals(left.files, [], `nothing left in ${bucket}/${root}`);
+        }
+
+        // Her phone's access token is still unexpired: it can't put files back,
+        // and calling again (say the first answer was lost) says it's done.
+        refused(await upload(cat, "avatars", `${cat.id}/after-deletion.jpg`), "uploading after deletion");
+        const again = await cat.db.functions.invoke("delete-account", { body: {} });
+        assertEquals(again.error, null, `delete-account again: ${again.error}`);
+        assertEquals(again.data as Record<string, unknown>, { deleted: true, already_deleted: true, apple_revoked: null, apple_reason: null });
       });
       finished = true;
     } finally {

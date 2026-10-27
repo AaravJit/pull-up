@@ -103,9 +103,11 @@ struct SharedCard: View {
     }
 }
 
-/// Report a person, or one of their messages. Reports go to Pull Up staff
-/// with a copy of the reported message; the person isn't told who reported.
+/// Report a person, or one of their messages. The server keeps the report
+/// with a copy of the reported message for review; the person isn't told who
+/// reported.
 struct ReportView: View {
+    @Environment(AppModel.self) private var app
     @Environment(\.dismiss) private var dismiss
     let model: ThreadModel
     let message: DirectMessage?
@@ -124,7 +126,7 @@ struct ReportView: View {
                     if sent {
                         EmptyState(
                             title: "Thanks for reporting",
-                            message: "Pull Up staff review reports. @\(model.peer.username) isn't told who reported them."
+                            message: "Your report is saved with a copy of what you reported, for Pull Up to review. @\(model.peer.username) isn't told who reported them."
                         )
                     } else {
                         Text(message == nil ? "What's wrong with @\(model.peer.username)'s messages?" : "What's wrong with this message?")
@@ -177,7 +179,10 @@ struct ReportView: View {
         defer { busy = false }
         do {
             try await model.report(reason, details: String(details.prefix(1000)), message: message)
-            if alsoBlock { try await model.block() }
+            if alsoBlock {
+                try await model.block()
+                app.noteBlocked(model.peer.id)
+            }
             sent = true
             error = nil
         } catch {

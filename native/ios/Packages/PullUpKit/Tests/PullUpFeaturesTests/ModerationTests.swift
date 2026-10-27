@@ -41,6 +41,31 @@ struct ModerationTests {
         #expect(!after.contains { $0.id == mine.id })
     }
 
+    @Test func blockingHidesThePersonAppWideUntilSignOut() async throws {
+        var options = LaunchOptions()
+        options.demo = true
+        let app = AppModel(options: options, appleCredentials: FakeAppleCredentials(storedID: nil, state: .authorized))
+        await app.start()
+        try await app.block(DemoSeed.mayaID)
+        #expect(app.blockedUsers == [DemoSeed.mayaID])
+        await app.signOut()
+        #expect(app.blockedUsers.isEmpty)
+    }
+
+    @Test func vehiclesAreReportedUnderTheServersKind() {
+        // report_content accepts post, comment, meet, profile and vehicle.
+        #expect(ReportedContent.Kind.vehicle.rawValue == "vehicle")
+    }
+
+    @Test func suspensionSaysWhatStillWorks() {
+        let open = Suspension(until: nil, reason: "")
+        #expect(open.title == "Your account is suspended")
+        #expect(open.message.hasPrefix("You can still look around"))
+        let dated = Suspension(until: Date(timeIntervalSince1970: 1_800_000_000), reason: "Spam links.")
+        #expect(dated.title.hasPrefix("Your account is suspended until "))
+        #expect(dated.message.hasPrefix("Spam links. You can still"))
+    }
+
     @Test func blockingDropsTheFollow() async throws {
         try await backend.block(DemoSeed.mayaID)
         let following = try await backend.feed(.following, before: nil)

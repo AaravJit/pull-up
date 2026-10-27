@@ -28,6 +28,19 @@ struct DemoStrip: View {
     }
 }
 
+/// Shown above every tab while a moderator has suspended the account.
+struct SuspendedStrip: View {
+    let suspension: Suspension
+
+    var body: some View {
+        NoticeStrip("\(suspension.title). \(suspension.message)", tone: .caution)
+            .padding(.horizontal, Space.gutter)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(ClusterColor.canvas)
+            .accessibilityIdentifier("suspended-strip")
+    }
+}
+
 /// Inline error with optional retry.
 struct ErrorLine: View {
     let message: String

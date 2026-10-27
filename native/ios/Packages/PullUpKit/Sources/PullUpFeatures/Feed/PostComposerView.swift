@@ -21,6 +21,11 @@ struct PostComposerView: View {
     @State private var isLoadingMedia = false
     @State private var isPosting = false
     @State private var error: String?
+    /// The post's id for this draft. Kept across retries so a retry finishes
+    /// the same post instead of making a second one (see PostPublisher).
+    @State private var postID = UUID()
+    @State private var postTask: Task<Void, Never>?
+    @State private var posted = false
 
     private var vehicle: Vehicle? { app.garage.vehicle(vehicleID) }
 
@@ -70,10 +75,24 @@ struct PostComposerView: View {
             .canvasBackground()
             .clusterNavigation("New post")
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button(isPosting ? "Posting" : "Post") { Task { await post() } }.disabled(!canPost)
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") {
+                        // Stops an upload in progress; onDisappear deletes what it sent.
+                        postTask?.cancel()
+                        dismiss()
+                    }
                 }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(isPosting ? "Posting" : "Post") { postTask = Task { await post() } }.disabled(!canPost)
+                }
+            }
+            .interactiveDismissDisabled(isPosting)
+            .onDisappear {
+                guard !posted else { return }
+                postTask?.cancel()
+                let backend = app.backend
+                let id = postID
+                Task { await backend.discardPostDraft(id) }
             }
             .onChange(of: vehicleID) { _, _ in
                 if !allowedAudiences.contains(audience) { audience = allowedAudiences.last ?? .private }
@@ -99,6 +118,7 @@ struct PostComposerView: View {
                     PhotosPicker(selection: $items, maxSelectionCount: 4, matching: .any(of: [.images, .videos])) {
                         MediaPickerLabel(isLoading: loading, symbol: "photo.badge.plus", title: pickerTitle, width: 110, height: 138, cut: 5)
                     }
+                    .disabled(isPosting)
                 }
             }
             Text("Location metadata is removed from photos and videos before upload.")
@@ -137,15 +157,22 @@ struct PostComposerView: View {
         previews = thumbs
     }
 
+    /// The post appears only once every photo and video is uploaded. After a
+    /// failure, Post again retries the same draft: files already uploaded
+    /// aren't sent twice and a post that did get through isn't duplicated.
     private func post() async {
         isPosting = true
+        error = nil
         defer { isPosting = false }
         do {
             _ = try await app.backend.createPost(NewPost(
-                kind: kind, caption: caption.trimmingCharacters(in: .whitespacesAndNewlines), audience: audience,
+                id: postID, kind: kind, caption: caption.trimmingCharacters(in: .whitespacesAndNewlines), audience: audience,
                 vehicleID: vehicleID, media: media
             ))
+            posted = true
             dismiss()
+        } catch is CancellationError {
+            // Cancelled from the toolbar; the sheet is already closing.
         } catch {
             self.error = error.localizedDescription
         }

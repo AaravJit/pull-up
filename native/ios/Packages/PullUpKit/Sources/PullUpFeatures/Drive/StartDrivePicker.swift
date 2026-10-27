@@ -322,7 +322,7 @@ struct StartDrivePicker: View {
     }
 
     private var locationNote: some View {
-        Label("Location is only used while a drive is recording.", systemImage: "location")
+        Label("Location is used while a drive records, and to show where you are when you place a meet or a protected place on the map.", systemImage: "location")
             .font(ClusterFont.body(.caption))
             .foregroundStyle(ClusterColor.inkTertiary)
     }
