@@ -138,10 +138,7 @@ public struct MapScreen: View {
 
     private var meetStrip: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            // HStack, not LazyHStack: the same layout as the Start Drive
-            // carousel, whose lazy stack trapped on the main-actor check in CI
-            // (see StartDrivePicker.carousel).
-            HStack(spacing: Space.m) {
+            LazyHStack(spacing: Space.m) {
                 ForEach(meets) { meet in
                     Button {
                         if selectedMeet == meet.id { openMeet = meet } else { selectedMeet = meet.id }
