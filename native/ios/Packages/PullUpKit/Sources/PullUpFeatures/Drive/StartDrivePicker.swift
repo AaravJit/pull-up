@@ -337,23 +337,38 @@ struct StartDrivePicker: View {
             }
             .padding(.top, Space.xl)
             .accessibilityHidden(true)
+            // A garage that failed to load (offline) isn't an empty one: say
+            // so and offer a retry rather than "add a vehicle".
+            let loadFailed = app.garage.loadError != nil
             VStack(spacing: Space.xs) {
-                Text("Your garage is empty")
+                Text(loadFailed ? "Couldn't load your garage" : "Your garage is empty")
                     .font(ClusterFont.title(.title3))
                     .foregroundStyle(ClusterColor.ink)
-                Text("Add a car or motorcycle to log drives against it, or go now as a guest.")
+                Text(loadFailed
+                     ? "Check your connection and try again, or go now as a guest."
+                     : "Add a car or motorcycle to log drives against it, or go now as a guest.")
                     .font(ClusterFont.body(.subheadline))
                     .foregroundStyle(ClusterColor.inkSecondary)
                     .multilineTextAlignment(.center)
             }
             VStack(spacing: Space.s) {
-                Button {
-                    addingVehicle = true
-                } label: {
-                    Label("Add a vehicle", systemImage: "plus").frame(maxWidth: .infinity)
+                if loadFailed {
+                    Button {
+                        Task { await app.garage.reload() }
+                    } label: {
+                        Label("Try again", systemImage: "arrow.clockwise").frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.cluster)
+                    .accessibilityIdentifier("picker-retry-garage")
+                } else {
+                    Button {
+                        addingVehicle = true
+                    } label: {
+                        Label("Add a vehicle", systemImage: "plus").frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.cluster)
+                    .accessibilityIdentifier("picker-add-vehicle")
                 }
-                .buttonStyle(.cluster)
-                .accessibilityIdentifier("picker-add-vehicle")
                 Button {
                     selection = .guest
                     confirm()

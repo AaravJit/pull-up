@@ -433,6 +433,9 @@ struct PrivacyZonesView: View {
     @State private var zones: [PrivacyZone] = []
     @State private var adding = false
     @State private var error: String?
+    /// Set when the list couldn't be fetched, so an empty list isn't taken
+    /// to mean there are no protected places.
+    @State private var loadError: String?
 
     var body: some View {
         ScrollView {
@@ -440,6 +443,9 @@ struct PrivacyZonesView: View {
                 Text("Shared routes never show anything within a protected place plus a 150 m margin. Your own private tracks are unaffected.")
                     .font(ClusterFont.body(.footnote))
                     .foregroundStyle(ClusterColor.inkSecondary)
+                if let loadError {
+                    ErrorLine(message: "Couldn't load your protected places. \(loadError)") { Task { await load() } }
+                }
                 if let error { ErrorLine(message: error) }
                 ForEach(zones) { zone in
                     HStack {
@@ -476,12 +482,21 @@ struct PrivacyZonesView: View {
         }
         .canvasBackground()
         .clusterNavigation("Protected places")
-        .task { zones = (try? await app.backend.privacyZones()) ?? [] }
+        .task { await load() }
         .sheet(isPresented: $adding) {
             PrivacyZoneEditor { zone in
                 try await app.backend.addPrivacyZone(zone)
                 zones.append(zone)
             }
+        }
+    }
+
+    private func load() async {
+        do {
+            zones = try await app.backend.privacyZones()
+            loadError = nil
+        } catch {
+            loadError = error.localizedDescription
         }
     }
 }
