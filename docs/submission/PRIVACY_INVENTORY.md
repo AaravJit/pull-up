@@ -106,7 +106,7 @@ Every row is linked to the account and none is used for tracking, so those two c
 |---|---|---|---|---|---|
 | APNs device token | `native/ios/PullUp/PullUpApp.swift:28-46`; RPC at notification_preferences.sql:347-389 | `device_tokens` (social.sql:69) | No client read (`permission denied`, probe §2) | Unregistered on sign-out; cascade on deletion | Device ID |
 | Notification preferences, privacy settings | `Settings/NotificationSettings.swift`; `SupabaseBackend.swift:211-225, 744-765` | `notification_preferences`, `privacy_settings` | Owner only | Cascade | Other Data Types |
-| **Profile search terms** | `SupabaseBackend.swift:200-207` (`ilike` username prefix, sent in the GET query string) | **Not in the database.** Supabase API gateway logs keep `request.search` (the query string) and the client IP, and can be filtered by JWT subject. | Project operators | Provider log retention per plan: Free 1 day, Pro 7, Team 28, Enterprise 90 (supabase.com/pricing, "Log retention (API & Database)", retrieved 2026-10-27). Not removed on account deletion. | **Search History** (see 3.2) |
+| Profile search terms | `SupabaseBackend.swift:200-206` calls RPC `search_profiles` (`20261025000400_search_profiles.sql`); the term is in the POST body | **Nowhere.** Not in the database; not in a request URL, so not in the gateway's `request.path` / `request.search` log fields | — | Processed in real time only | **Not collected** (see 3.2) |
 
 ### 1.7 Reports and moderation
 
@@ -134,7 +134,7 @@ Every row is linked to the account and none is used for tracking, so those two c
 
 | Data | Where in code | Stored in | Who can read | Retention / deletion | Apple type |
 |---|---|---|---|---|---|
-| IP address, request path and query, auth events | Every request | Supabase edge, Postgres, function and auth logs. The auth audit log has user id, IP and user agent (supabase.com/docs/guides/auth/audit-logs, retrieved 2026-10-26 by the deletion track). | Project operators | Provider retention: API and DB as above; Auth audit logs Free 1 h, Pro 7 d, Team 28 d (supabase.com/pricing, retrieved 2026-10-27). Not removed on deletion. | Not used to derive location, so not Coarse Location. The logs contain types already declared, plus Search History. |
+| IP address, request path and query, auth events | Every request | Supabase edge, Postgres, function and auth logs. The auth audit log has user id, IP and user agent (supabase.com/docs/guides/auth/audit-logs, retrieved 2026-10-26 by the deletion track). | Project operators | Provider retention: API and DB as above; Auth audit logs Free 1 h, Pro 7 d, Team 28 d (supabase.com/pricing, retrieved 2026-10-27). Not removed on deletion. | Not used to derive location, so not Coarse Location. The logs contain only types already declared. |
 | Diagnostics | None. No crash SDK, no MetricKit (`MXMetricManager`), no `OSLog` / `Logger` (`git grep`, no matches). | — | — | — | None. Apple's opt-in crash sharing is data Apple collects ("You are not responsible for disclosing data collected by Apple", developer.apple.com/app-store/app-privacy-details, retrieved 2026-10-27). |
 | Support requests | Public GitHub issues; there is no in-app support form | GitHub | Public | GitHub's | Not collected through the app, so no Customer Support entry |
 | Display preferences (theme, units, dashboard, Pro hint) | `App/ThemeStore.swift` | UserDefaults | Device only | Until the app is removed | Not collected |
@@ -198,7 +198,7 @@ Answer every type below with the same three choices:
 | Device ID | ✓ | **Keep** | APNs device token in `device_tokens`. It is a device-level id the server keeps. |
 | Product Interaction | ✓ | **Keep** | Likes, reactions, RSVPs, read state, notification read state |
 | Other Data Types | ✓ | **Keep** | Vehicle details, derived driving statistics, settings |
-| **Search History** | — | **Add** (see 3.2) | Profile search terms are kept in the provider's API logs, which can be looked up by account |
+| Search History | — | **Leave out** (see 3.2) | Profile search terms are sent in an RPC body and kept nowhere |
 | Purchase History | — (not in draft) | **Leave out** | Pro is not offered. It was in the old manifest, and this PR removes it. **Add it back in the same release that turns Pro on.** |
 | Coarse Location | — | Leave out | Nothing sets country or region, and IP addresses are not used to locate people |
 | Audio Data | — | Leave out | No microphone; a video's sound is part of Photos or Videos |
@@ -208,26 +208,20 @@ Answer every type below with the same three choices:
 
 ### 3.2 Search History
 
-Collection is a judgment call:
-- Apple's definition of "collect": transmitted off the device and accessible "for a period longer than what is necessary to service the transmitted request in real time".
-- Supabase's API gateway log keeps `request.search` (the query string) with the client IP. Sources: `supabase.com/docs/guides/observability/log-field-reference` and `supabase.com/docs/guides/platform/logs` ("User … API Gateway JWT subjects"), both retrieved 2026-10-27.
-- That log is kept for 1–90 days, depending on plan.
-
-Either:
-- **(a) Declare it.** This is what this PR's manifest does.
-- **(b) Stop sending the term in the URL** (proposed patch below), then remove it from the manifest and from ASC.
-
-Proposed patch for (b), not applied (search is not owned by any track; app code is out of this track's scope):
-- Add a `search_profiles(p_prefix text)` RPC.
-  - Make it security invoker: `select ... from public.profiles where username ilike p_prefix || '%' limit 20`.
-  - Grant it to authenticated.
-- Call it from `SupabaseBackend.swift:200-207` with `client.rpc(...)`.
-  - PostgREST sends RPC arguments as a POST body, which the gateway does not log.
+Not collected, as of this PR.
+- **Before:** profile search was a GET whose query string carried the term. Supabase's API gateway logs keep `request.path` and `request.search` with the client IP, and can be filtered by JWT subject. Sources: `supabase.com/docs/guides/observability/log-field-reference` and `supabase.com/docs/guides/platform/logs`, both retrieved 2026-10-27. Those logs are kept for 1–90 days depending on plan, which would have made search terms "collected" under Apple's definition.
+- **Now:** `public.search_profiles(p_prefix)` (`supabase/migrations/20261025000400_search_profiles.sql`) is a security-invoker RPC called through `client.rpc`, which sends its arguments in a POST body. Supabase's log field reference lists no request-body field for the gateway.
+  - Same columns, RLS and 20-result limit as before. LIKE wildcards in the term are now literal.
+  - Rollback: `supabase/rollback/20261025000400_search_profiles_down.sql`.
+  - Test: `supabase/tests/040_search_profiles.sql`.
+- **Caveats:**
+  - Builds from before this change still send the GET until people update. The first App Store build includes the change, so this matters only for TestFlight builds.
+  - Whether the gateway logs bodies wasn't checked against a live project, only against Supabase's documented fields. If a later check finds bodies in logs, declare Search History.
 
 ### 3.3 Mismatches found (old manifest, docs, code)
 
 1. **Old manifest declared Purchase History** although Pro is not offered. Fixed in this PR.
-2. **Old manifest was missing four types:** Contacts, Product Interaction, Other Data Types and Search History. Fixed in this PR. The ASC draft already has the first three.
+2. **Old manifest was missing three types:** Contacts, Product Interaction and Other Data Types. Fixed in this PR. The ASC draft already has them.
 3. **Old manifest comments were wrong:**
    - Email said Apple-only.
    - "photos" left out videos.
@@ -264,8 +258,7 @@ Before publishing the label:
 1. #31, #32 and #33 (and the terms track) have merged.
 2. This inventory has been re-checked against the merged `main`.
 3. Package.resolved is committed and the Xcode privacy report has been reviewed.
-4. The Search History choice (a or b) is made.
-5. The moderation webhook provider is named in privacy.md.
-6. The cron jobs (`dm-retention`, `finish-deletions`, `moderation-worker`, `post-media-cleanup`) are scheduled on the project that ships.
+4. The moderation webhook provider is named in privacy.md.
+5. The cron jobs (`dm-retention`, `finish-deletions`, `moderation-worker`, `post-media-cleanup`) are scheduled on the project that ships.
 
 The retention text in privacy.md depends on those jobs.

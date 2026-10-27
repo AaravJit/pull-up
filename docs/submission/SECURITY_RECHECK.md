@@ -67,7 +67,7 @@ Highest severity first.
 | S3 | Low | A private profile still exposes username, display name and avatar to every signed-in user and to search (core_identity.sql:307-309; storage.sql:167-172). This is by design: messaging and follow requests need it. It is now disclosed in privacy.md. | — (disclosed) |
 | S4 | Low | **Private media was cached on disk.** `AsyncImage` uses `URLCache.shared`, so photos could sit in Caches after sign-out or deletion. **#31 fixes this:** the cache is memory-only and cleared on sign-out and deletion. | account-deletion |
 | S5 | Low | Sign-out keeps the account's unsent drive drafts (raw GPS) on the phone. They are filtered by owner, so another account doesn't see them. Deleting the account erases them (#31). | — (disclosed in privacy.md) |
-| S6 | Low | Profile search terms reach provider API logs through the query string (PRIVACY_INVENTORY §3.2). There is a proposed RPC patch. | — |
+| S6 | Low | Profile search terms reached provider API logs through the query string. **Fixed in this PR:** `search_profiles` RPC, term in the POST body (PRIVACY_INVENTORY §3.2). | this track |
 | S7 | Info | The `auth.identities` identity-link guard trigger may not install on hosted projects (accounts.sql:257-263). It is already tracked in docs/SECURITY_REPORT.md. | — |
 | S8 | Info | On main, reports cascade-delete with either account. #32 changes this to `SET NULL`. | moderation |
 | S9 | Info | No `Package.resolved` is committed, so dependency versions float within 2.x on each build. | release-layout |

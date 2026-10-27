@@ -5,6 +5,8 @@
   step with the App Privacy answers in App Store Connect and with
   docs/submission/PRIVACY_INVENTORY.md, which gives the source of each entry.
   No tracking, no third-party analytics, ads or crash reporting.
+  Search History is not listed: profile search is an RPC whose term travels
+  in the request body, which provider logs don't keep (20261025000400).
   Purchase History is not listed: Pull Up Pro is not offered in this build
   (PULLUP_PRO_OFFERED = NO). Add it back before Pro goes on sale.
 -->
@@ -160,19 +162,6 @@
 			<!-- Likes, message reactions, RSVPs, read state of messages and notifications, muted and hidden conversations. -->
 			<key>NSPrivacyCollectedDataType</key>
 			<string>NSPrivacyCollectedDataTypeProductInteraction</string>
-			<key>NSPrivacyCollectedDataTypeLinked</key>
-			<true/>
-			<key>NSPrivacyCollectedDataTypeTracking</key>
-			<false/>
-			<key>NSPrivacyCollectedDataTypePurposes</key>
-			<array>
-				<string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
-			</array>
-		</dict>
-		<dict>
-			<!-- Profile search terms, sent in request URLs that the backend provider's API logs retain. -->
-			<key>NSPrivacyCollectedDataType</key>
-			<string>NSPrivacyCollectedDataTypeSearchHistory</string>
 			<key>NSPrivacyCollectedDataTypeLinked</key>
 			<true/>
 			<key>NSPrivacyCollectedDataTypeTracking</key>

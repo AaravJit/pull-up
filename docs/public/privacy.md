@@ -10,7 +10,7 @@ Pull Up is developed and operated by **Aarav Jit**. This policy describes the in
 - **Vehicles and community content:** Vehicle specifications, names, photos and modifications; posts (photos, and videos including their sound), comments, likes and follows; meet details, venue coordinates, RSVPs and attendance-display choices; and other content you submit.
 - **People you follow and block:** Your follows, follow requests and blocks are stored so the service can apply audience rules, build your Following feed and keep blocked people away from you. Pull Up does not read your phone's address book.
 - **Messages:** Text, photos, reactions, shared content references, delivery and read state, and conversation preferences needed to provide messaging. Messages are not end-to-end encrypted.
-- **Searches:** When you search for people, the name you type is sent to the service to find matching usernames. Pull Up does not keep a search history in its database, but the hosting provider's request logs include the search (see "Technical processing and logs"). Parts searches are not sent to Pull Up; they open eBay.
+- **Searches:** When you search for people, the name you type is sent to the service to find matching usernames and is not kept. Parts searches are not sent to Pull Up; they open eBay.
 - **Reports and support:** Content you report, your report reason and note, and a copy of the reported content taken when you report it. Information you voluntarily provide when seeking support goes to the public GitHub tracker, where other people can see it.
 
 ## Drive and location information
@@ -25,7 +25,7 @@ If you allow push notifications, the service stores a push token and notificatio
 
 ## Technical processing and logs
 
-Network requests necessarily expose technical information to the services handling them. Our hosting provider, Supabase, keeps operational logs of requests to the service. Its API request logs record the requesting IP address and the request's address, including search terms and other values sent in it, and can be looked up by account. Its authentication logs record sign-in and account events with your account identifier, IP address and device details. These logs are kept for the period set by the provider for our hosting plan and are not removed when you delete your account. Pull Up does not use IP addresses to work out where you are.
+Network requests necessarily expose technical information to the services handling them. Our hosting provider, Supabase, keeps operational logs of requests to the service. Its API request logs record the requesting IP address and request metadata, such as the address requested, and can be looked up by account. Its authentication logs record sign-in and account events with your account identifier, IP address and device details. These logs are kept for the period set by the provider for our hosting plan and are not removed when you delete your account. Pull Up does not use IP addresses to work out where you are.
 
 The app contains no advertising, third-party analytics or crash-reporting software and does not collect diagnostics of its own. If you choose to share analytics with app developers in your iPhone's settings, Apple may provide crash reports to the developer under Apple's terms.
 
