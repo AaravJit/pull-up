@@ -67,7 +67,7 @@ that isn't in the environment.
 | Secret | Used by | Where it comes from |
 | --- | --- | --- |
 | `PUSH_WEBHOOK_SECRET` | `send-push` | `openssl rand -hex 32`; the same value goes in the webhook (step 5) |
-| `CRON_SECRET` | `dm-retention` | `openssl rand -hex 32`; the same value goes in the cron job (step 5) |
+| `CRON_SECRET` | `dm-retention`, `delete-account` (scheduled run) | `openssl rand -hex 32`; the same value goes in the cron job (step 5) |
 | `APNS_KEY_ID`, `APNS_TEAM_ID`, `APNS_PRIVATE_KEY`, `APNS_TOPIC` | `send-push` | Apple push key (`RELEASE_CHECKLIST.md` §3) |
 | `APPLE_CLIENT_ID`, `APPLE_KEY_ID`, `APPLE_TEAM_ID`, `APPLE_PRIVATE_KEY` | `delete-account` (Apple token revocation) | Sign in with Apple key (§3) |
 | `APPSTORE_ISSUER_ID`, `APPSTORE_KEY_ID`, `APPSTORE_PRIVATE_KEY`, `APPSTORE_BUNDLE_ID` | `verify-subscription`, `app-store-notifications` | App Store Server API key (§4a) |
@@ -161,6 +161,31 @@ These aren't in migrations because they hold per-project values:
       body := '{}'::jsonb);
   $$);
   ```
+
+  And an hourly job that finishes account deletions that started but
+  stopped part-way (a Storage outage, the app closed mid-way). Same
+  headers, sent to `delete-account`:
+
+  ```sql
+  select cron.schedule('pullup-finish-deletions', '17 * * * *', $$
+    select net.http_post(
+      url := 'https://<ref>.supabase.co/functions/v1/delete-account',
+      headers := jsonb_build_object(
+        'Content-Type', 'application/json',
+        'Authorization', 'Bearer <anon key>',
+        'x-pullup-cron-secret', (select decrypted_secret
+          from vault.decrypted_secrets where name = 'pullup_cron_secret')),
+      body := '{}'::jsonb);
+  $$);
+  ```
+
+  To check both run and succeed: `select jobname, schedule, active from
+  cron.job;` lists them; `select status, return_message, start_time from
+  cron.job_run_details order by start_time desc limit 10;` shows each run
+  was sent; `select status_code, content from net._http_response order by
+  created desc limit 10;` shows what the functions answered (200, with
+  `{"due":0,...}` from delete-account). Unfinished deletions waiting for
+  a retry: `select user_id, attempts, last_error from private.account_deletions;`.
 * Check the account-linking guard is installed (SQL editor):
   `select tgname from pg_trigger where tgname = 'pullup_identity_link_guard';`
   must return one row.

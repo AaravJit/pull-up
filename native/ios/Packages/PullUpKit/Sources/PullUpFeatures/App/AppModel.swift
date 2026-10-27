@@ -74,6 +74,7 @@ public final class AppModel {
     init(options: LaunchOptions, appleCredentials: any AppleCredentialChecking, store: (any StoreClient)? = nil) {
         self.options = options
         self.appleCredentials = appleCredentials
+        Self.keepMediaOffDisk()
         let defaults = UserDefaults.standard
         if options.resetDefaults, let domain = Bundle.main.bundleIdentifier {
             defaults.removePersistentDomain(forName: domain)
@@ -305,7 +306,29 @@ public final class AppModel {
         try? await backend.signOut()
         appleCredentials.store(userID: nil)
         DriveProSection.removeExports()
+        Self.clearMediaCache()
         await apply(nil)
+    }
+
+    /// Photos are fetched through URLSession.shared (AsyncImage) from signed
+    /// URLs stored with a one-year cache lifetime. Signed URLs change, so a
+    /// disk copy is never reused across launches; keeping the shared cache
+    /// in memory means no copy of anyone's photos is left in Caches.
+    static func keepMediaOffDisk() {
+        guard URLCache.shared.diskCapacity > 0 else { return }
+        URLCache.shared.removeAllCachedResponses() // whatever an earlier build wrote
+        URLCache.shared = URLCache(memoryCapacity: 32 * 1024 * 1024, diskCapacity: 0, directory: nil)
+    }
+
+    /// Drops the in-memory copies on sign-out and account deletion.
+    static func clearMediaCache(_ cache: URLCache = .shared) {
+        cache.removeAllCachedResponses()
+        cache.removeCachedResponses(since: .distantPast)
+        // removeAll doesn't reliably drop responses already in memory;
+        // emptying the memory capacity does.
+        let memory = cache.memoryCapacity
+        cache.memoryCapacity = 0
+        cache.memoryCapacity = memory
     }
 
     /// Deletes the account on the server. `appleAuthorizationCode` comes from
@@ -318,6 +341,7 @@ public final class AppModel {
         // either. Before apply(nil), which keeps a drive that's recording.
         if let owner { await recorder.eraseLocalData(for: owner) }
         DriveProSection.removeExports()
+        Self.clearMediaCache()
         appleCredentials.store(userID: nil)
         await apply(nil)
         switch result.apple {
