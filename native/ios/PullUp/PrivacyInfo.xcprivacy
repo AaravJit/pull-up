@@ -6,7 +6,7 @@
   docs/submission/PRIVACY_INVENTORY.md, which gives the source of each entry.
   No tracking, no third-party analytics, ads or crash reporting.
   Search History is not listed: profile search is an RPC whose term travels
-  in the request body, which provider logs don't keep (20261025000400).
+  in the request body, which provider logs don't keep (20261025000350).
   Purchase History is not listed: Pull Up Pro is not offered in this build
   (PULLUP_PRO_OFFERED = NO). Add it back before Pro goes on sale.
 -->
