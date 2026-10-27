@@ -55,7 +55,7 @@ struct InboxView: View {
                     .listRowBackground(ClusterColor.canvas)
                 }
             }
-            ForEach(entries) { entry in
+            ForEach(entries.filter { !app.blockedUsers.contains($0.peer.id) }) { entry in
                 NavigationLink(value: ConversationTarget(entry)) {
                     InboxRow(entry: entry)
                 }

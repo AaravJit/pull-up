@@ -291,6 +291,7 @@ struct ThreadView: View {
         guard let model else { return }
         do {
             try await model.block()
+            app.noteBlocked(model.peer.id)
             await app.refreshMessages()
             dismiss()
         } catch {

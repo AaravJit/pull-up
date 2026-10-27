@@ -119,10 +119,15 @@ public final class SupabaseBackend: BackendService, @unchecked Sendable {
         let row: Row = try await client.from("profiles").select("username, display_name, avatar_path, onboarded_at")
             .eq("id", value: user.id).single().execute().value
         let methods = (user.identities ?? []).compactMap { AccountState.SignInMethod(rawValue: $0.provider) }
+        // A server without the moderation migration (or offline) reads as not
+        // suspended; the server still refuses a suspended account's writes.
+        struct Moderation: Decodable { let suspended: Bool; let suspended_until: Date?; let reason: String? }
+        let moderation = try? await client.rpc("my_moderation_status").execute().value as Moderation
         return AccountState(
             id: user.id, username: row.username, displayName: row.display_name, avatarPath: row.avatar_path,
             isOnboarded: row.onboarded_at != nil, signInMethods: methods,
-            usesPrivateRelayEmail: AccountState.isPrivateRelay(user.email)
+            usesPrivateRelayEmail: AccountState.isPrivateRelay(user.email),
+            suspension: moderation.flatMap { $0.suspended ? Suspension(until: $0.suspended_until, reason: $0.reason ?? "") : nil }
         )
     }
 
@@ -707,7 +712,8 @@ public final class SupabaseBackend: BackendService, @unchecked Sendable {
     static func messagingMessage(_ error: PostgrestError) -> String {
         switch error.code {
         case "54000":
-            if error.message.contains("reports") { return "You've sent a lot of reports today. Try again tomorrow." }
+            if error.message.contains("reports today") { return "You've sent a lot of reports today. Try again tomorrow." }
+            if error.message.contains("reports") { return "You've sent a lot of reports in a short time. Try again in an hour." }
             return error.message.contains("accept") ? "Wait for them to accept your request before sending more." : "You're sending a lot right now. Try again in a minute."
         case "42501":
             if error.message.contains("paused") { return "Messaging is paused on your account." }
