@@ -108,8 +108,7 @@ final class StoreMediaUITests: XCTestCase {
     /// The simulator sometimes offers "Enable Dictation?" the first time
     /// the keyboard appears; it isn't the app's, so decline it.
     private func dismissSystemPrompts(_ app: XCUIApplication, timeout: TimeInterval = 2) {
-        let hosts = [app] + ["com.apple.springboard", "com.apple.InputUI", "com.apple.siri"]
-            .map { XCUIApplication(bundleIdentifier: $0) }
+        let hosts = [app, XCUIApplication(bundleIdentifier: "com.apple.springboard")]
         let deadline = Date().addingTimeInterval(timeout)
         repeat {
             for host in hosts {
@@ -195,9 +194,20 @@ final class StoreMediaUITests: XCTestCase {
         if start.exists { return }
         tab(app, "Explore")
         let open = app.buttons["open-drive"].firstMatch
-        XCTAssertTrue(open.waitForExistence(timeout: 5))
-        open.tap()
-        XCTAssertTrue(start.waitForExistence(timeout: 10), "Drive should open")
+        if open.waitForExistence(timeout: 5), open.isHittable {
+            open.tap()
+        } else {
+            // iPhone Duo's outer display moves navigation into a side
+            // column, and a pushed screen can keep the tab bar out of
+            // reach. Relaunch straight into Drive (same demo data and
+            // appearance); the entry points themselves are covered by the
+            // app UI tests.
+            app.terminate()
+            app.launchArguments.append("-PullUpOpenDrive")
+            app.launch()
+            XCTAssertTrue(request("note", "launched", app: app), "The app is on the wrong display for this capture")
+        }
+        XCTAssertTrue(start.waitForExistence(timeout: 30), "Drive should open")
     }
 
     @discardableResult

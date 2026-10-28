@@ -47,13 +47,13 @@ final class PullUpUITests: XCTestCase {
     }
 
     /// The simulator sometimes offers "Enable Dictation?" a few seconds
-    /// after the keyboard appears; it isn't the app's, so decline it. The
-    /// prompt isn't always hosted by SpringBoard, so the keyboard and Siri
-    /// processes are checked too. It is also checked (without waiting)
-    /// before every tab switch.
+    /// after the keyboard appears; it isn't the app's, so decline it. CI
+    /// types through a hardware keyboard so it shouldn't appear at all;
+    /// this is the fallback, also checked (without waiting) before every
+    /// tab switch. Only the app and SpringBoard are queried: snapshotting
+    /// the keyboard or Siri processes can hang the UI query.
     private func dismissSystemPrompts(_ app: XCUIApplication, timeout: TimeInterval = 1) {
-        let hosts = [app] + ["com.apple.springboard", "com.apple.InputUI", "com.apple.siri"]
-            .map { XCUIApplication(bundleIdentifier: $0) }
+        let hosts = [app, XCUIApplication(bundleIdentifier: "com.apple.springboard")]
         let deadline = Date().addingTimeInterval(timeout)
         repeat {
             for host in hosts {
@@ -78,6 +78,20 @@ final class PullUpUITests: XCTestCase {
     private func tab(_ app: XCUIApplication, _ name: String) {
         dismissSystemPrompts(app, timeout: 0)
         let button = app.tabBars.buttons[name].firstMatch
+        if !button.waitForExistence(timeout: 2) {
+            // Scrolling down minimizes the tab bar to a single round
+            // button for the current tab (it stays that way after a pop);
+            // tapping that button brings the tabs back. The bar's own frame
+            // still spans the screen, so tap the button, not the bar.
+            let current = app.tabBars.buttons.firstMatch
+            if current.exists {
+                current.tap()
+            } else {
+                app.swipeUp()
+                app.swipeDown()
+            }
+            settle()
+        }
         XCTAssertTrue(button.waitForExistence(timeout: 5), "Tab \(name) missing")
         button.tap()
         settle()
@@ -267,17 +281,6 @@ final class PullUpUITests: XCTestCase {
         settle(4)
         snap("15-explore-map")
 
-        explore(app, "People")
-        let search = app.searchFields.firstMatch
-        XCTAssertTrue(search.waitForExistence(timeout: 5))
-        search.tap()
-        search.typeText("maya")
-        dismissSystemPrompts(app)
-        XCTAssertTrue(element(app, "person-maya.s15").waitForExistence(timeout: 5), "People search finds Maya")
-        settle()
-        dismissSystemPrompts(app, timeout: 3)
-        snap("16-explore-people")
-
         tab(app, "You")
         let boards = element(app, "open-leaderboards")
         XCTAssertTrue(boards.waitForExistence(timeout: 5))
@@ -306,6 +309,21 @@ final class PullUpUITests: XCTestCase {
         for id in ["privacy-policy", "support", "terms", "community"] {
             XCTAssertTrue(element(app, id).exists, "Settings ▸ About should link \(id)")
         }
+
+        // Typing is last: once the software keyboard has been up, the
+        // simulator can raise "Enable Dictation?" over the app, and that
+        // prompt isn't reachable from the test to decline. Settings has
+        // scrolled the tab bar down to its minimized button, so go back to
+        // You's root first.
+        back(app)
+        explore(app, "People")
+        let search = app.searchFields.firstMatch
+        XCTAssertTrue(search.waitForExistence(timeout: 5))
+        search.tap()
+        search.typeText("maya")
+        XCTAssertTrue(element(app, "person-maya.s15").waitForExistence(timeout: 5), "People search finds Maya")
+        settle()
+        snap("16-explore-people")
     }
 
     /// The composer starts with just text, media and Post; the vehicle is a
@@ -330,7 +348,8 @@ final class PullUpUITests: XCTestCase {
         snap("21-composer")
 
         caption.typeText("Fresh alignment, first drive out")
-        XCTAssertTrue(post.isEnabled)
+        let enabled = expectation(for: NSPredicate(format: "isEnabled == true"), evaluatedWith: post)
+        wait(for: [enabled], timeout: 5)
         let suggestion = element(app, "composer-vehicle-suggestion")
         if suggestion.exists {
             suggestion.tap()
