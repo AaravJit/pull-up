@@ -16,6 +16,10 @@
 //   4. with {"digest": true}: sends a summary of the open queue, if anything
 //      is open or failed.
 //
+// With {"test": true} it does none of that: it sends one test alert, with no
+// report data, and answers whether the endpoint took it. That checks the
+// alert route before any account exists (docs/MODERATION_RUNBOOK.md §2.5).
+//
 // Secrets: CRON_SECRET (required), MODERATION_WEBHOOK_URL (an https URL the
 // owner chooses: a Slack or Discord incoming webhook, an ntfy topic, or an
 // endpoint of their own; all free). Optional MODERATION_WEBHOOK_SECRET signs
@@ -32,6 +36,7 @@ import {
   type PendingReport,
   type QueueSummary,
   signature,
+  testPayload,
   webhookTarget,
 } from "../_shared/moderation.ts";
 
@@ -64,8 +69,17 @@ Deno.serve(async (req: Request): Promise<Response> => {
   if (!sameSecret(req.headers.get("x-pullup-cron-secret") ?? "", cronSecret)) {
     return Response.json({ error: "forbidden" }, { status: 403 });
   }
-  const { digest } = await req.json().catch(() => ({})) as { digest?: boolean };
+  const { digest, test } = await req.json().catch(() => ({})) as { digest?: boolean; test?: boolean };
   const environment = Deno.env.get("PULLUP_ENVIRONMENT_NAME") ?? "";
+
+  if (test === true) {
+    const target = webhookTarget(Deno.env.get("MODERATION_WEBHOOK_URL"));
+    if (!target) {
+      return Response.json({ test_sent: false, error: "MODERATION_WEBHOOK_URL is not configured (or isn't an https URL)" }, { status: 503 });
+    }
+    const problem = await post(target, testPayload(environment));
+    return Response.json({ test_sent: problem === null, error: problem }, { status: problem === null ? 200 : 502 });
+  }
   const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, {
     auth: { persistSession: false },
   });

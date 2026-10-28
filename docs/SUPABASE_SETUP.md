@@ -169,14 +169,23 @@ These aren't in migrations because they hold per-project values:
   refuses links the person didn't start).
 * **Auth ▸ URL Configuration:** site URL and redirect URL
   `pullup://auth-callback`.
-* **Database ▸ Webhooks:** enable webhooks first; that installs the
-  `pg_net` extension, which sends the requests. Then on INSERT into
-  `public.notifications`, POST to the `send-push` function with headers
-  `x-pullup-webhook-secret: <PUSH_WEBHOOK_SECRET>` (the function refuses
-  any request without it) and `Authorization: Bearer <anon key>`
-  (`send-push` and `dm-retention` keep Supabase's JWT check, see
-  `supabase/config.toml`, so a call without a valid JWT never reaches
-  them).
+* **Push (no dashboard webhook):** migration `20261028000100` adds a
+  trigger on `public.notifications` that calls `send-push` for each new
+  row. It needs the `pg_net` extension (Database ▸ Extensions, or enabling
+  Cron below installs it) and three Vault secrets (Integrations ▸ Vault):
+
+  | Vault name | Value |
+  | --- | --- |
+  | `pullup_project_url` | `https://<ref>.supabase.co` |
+  | `pullup_anon_key` | the project's legacy anon key, the JWT starting `eyJ` (Settings ▸ API Keys ▸ Legacy API keys). Not an `sb_publishable_` key: `send-push` and `dm-retention` keep Supabase's JWT check (`supabase/config.toml`), which rejects it as `Invalid JWT` |
+  | `pullup_push_webhook_secret` | the same value as the `PUSH_WEBHOOK_SECRET` function secret; `send-push` refuses any request without it |
+
+  Until all three exist the trigger sends nothing and inserts carry on as
+  normal. Don't add a Database ▸ Webhooks entry on `public.notifications`
+  as well, or every notification is sent to `send-push` twice. Check it:
+  `select status_code, content from net._http_response order by created desc limit 5;`
+  after a notification shows `send-push`'s answer (503 until the APNs
+  secrets are set).
 * **Integrations ▸ Cron:** enable it; that installs the `pg_cron`
   extension (the job's HTTP call also needs `pg_net`, above). Keep
   `CRON_SECRET` in Vault (Integrations ▸ Vault, named for example

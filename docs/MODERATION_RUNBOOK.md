@@ -129,6 +129,26 @@ failed.
 
 ### 2.5 Test delivery, then start monitoring
 
+0. Before any account exists, check the alert route alone. In the SQL
+   editor:
+
+   ```sql
+   select net.http_post(
+     url := 'https://<ref>.supabase.co/functions/v1/moderation-worker',
+     headers := jsonb_build_object(
+       'Content-Type', 'application/json',
+       'Authorization', 'Bearer ' || (select decrypted_secret
+         from vault.decrypted_secrets where name = 'pullup_anon_key'),
+       'x-pullup-cron-secret', (select decrypted_secret
+         from vault.decrypted_secrets where name = 'pullup_cron_secret')),
+     body := '{"test": true}'::jsonb);
+   ```
+
+   A message reading "Pull Up moderation (production): test alert…" should
+   appear in the channel, and
+   `select status_code, content from net._http_response order by created desc limit 1;`
+   should read 200 with `"test_sent":true`. It carries no report data. This
+   proves only the route; steps 1–4 still have to pass.
 1. From a second test account, report a post.
 2. Within 5 minutes the alert should arrive. Check
    `select status, attempts, last_error from private.moderation_deliveries order by created_at desc limit 3;`

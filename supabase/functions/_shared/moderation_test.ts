@@ -1,5 +1,5 @@
 import { assert, assertEquals, assertStringIncludes } from "jsr:@std/assert@1";
-import { alertPayload, digestPayload, type QueueSummary, signature, webhookTarget } from "./moderation.ts";
+import { alertPayload, digestPayload, type QueueSummary, signature, testPayload, webhookTarget } from "./moderation.ts";
 
 const summary: QueueSummary = {
   open: 3, urgent_open: 1, oldest_open_at: "2026-10-25T10:00:00Z", open_over_24h: 0,
@@ -45,4 +45,13 @@ Deno.test("the signature is HMAC-SHA256 of the body", async () => {
   // RFC 4231 test case 2.
   assertEquals(await signature("Jefe", "what do ya want for nothing?"),
     "sha256=5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843");
+});
+
+Deno.test("the test alert says what it is and carries nothing else", () => {
+  const p = testPayload("production");
+  assertEquals(p.kind, "pullup.moderation.test");
+  assertEquals(p.text, p.content);
+  assertStringIncludes(p.text, "(production): test alert");
+  assertStringIncludes(p.text, "No report was filed");
+  assertEquals(Object.keys(p).sort(), ["content", "kind", "text"]);
 });
