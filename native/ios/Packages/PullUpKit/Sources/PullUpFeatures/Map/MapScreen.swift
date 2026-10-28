@@ -33,7 +33,7 @@ struct MapScreen: View {
     enum Layer: String, CaseIterable, Identifiable {
         case meets, routes
         var id: String { rawValue }
-        var label: String { self == .meets ? "Meets" : "My routes" }
+        var label: String { self == .meets ? "Meet spots" : "My routes" }
     }
 
     var body: some View {

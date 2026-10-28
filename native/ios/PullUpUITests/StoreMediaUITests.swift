@@ -126,7 +126,7 @@ final class StoreMediaUITests: XCTestCase {
         }
         // On the iPhone Duo outer display the tabs are a vertical bar along
         // the trailing edge, not a UITabBar, and other buttons share a tab's
-        // label (the Map screen's "Meets" segment). Take the match closest
+        // label (a segmented control's segment). Take the match closest
         // to the window's trailing or bottom edge, where the tab bar sits.
         let matches = app.buttons.matching(NSPredicate(format: "label == %@", name))
         XCTAssertTrue(matches.firstMatch.waitForExistence(timeout: 5), "Tab \(name) missing")
