@@ -1,0 +1,24 @@
+{
+ "commit": "050b6f9e3fa3a6b814f03860735e5d16070d9d50",
+ "ref": "claude/project-thread-kfuo7m",
+ "run_id": "40624492476",
+ "run_attempt": "1",
+ "job": "duo",
+ "runner": {
+  "os": "ProductName:\t\tmacOS\nProductVersion:\t\t27.0.1\nBuildVersion:\t\t26A434",
+  "label": "xcode-27"
+ },
+ "xcode": "Xcode 27.1\nBuild version 27A9275",
+ "app": {
+  "CFBundleIdentifier": null,
+  "CFBundleShortVersionString": null,
+  "CFBundleVersion": null,
+  "DTSDKName": null,
+  "DTPlatformVersion": null,
+  "DTXcode": null,
+  "DTXcodeBuild": null,
+  "PullUpProOffered": null
+ },
+ "configuration": "Debug (simulator); launch arguments -PullUpDemo -PullUpResetDefaults -PullUpStoreCapture -PullUpAppearance dark",
+ "devices": {}
+}
