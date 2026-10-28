@@ -88,6 +88,16 @@ export function digestPayload(summary: QueueSummary, environment: string) {
   return { text, content: text, kind: "pullup.moderation.digest", summary };
 }
 
+/**
+ * A one-off check that alerts reach the owner's endpoint, sent on request
+ * ({"test": true}). It carries no report, queue counts, names or content.
+ */
+export function testPayload(environment: string) {
+  const env = environment ? ` (${environment})` : "";
+  const text = `Pull Up moderation${env}: test alert. If you can read this, report alerts reach this channel. No report was filed.`;
+  return { text, content: text, kind: "pullup.moderation.test" };
+}
+
 /** Hex HMAC-SHA256 of the body, sent as x-pullup-signature when a secret is set. */
 export async function signature(secret: string, body: string): Promise<string> {
   const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);

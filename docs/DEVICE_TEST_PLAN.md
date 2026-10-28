@@ -150,7 +150,7 @@ still pending, A unfollows and follows again).
 
 ## 5. Notifications (2 accounts)
 
-Only after staging has the APNs secrets and `PUSH_WEBHOOK_SECRET` (`SUPABASE_SETUP.md` step 3) and the database webhook on `public.notifications` is set up (step 5: it needs the `pg_net` extension, and sends both the `x-pullup-webhook-secret` and an `Authorization: Bearer` header). `send-push` itself is already deployed on staging. Without the webhook, notifications still show in the app's bell but nothing is pushed.
+Only after staging has the APNs secrets and `PUSH_WEBHOOK_SECRET` (`SUPABASE_SETUP.md` step 3) and the push trigger's three Vault secrets and `pg_net` are set up (step 5; migration `20261028000100` sends both the `x-pullup-webhook-secret` and an `Authorization: Bearer` header). `send-push` itself is already deployed on staging. Until then, notifications still show in the app's bell but nothing is pushed.
 Pull Up shows no banner while it is open, so keep A's app in the background
 or the phone locked. Repeat follows and likes within 24 hours send no
 second push, by design. A message request's push always reads "… wants

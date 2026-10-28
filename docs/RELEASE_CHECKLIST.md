@@ -40,14 +40,12 @@ still to do.
       ticked copies it to the project. Don't set it with
       `supabase secrets set`: a deploy removes any function secret that
       isn't in the environment.
-- [ ] Database ▸ Webhooks: enable webhooks (installs the `pg_net`
-      extension), then on INSERT into `public.notifications`, call the
-      `send-push` function with the HTTP headers
-      `x-pullup-webhook-secret: <same value>` and
-      `Authorization: Bearer <anon key>` (the function keeps Supabase's JWT
-      check). Requests without the secret are
-      rejected. Without the webhook, notifications still appear in the app's
-      bell; they just aren't pushed.
+- [ ] Push trigger (migration `20261028000100`, no dashboard webhook):
+      enable `pg_net`, then add Vault secrets `pullup_project_url`,
+      `pullup_anon_key` and `pullup_push_webhook_secret` (the same value as
+      `PUSH_WEBHOOK_SECRET`), as `SUPABASE_SETUP.md` §5 describes. Requests
+      without the secret are rejected. Until then notifications still appear
+      in the app's bell; they just aren't pushed.
 - [ ] Auth ▸ Hooks: enable **Before User Created** with
       `public.hook_before_user_created` (`SUPABASE_SETUP.md` §5). Staging:
       done 2026-10-23 (owner, dashboard), not verified end to end.
