@@ -225,7 +225,9 @@ jobs:
   publish:
     name: Encode previews and publish to ci/store-media
     needs: [iphone, duo, release-check]
-    if: always()
+    # Not after a cancellation: a cancelled capture leaves half-written
+    # recordings, and a newer run for the same branch is on its way.
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     timeout-minutes: 40
     permissions:
