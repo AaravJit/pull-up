@@ -68,6 +68,13 @@ final class PullUpUITests: XCTestCase {
         } while Date() < deadline
     }
 
+    /// "Not Now" sits just below the middle of the Dictation prompt on
+    /// iPhone. Only used once a screen change has visibly failed.
+    private func tapNotNowByPosition(_ app: XCUIApplication) {
+        app.windows.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.58)).tap()
+        settle(0.8)
+    }
+
     /// The caption is ready to type into: the keyboard is up, or (with a
     /// hardware keyboard attached to the simulator) the field has focus.
     private func readyToType(_ field: XCUIElement, in app: XCUIApplication) -> Bool {
@@ -280,6 +287,13 @@ final class PullUpUITests: XCTestCase {
 
         tab(app, "You")
         let boards = element(app, "open-leaderboards")
+        if !boards.waitForExistence(timeout: 5) {
+            // The Dictation prompt can be hosted by a process the queries
+            // above can't see. It still takes a real touch, so press where
+            // its Not Now button sits, then switch tab again.
+            tapNotNowByPosition(app)
+            tab(app, "You")
+        }
         XCTAssertTrue(boards.waitForExistence(timeout: 5))
         boards.tap()
         XCTAssertTrue(element(app, "leaderboards").waitForExistence(timeout: 5))
