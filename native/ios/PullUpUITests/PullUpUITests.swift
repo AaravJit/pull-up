@@ -47,15 +47,32 @@ final class PullUpUITests: XCTestCase {
     }
 
     /// The simulator sometimes offers "Enable Dictation?" a few seconds
-    /// after the keyboard appears; it isn't the app's, so decline it. It is
-    /// also checked (without waiting) before every tab switch.
+    /// after the keyboard appears; it isn't the app's, so decline it. The
+    /// prompt isn't always hosted by SpringBoard, so the keyboard and Siri
+    /// processes are checked too. It is also checked (without waiting)
+    /// before every tab switch.
     private func dismissSystemPrompts(_ app: XCUIApplication, timeout: TimeInterval = 1) {
-        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
-        for owner in [app, springboard] {
-            let notNow = owner.buttons["Not Now"].firstMatch
-            let found = timeout > 0 ? notNow.waitForExistence(timeout: timeout) : notNow.exists
-            if found { notNow.tap(); settle(0.5) }
-        }
+        let hosts = [app] + ["com.apple.springboard", "com.apple.InputUI", "com.apple.siri"]
+            .map { XCUIApplication(bundleIdentifier: $0) }
+        let deadline = Date().addingTimeInterval(timeout)
+        repeat {
+            for host in hosts {
+                let notNow = host.buttons["Not Now"].firstMatch
+                if notNow.exists {
+                    notNow.tap()
+                    settle(0.5)
+                    return
+                }
+            }
+            if timeout > 0 { settle(0.25) }
+        } while Date() < deadline
+    }
+
+    /// The caption is ready to type into: the keyboard is up, or (with a
+    /// hardware keyboard attached to the simulator) the field has focus.
+    private func readyToType(_ field: XCUIElement, in app: XCUIApplication) -> Bool {
+        if app.keyboards.firstMatch.waitForExistence(timeout: 5) { return true }
+        return (field.value(forKey: "hasKeyboardFocus") as? Bool) == true
     }
 
     private func tab(_ app: XCUIApplication, _ name: String) {
@@ -304,7 +321,8 @@ final class PullUpUITests: XCTestCase {
         XCTAssertTrue(caption.waitForExistence(timeout: 5))
         let post = app.buttons["composer-post"]
         XCTAssertFalse(post.isEnabled, "Nothing to post yet")
-        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5), "The keyboard is up, ready to type")
+        dismissSystemPrompts(app)
+        XCTAssertTrue(readyToType(caption, in: app), "The keyboard is up, ready to type")
         XCTAssertTrue(element(app, "composer-media").exists, "Photos are one tap away")
         XCTAssertFalse(element(app, "composer-vehicle-tagged").exists, "No vehicle is tagged without a tap")
         XCTAssertFalse(app.buttons["Build update"].exists, "The post type stays under More options")

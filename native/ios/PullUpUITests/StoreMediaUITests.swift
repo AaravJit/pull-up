@@ -107,12 +107,21 @@ final class StoreMediaUITests: XCTestCase {
 
     /// The simulator sometimes offers "Enable Dictation?" the first time
     /// the keyboard appears; it isn't the app's, so decline it.
-    private func dismissSystemPrompts(_ app: XCUIApplication) {
-        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
-        for owner in [app, springboard] {
-            let notNow = owner.buttons["Not Now"].firstMatch
-            if notNow.waitForExistence(timeout: 1) { notNow.tap(); settle(0.5) }
-        }
+    private func dismissSystemPrompts(_ app: XCUIApplication, timeout: TimeInterval = 2) {
+        let hosts = [app] + ["com.apple.springboard", "com.apple.InputUI", "com.apple.siri"]
+            .map { XCUIApplication(bundleIdentifier: $0) }
+        let deadline = Date().addingTimeInterval(timeout)
+        repeat {
+            for host in hosts {
+                let notNow = host.buttons["Not Now"].firstMatch
+                if notNow.exists {
+                    notNow.tap()
+                    settle(0.5)
+                    return
+                }
+            }
+            settle(0.25)
+        } while Date() < deadline
     }
 
     /// Tab bars can sit vertically on iPhone Duo's inner display, so fall back
