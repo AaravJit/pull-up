@@ -80,10 +80,16 @@ final class PullUpUITests: XCTestCase {
         let button = app.tabBars.buttons[name].firstMatch
         if !button.waitForExistence(timeout: 2) {
             // Scrolling down minimizes the tab bar to a single round
-            // button (it stays that way after a pop); tapping it brings
-            // the tabs back.
-            let bar = app.tabBars.firstMatch
-            if bar.exists { bar.tap() } else { app.swipeDown() }
+            // button for the current tab (it stays that way after a pop);
+            // tapping that button brings the tabs back. The bar's own frame
+            // still spans the screen, so tap the button, not the bar.
+            let current = app.tabBars.buttons.firstMatch
+            if current.exists {
+                current.tap()
+            } else {
+                app.swipeUp()
+                app.swipeDown()
+            }
             settle()
         }
         XCTAssertTrue(button.waitForExistence(timeout: 5), "Tab \(name) missing")
@@ -342,7 +348,8 @@ final class PullUpUITests: XCTestCase {
         snap("21-composer")
 
         caption.typeText("Fresh alignment, first drive out")
-        XCTAssertTrue(post.isEnabled)
+        let enabled = expectation(for: NSPredicate(format: "isEnabled == true"), evaluatedWith: post)
+        wait(for: [enabled], timeout: 5)
         let suggestion = element(app, "composer-vehicle-suggestion")
         if suggestion.exists {
             suggestion.tap()
