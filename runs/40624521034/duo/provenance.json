@@ -1,0 +1,75 @@
+{
+ "commit": "842aa0e82cea1f0f52f2d72919a2e3b1080674a8",
+ "ref": "claude/project-thread-kfuo7m",
+ "run_id": "40624521034",
+ "run_attempt": "1",
+ "job": "duo",
+ "runner": {
+  "os": "ProductName:\t\tmacOS\nProductVersion:\t\t27.0.1\nBuildVersion:\t\t26A434",
+  "label": "xcode-27"
+ },
+ "xcode": "Xcode 27.1\nBuild version 27A9275",
+ "app": {
+  "CFBundleIdentifier": "app.pullup.ios",
+  "CFBundleShortVersionString": "1.0",
+  "CFBundleVersion": "1",
+  "DTSDKName": "iphonesimulator27.1",
+  "DTPlatformVersion": "27.1",
+  "DTXcode": "2710",
+  "DTXcodeBuild": "27A9275",
+  "PullUpProOffered": "NO"
+ },
+ "configuration": "Debug (simulator); launch arguments -PullUpDemo -PullUpResetDefaults -PullUpStoreCapture -PullUpAppearance dark",
+ "devices": {
+  "iphone-duo": {
+   "udid": "D187B49F-7B70-4AB0-9522-9CABF5D90987",
+   "name": "Store iPhone Duo",
+   "device_type": "com.apple.CoreSimulator.SimDeviceType.iPhone-Duo",
+   "runtime": "com.apple.CoreSimulator.SimRuntime.iOS-27-1",
+   "ios": "27.1",
+   "ios_build": "24A94425",
+   "screens": [
+    {
+     "id": 1,
+     "name": "LCD",
+     "pixels": [
+      1398,
+      2034
+     ]
+    },
+    {
+     "id": 2,
+     "name": "TVOut",
+     "pixels": [
+      720,
+      480
+     ]
+    },
+    {
+     "id": 3,
+     "name": "LCD-1",
+     "pixels": [
+      2007,
+      2853
+     ]
+    },
+    {
+     "id": 4,
+     "name": "Wireless",
+     "pixels": [
+      720,
+      480
+     ]
+    },
+    {
+     "id": 5,
+     "name": "Resizable",
+     "pixels": [
+      7680,
+      4320
+     ]
+    }
+   ]
+  }
+ }
+}

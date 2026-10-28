@@ -1,0 +1,43 @@
+{
+ "source": "video-raw/P2-messages.mov",
+ "source_size": [
+  1398,
+  2034
+ ],
+ "source_seconds": 26.925,
+ "file": "video-upload/P2-messages.mp4",
+ "size": [
+  886,
+  1920
+ ],
+ "seconds": 26.925,
+ "fps": "30/1",
+ "codec": "h264",
+ "profile": "High",
+ "level": 40,
+ "video_bit_rate": 11041444,
+ "audio": [
+  {
+   "codec": "aac",
+   "channels": 2,
+   "sample_rate": "48000",
+   "bit_rate": 2276
+  }
+ ],
+ "bytes": 37165546,
+ "geometry": "scaled 1398x2034 -> 886x1290 (uniform), centred on a 886x1920 black frame",
+ "checks": {
+  "size 886x1920": true,
+  "codec h264": true,
+  "High profile": true,
+  "level <= 4.0": true,
+  "progressive": true,
+  "30 fps": true,
+  "video 10-12 Mbps": true,
+  "duration 15-30 s": true,
+  "stereo AAC 48 kHz": true,
+  "audio AAC-LC, 256 kbps target": true,
+  "<= 500 MB": true
+ },
+ "compliant": true
+}
