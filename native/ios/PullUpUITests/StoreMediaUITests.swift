@@ -194,8 +194,15 @@ final class StoreMediaUITests: XCTestCase {
         let start = app.buttons["start-drive"]
         if start.exists { return }
         tab(app, "Explore")
-        let open = app.buttons["open-drive"].firstMatch
-        XCTAssertTrue(open.waitForExistence(timeout: 5))
+        var open = app.buttons["open-drive"].firstMatch
+        if !open.waitForExistence(timeout: 5) || !open.isHittable {
+            // On narrow displays (iPhone Duo outer) Explore's toolbar can
+            // collapse; You has the same entry point as a row.
+            tab(app, "You")
+            open = app.descendants(matching: .any)["open-drive"].firstMatch
+            XCTAssertTrue(open.waitForExistence(timeout: 5), "No Drive entry point in Explore or You")
+            reveal(app, open)
+        }
         open.tap()
         XCTAssertTrue(start.waitForExistence(timeout: 10), "Drive should open")
     }
