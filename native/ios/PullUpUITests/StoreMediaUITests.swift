@@ -34,14 +34,15 @@ final class StoreMediaUITests: XCTestCase {
 
     // MARK: Plumbing
 
-    private func launch(_ extra: [String] = []) -> XCUIApplication {
+    /// Launches on the Feed in `appearance` ("dark" is OLED Black, or "light").
+    private func launch(_ extra: [String] = [], appearance: String = "dark") -> XCUIApplication {
         let app = XCUIApplication()
-        app.launchArguments = ["-PullUpDemo", "-PullUpResetDefaults", "-PullUpStoreCapture", "-PullUpAppearance", "dark"] + extra
+        app.launchArguments = ["-PullUpDemo", "-PullUpResetDefaults", "-PullUpStoreCapture", "-PullUpAppearance", appearance] + extra
         // Location is granted by the workflow (simctl privacy), so no
         // permission alert can cover a capture.
         app.launch()
         // The first launch on a fresh simulator can be slow.
-        let signedIn = [app.buttons["start-drive"], element(app, "map"), element(app, "garage-actions"), element(app, "open-messages")]
+        let signedIn = [app.buttons["Feed"].firstMatch, app.buttons["start-drive"], element(app, "map"), element(app, "you")]
         let deadline = Date().addingTimeInterval(90)
         while Date() < deadline, !signedIn.contains(where: { $0.exists }) { settle(0.5) }
         XCTAssertTrue(signedIn.contains(where: { $0.exists }), "The app should open signed in")
@@ -142,6 +143,31 @@ final class StoreMediaUITests: XCTestCase {
         for _ in 0..<5 where !element.isHittable { scroll(app) ; settle(0.5) }
     }
 
+    /// Explore's segmented control: Meets, Map or People.
+    private func explore(_ app: XCUIApplication, _ mode: String) {
+        tab(app, "Explore")
+        let segment = element(app, "explore-mode").buttons[mode]
+        XCTAssertTrue(segment.waitForExistence(timeout: 5), "Explore > \(mode) missing")
+        segment.tap()
+        settle(1)
+    }
+
+    private func back(_ app: XCUIApplication) {
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        settle()
+    }
+
+    /// Opens Drive from Explore's toolbar. Nothing records yet.
+    private func openDrive(_ app: XCUIApplication) {
+        let start = app.buttons["start-drive"]
+        if start.exists { return }
+        tab(app, "Explore")
+        let open = app.buttons["open-drive"].firstMatch
+        XCTAssertTrue(open.waitForExistence(timeout: 5))
+        open.tap()
+        XCTAssertTrue(start.waitForExistence(timeout: 10), "Drive should open")
+    }
+
     @discardableResult
     private func openPicker(_ app: XCUIApplication) -> XCUIElement {
         let start = app.buttons["start-drive"]
@@ -150,7 +176,7 @@ final class StoreMediaUITests: XCTestCase {
         settle()
         start.tap()
         if !confirm.waitForExistence(timeout: 10), start.isHittable { start.tap() }
-        XCTAssertTrue(confirm.waitForExistence(timeout: 10), "Start Drive should open the picker")
+        XCTAssertTrue(confirm.waitForExistence(timeout: 10), "Start a drive should open the picker")
         return confirm
     }
 
@@ -181,153 +207,197 @@ final class StoreMediaUITests: XCTestCase {
         XCTAssertTrue(element(app, "meet-detail").waitForExistence(timeout: 10))
     }
 
-    // MARK: Screenshots
-
-    /// The ten App Store screenshots, in product-page order.
-    func testScreenshots() throws {
-        let app = launch()
-
-        let confirm = openPicker(app)
-        pickDaily(app)
-        shot(app, "02-start-drive")
-        confirm.tap()
-        waitForDashboard(app)
-        let started = Date()
-        settle(22)
-        shot(app, "01-live-drive", settleFor: 0.2)
-        // The demo backend keeps a drive of at least 30 fixes (one a second).
-        let remaining = 36 - Date().timeIntervalSince(started)
-        if remaining > 0 { settle(remaining) }
-        stopDrive(app)
-        shot(app, "03-drive-summary", settleFor: 3)
-        app.buttons["summary-done"].tap()
-        settle()
-
-        tab(app, "Garage")
-        shot(app, "04-garage", settleFor: 1.5)
-        let daily = element(app, "garage-tile-320i xDrive")
-        XCTAssertTrue(daily.waitForExistence(timeout: 5))
-        daily.tap()
-        shot(app, "05-vehicle", settleFor: 2)
-
-        tab(app, "Map")
-        shot(app, "06-map", settleFor: 5)
-
-        tab(app, "Meets")
-        shot(app, "07-meets", settleFor: 1.5)
-        openMeet(app)
-        shot(app, "08-meet-detail", settleFor: 3)
-
-        tab(app, "Feed")
-        shot(app, "09-feed", settleFor: 2)
-        let messages = element(app, "open-messages")
-        XCTAssertTrue(messages.waitForExistence(timeout: 5))
-        messages.tap()
+    private func openConversation(_ app: XCUIApplication) {
+        tab(app, "Messages")
         let maya = element(app, "inbox-row-maya.s15")
         XCTAssertTrue(maya.waitForExistence(timeout: 10))
         maya.tap()
         XCTAssertTrue(element(app, "composer-field").waitForExistence(timeout: 10))
-        shot(app, "10-messages", settleFor: 2)
     }
 
-    /// Layout checks in the supported landscape orientations (not product
-    /// page screenshots unless chosen later): a live drive, then each tab.
+    /// The composer with a caption typed and the suggested vehicle tagged.
+    /// Nothing is published.
+    private func fillComposer(_ app: XCUIApplication, slowly: Bool = false) {
+        let prompt = element(app, "compose-prompt")
+        XCTAssertTrue(prompt.waitForExistence(timeout: 10))
+        prompt.tap()
+        let caption = element(app, "composer-caption")
+        XCTAssertTrue(caption.waitForExistence(timeout: 5))
+        settle(slowly ? 1.2 : 0.6)
+        let words = ["First drive since the alignment. ", "Turn-in is so much sharper."]
+        for part in words {
+            caption.typeText(part)
+            if slowly { settle(0.6) }
+        }
+        let suggestion = element(app, "composer-vehicle-suggestion")
+        if suggestion.waitForExistence(timeout: 3) {
+            if slowly { settle(0.8) }
+            suggestion.tap()
+        }
+    }
+
+    // MARK: Screenshots
+
+    /// The ten App Store screenshots in product-page order, OLED Black.
+    func testScreenshots() throws { try screenshots(appearance: "dark") }
+
+    /// The same ten in Light.
+    func testScreenshotsLight() throws { try screenshots(appearance: "light") }
+
+    private func screenshots(appearance: String) throws {
+        let app = launch(appearance: appearance)
+
+        shot(app, "01-feed", settleFor: 2)
+        fillComposer(app)
+        shot(app, "02-composer", settleFor: 1.5)
+        // Cancel keeps the words as a draft; nothing is published.
+        app.buttons["Cancel"].firstMatch.tap()
+        settle()
+
+        tab(app, "Messages")
+        shot(app, "03-messages", settleFor: 1.5)
+        openConversation(app)
+        shot(app, "04-conversation", settleFor: 2)
+        back(app)
+
+        explore(app, "Meets")
+        shot(app, "05-meets", settleFor: 1.5)
+        openMeet(app)
+        shot(app, "06-meet-detail", settleFor: 3)
+        back(app)
+        explore(app, "Map")
+        shot(app, "07-map", settleFor: 5)
+
+        tab(app, "You")
+        shot(app, "08-you", settleFor: 2)
+        let daily = element(app, "garage-tile-320i xDrive")
+        XCTAssertTrue(daily.waitForExistence(timeout: 5))
+        daily.tap()
+        shot(app, "09-vehicle", settleFor: 2)
+        back(app)
+
+        openDrive(app)
+        let confirm = openPicker(app)
+        pickDaily(app)
+        shot(app, "X1-start-drive")
+        confirm.tap()
+        waitForDashboard(app)
+        let started = Date()
+        settle(22)
+        shot(app, "10-live-drive", settleFor: 0.2)
+        // The demo backend keeps a drive of at least 30 fixes (one a second).
+        let remaining = 36 - Date().timeIntervalSince(started)
+        if remaining > 0 { settle(remaining) }
+        stopDrive(app)
+        shot(app, "X2-drive-summary", settleFor: 3)
+    }
+
+    /// Layout checks in landscape (verification shots, not product-page
+    /// screenshots): each tab, a conversation, then a live drive.
     func testLandscape() throws {
         let app = launch()
+        XCUIDevice.shared.orientation = .landscapeLeft
+        shot(app, "L01-feed-landscape", settleFor: 3)
+        openConversation(app)
+        shot(app, "L02-conversation-landscape", settleFor: 2)
+        back(app)
+        explore(app, "Map")
+        shot(app, "L03-map-landscape", settleFor: 5)
+        explore(app, "Meets")
+        shot(app, "L04-meets-landscape", settleFor: 2)
+        tab(app, "You")
+        shot(app, "L05-you-landscape", settleFor: 2)
+        XCUIDevice.shared.orientation = .portrait
+        settle(2)
+
+        openDrive(app)
         let confirm = openPicker(app)
         pickDaily(app)
         confirm.tap()
         waitForDashboard(app)
         settle(8)
         XCUIDevice.shared.orientation = .landscapeLeft
-        shot(app, "L01-live-drive-landscape-left", settleFor: 4)
+        shot(app, "L06-live-drive-landscape-left", settleFor: 4)
         XCTAssertTrue(element(app, "hold-to-stop").exists, "Rotating mustn't interrupt the drive")
         XCUIDevice.shared.orientation = .landscapeRight
-        shot(app, "L02-live-drive-landscape-right", settleFor: 4)
+        shot(app, "L07-live-drive-landscape-right", settleFor: 4)
         XCUIDevice.shared.orientation = .portrait
         // Past the demo backend's 30-fix minimum before stopping.
         settle(26)
         stopDrive(app)
         XCUIDevice.shared.orientation = .landscapeLeft
-        shot(app, "L03-drive-summary-landscape", settleFor: 3)
-        XCUIDevice.shared.orientation = .portrait
-        settle(2)
-        app.buttons["summary-done"].tap()
-        settle()
-        XCUIDevice.shared.orientation = .landscapeLeft
-        settle(2)
-        tab(app, "Garage")
-        shot(app, "L04-garage-landscape", settleFor: 2)
-        tab(app, "Map")
-        shot(app, "L05-map-landscape", settleFor: 5)
-        tab(app, "Meets")
-        shot(app, "L06-meets-landscape", settleFor: 2)
-        tab(app, "Feed")
-        shot(app, "L07-feed-landscape", settleFor: 2)
+        shot(app, "L08-drive-summary-landscape", settleFor: 3)
         XCUIDevice.shared.orientation = .portrait
         settle(2)
     }
 
-    // MARK: App previews (each 15–30 s once trimmed)
+    // MARK: App previews (each 15-30 s once trimmed)
 
-    /// Preview 1, Drive: pick the car you're driving and start recording.
-    func testPreviewDrive() throws {
+    /// Preview 1, Post: write a post, tag the car, publish, see it in the feed.
+    func testPreviewPost() throws {
         let app = launch()
-        XCTAssertTrue(app.buttons["start-drive"].waitForExistence(timeout: 10))
+        XCTAssertTrue(element(app, "compose-prompt").waitForExistence(timeout: 10))
         settle(2)
-        request("recstart", "P1-drive", app: app)
+        request("recstart", "P1-post", app: app)
         settle(2)
+        scroll(app)
+        settle(1.5)
+        scroll(app, from: 0.38, to: 0.72)
+        settle(1.5)
+        fillComposer(app, slowly: true)
+        settle(1.5)
+        app.buttons["composer-post"].tap()
+        XCTAssertTrue(app.staticTexts["First drive since the alignment. Turn-in is so much sharper."].waitForExistence(timeout: 10))
+        settle(4)
+        request("recstop", "P1-post", app: app)
+    }
+
+    /// Preview 2, Messages: the inbox, a conversation, a reply.
+    func testPreviewMessages() throws {
+        let app = launch(["-PullUpTab", "messages"])
+        let maya = element(app, "inbox-row-maya.s15")
+        XCTAssertTrue(maya.waitForExistence(timeout: 10))
+        settle(2)
+        request("recstart", "P2-messages", app: app)
+        settle(2.5)
+        maya.tap()
+        let field = element(app, "composer-field")
+        XCTAssertTrue(field.waitForExistence(timeout: 10))
+        settle(2)
+        field.tap()
+        settle(1)
+        for part in ["Saturday works. ", "I'll bring the camber gauge."] {
+            field.typeText(part)
+            settle(0.6)
+        }
+        settle(1)
+        app.buttons["composer-send"].firstMatch.tap()
+        settle(3)
+        back(app)
+        settle(2.5)
+        request("recstop", "P2-messages", app: app)
+    }
+
+    /// Preview 3, Meets and Drive: a meet's details, then a drive started
+    /// with the car you're in.
+    func testPreviewDrive() throws {
+        let app = launch(["-PullUpTab", "meets"])
+        XCTAssertTrue(element(app, "meet-row-Sac Nights").waitForExistence(timeout: 10))
+        settle(2)
+        request("recstart", "P3-drive", app: app)
+        settle(2)
+        openMeet(app)
+        settle(3)
+        back(app)
+        settle(1)
+        app.buttons["open-drive"].firstMatch.tap()
         let confirm = openPicker(app)
         settle(1.5)
         pickDaily(app)
-        settle(2)
+        settle(1.5)
         confirm.tap()
         waitForDashboard(app)
-        settle(11)
-        request("recstop", "P1-drive", app: app)
-    }
-
-    /// Preview 2, Garage: the vehicles, one car's details and a past drive.
-    func testPreviewGarage() throws {
-        let app = launch(["-PullUpTab", "garage"])
-        let daily = element(app, "garage-tile-320i xDrive")
-        XCTAssertTrue(daily.waitForExistence(timeout: 10))
-        settle(2)
-        request("recstart", "P2-garage", app: app)
-        settle(2.5)
-        reveal(app, daily)
-        daily.tap()
-        settle(2.5)
-        scroll(app)
-        settle(1.5)
-        let drive = app.buttons.matching(NSPredicate(format: "label CONTAINS 'Commute'")).firstMatch
-        reveal(app, drive)
-        drive.tap()
-        XCTAssertTrue(element(app, "drive-summary").waitForExistence(timeout: 10) || element(app, "summary-vehicle-name").waitForExistence(timeout: 5))
-        settle(3)
-        scroll(app)
-        settle(2)
-        request("recstop", "P2-garage", app: app)
-    }
-
-    /// Preview 3, Maps, meets and community: meets on the map, a meet's
-    /// details and RSVP, then the feed.
-    func testPreviewCommunity() throws {
-        let app = launch(["-PullUpTab", "map"])
-        XCTAssertTrue(element(app, "map").waitForExistence(timeout: 10))
-        settle(5)
-        request("recstart", "P3-community", app: app)
-        settle(2.5)
-        tab(app, "Meets")
-        settle(1)
-        openMeet(app)
-        settle(2)
-        let going = app.buttons["rsvp-going"]
-        reveal(app, going)
-        going.tap()
-        settle(1.5)
-        tab(app, "Feed")
-        settle(2.5)
-        request("recstop", "P3-community", app: app)
+        settle(8)
+        request("recstop", "P3-drive", app: app)
     }
 }

@@ -10,7 +10,8 @@ name: Store media
 # Results are committed to the ci/store-media branch, one folder per run.
 on:
   push:
-    branches: ["claude/store-media"]
+    # claude/project-thread-kfuo7m: the 1.0 redesign (stacked on #40).
+    branches: ["claude/store-media", "claude/project-thread-kfuo7m"]
     paths: ["native/ios/**", ".github/workflows/store-media.yml"]
 
 concurrency:
@@ -39,7 +40,7 @@ jobs:
     # "[duo-only]" in the commit message reuses an earlier run's iPhone set.
     if: ${{ !contains(github.event.head_commit.message, '[duo-only]') }}
     runs-on: xcode-27
-    timeout-minutes: 120
+    timeout-minutes: 170
     steps:
       - uses: actions/checkout@v4
       - name: Toolchain
@@ -73,11 +74,14 @@ jobs:
           T=com.apple.CoreSimulator.SimDeviceType
           # iPhone with Dynamic Island, medium display (the required size); large display.
           PRO=$($S/setup-device.sh "Store iPhone Pro" "$APP" $T.iPhone-18-Pro $T.iPhone-17-Pro)
-          for t in testScreenshots testLandscape testPreviewDrive testPreviewGarage testPreviewCommunity; do
+          for t in testScreenshots testLandscape testPreviewPost testPreviewMessages testPreviewDrive; do
             $S/pass.sh "$PRO" "$MEDIA/iphone-pro" "$t" || fail=1
           done
+          $S/pass.sh "$PRO" "$MEDIA/iphone-pro-light" testScreenshotsLight || fail=1
           MAX=$($S/setup-device.sh "Store iPhone Pro Max" "$APP" $T.iPhone-18-Pro-Max $T.iPhone-17-Pro-Max)
           $S/pass.sh "$MAX" "$MEDIA/iphone-pro-max" testScreenshots || fail=1
+          $S/pass.sh "$MAX" "$MEDIA/iphone-pro-max-light" testScreenshotsLight || fail=1
+          $S/pass.sh "$MAX" "$MEDIA/iphone-pro-max" testLandscape || fail=1
           python3 $S/provenance.py "$MEDIA" "$APP" "iphone-pro=$PRO" "iphone-pro-max=$MAX"
           exit $fail
       - name: Upload
@@ -91,7 +95,7 @@ jobs:
   duo:
     name: iPhone Duo
     runs-on: xcode-27
-    timeout-minutes: 150
+    timeout-minutes: 180
     steps:
       - uses: actions/checkout@v4
       - name: Toolchain
@@ -130,6 +134,18 @@ jobs:
           sleep 40
           for d in 1 3; do xcrun simctl io "$DUO" screenshot --mask=ignored --display=$d "$MEDIA/probe/open-display$d.png" 2>&1 | tail -1 || true; done
           xcrun simctl terminate "$DUO" "$BID" 2>&1 | tail -1 || true
+          # Is there any command-line way to open (unfold) the simulator?
+          # Recorded for the investigation in docs/REDESIGN_1_0.md.
+          {
+            echo "== simctl help io"; xcrun simctl help io 2>&1
+            echo "== simctl subcommands mentioning fold/posture/hinge/display"; xcrun simctl help 2>&1 | grep -i -E "fold|posture|hinge|display|screen" || echo "(none)"
+            echo "== CoreSimulator strings mentioning fold/posture/hinge"
+            for b in /Library/Developer/PrivateFrameworks/CoreSimulator.framework/Versions/A/CoreSimulator \
+                     "$XCODE/Contents/Developer/Applications/Simulator.app/Contents/MacOS/Simulator"; do
+              [ -f "$b" ] && { echo "-- $b"; strings "$b" | grep -i -E "posture|unfold|hinge|foldState|fold state" | sort -u | head -40; }
+            done
+            echo "== Simulator.app bundles"; ls "$XCODE/Contents/Developer/Applications" 2>&1
+          } > "$MEDIA/probe/unfold-investigation.txt" 2>&1 || true
           for f in "$MEDIA"/probe/*.png; do echo "$(basename "$f") $(sips -g pixelWidth -g pixelHeight "$f" | tail -2 | tr '\n' ' ')"; done
       - name: Capture unfolded (inner display)
         if: env.DUO_INNER_CAPTURE == '1'
@@ -138,7 +154,7 @@ jobs:
           S=./scripts/store-media
           $S/pose.sh "$DUO" unfold
           fail=0
-          for t in testScreenshots testLandscape testPreviewDrive testPreviewGarage; do
+          for t in testScreenshots testLandscape testPreviewPost testPreviewMessages testPreviewDrive; do
             $S/pass.sh "$DUO" "$MEDIA/duo-inner" "$t" --display 3 --pose unfold || fail=1
           done
           exit $fail
@@ -150,9 +166,10 @@ jobs:
           # As booted, the app is on the outer display; the daemon checks the
           # window size before every pass. No power change (see DUO_INNER_CAPTURE).
           fail=0
-          for t in testScreenshots testPreviewDrive testPreviewGarage testPreviewCommunity; do
+          for t in testScreenshots testLandscape testPreviewPost testPreviewMessages testPreviewDrive; do
             $S/pass.sh "$DUO" "$MEDIA/duo-outer" "$t" --display 1 --pose fold || fail=1
           done
+          $S/pass.sh "$DUO" "$MEDIA/duo-outer-light" testScreenshotsLight --display 1 --pose fold || fail=1
           exit $fail
       - name: Provenance
         if: always()
