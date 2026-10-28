@@ -133,6 +133,16 @@ jobs:
             echo "::error::The ${{ inputs.backend }} environment is missing:${missing%,}. See docs/TESTFLIGHT_SETUP.md."
             exit 1
           fi
+          # The only Supabase project each backend may point at (the same
+          # mapping as supabase-deploy.yml).
+          case "${{ inputs.backend }}" in
+            staging) expected=hllfsfbuexuniosdewob ;;
+            production) expected=jxemvjxkspolyoknqkzr ;;
+          esac
+          if [ "$PROJECT_REF" != "$expected" ]; then
+            echo "::error::SUPABASE_PROJECT_REF in the ${{ inputs.backend }} environment is '$PROJECT_REF', not the ${{ inputs.backend }} project ($expected)."
+            exit 1
+          fi
       - name: Check the link variables
         run: |
           # xcconfig reads "//" as the start of a comment, so a value with
