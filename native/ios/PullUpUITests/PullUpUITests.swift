@@ -78,6 +78,12 @@ final class PullUpUITests: XCTestCase {
     private func tab(_ app: XCUIApplication, _ name: String) {
         dismissSystemPrompts(app, timeout: 0)
         let button = app.tabBars.buttons[name].firstMatch
+        if !button.waitForExistence(timeout: 2) {
+            // Scrolling down minimizes the tab bar; scrolling up brings
+            // it back.
+            app.swipeDown()
+            settle()
+        }
         XCTAssertTrue(button.waitForExistence(timeout: 5), "Tab \(name) missing")
         button.tap()
         settle()
