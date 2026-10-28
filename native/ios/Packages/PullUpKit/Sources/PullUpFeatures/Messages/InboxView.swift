@@ -99,6 +99,20 @@ struct InboxView: View {
                     if entry.id == entries.last?.id, hasMore { Task { await loadMore() } }
                 }
             }
+            // Search only covers loaded conversations, and paging is driven by
+            // the last loaded row appearing. When the filter hides that row,
+            // offer older pages explicitly so a match there is still reachable.
+            if hasMore, let last = entries.last, !shown.contains(where: { $0.id == last.id }) {
+                Button {
+                    Task { await loadMore() }
+                } label: {
+                    Label("Search older conversations", systemImage: "clock.arrow.circlepath")
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                }
+                .accessibilityIdentifier("inbox-load-older")
+                .listRowSeparator(.hidden)
+                .listRowBackground(ClusterColor.canvas)
+            }
         }
         .listStyle(.plain)
         .canvasBackground()

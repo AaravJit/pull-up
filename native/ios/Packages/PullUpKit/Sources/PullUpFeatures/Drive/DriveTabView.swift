@@ -56,6 +56,11 @@ public struct DriveTabView: View {
         }
         .animation(stageAnimation, value: stateKey)
         .background(ClusterColor.canvas.ignoresSafeArea())
+        .onAppear {
+            // Opened by a drive that is already recording (CarPlay, or a
+            // recovered drive): keep the screen up for its summary too.
+            if isLive { app.driveOpen = true }
+        }
         .onChange(of: recorder.phase) { _, phase in
             if phase == .recording {
                 pickerOpen = false
