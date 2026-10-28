@@ -267,17 +267,6 @@ final class PullUpUITests: XCTestCase {
         settle(4)
         snap("15-explore-map")
 
-        explore(app, "People")
-        let search = app.searchFields.firstMatch
-        XCTAssertTrue(search.waitForExistence(timeout: 5))
-        search.tap()
-        search.typeText("maya")
-        dismissSystemPrompts(app)
-        XCTAssertTrue(element(app, "person-maya.s15").waitForExistence(timeout: 5), "People search finds Maya")
-        settle()
-        dismissSystemPrompts(app, timeout: 3)
-        snap("16-explore-people")
-
         tab(app, "You")
         let boards = element(app, "open-leaderboards")
         XCTAssertTrue(boards.waitForExistence(timeout: 5))
@@ -306,6 +295,18 @@ final class PullUpUITests: XCTestCase {
         for id in ["privacy-policy", "support", "terms", "community"] {
             XCTAssertTrue(element(app, id).exists, "Settings ▸ About should link \(id)")
         }
+
+        // Typing is last: once the software keyboard has been up, the
+        // simulator can raise "Enable Dictation?" over the app, and that
+        // prompt isn't reachable from the test to decline.
+        explore(app, "People")
+        let search = app.searchFields.firstMatch
+        XCTAssertTrue(search.waitForExistence(timeout: 5))
+        search.tap()
+        search.typeText("maya")
+        XCTAssertTrue(element(app, "person-maya.s15").waitForExistence(timeout: 5), "People search finds Maya")
+        settle()
+        snap("16-explore-people")
     }
 
     /// The composer starts with just text, media and Post; the vehicle is a

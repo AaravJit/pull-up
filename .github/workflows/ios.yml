@@ -96,11 +96,6 @@ jobs:
         run: |
           mkdir -p "$TEST_RUNNER_SCREENSHOT_DIR"
           SIM=$(./scripts/simulator-id.sh)
-          # Type through a connected hardware keyboard, so the software
-          # keyboard (and the system's "Enable Dictation?" prompt it can
-          # raise over the app) never appears. Set before boot.
-          defaults write com.apple.iphonesimulator ConnectHardwareKeyboard -bool true
-          defaults write com.apple.iphonesimulator "DevicePreferences" -dict-add "$SIM" '<dict><key>ConnectHardwareKeyboard</key><true/></dict>' || true
           xcrun simctl boot "$SIM" || true
           # Fixed status bar so screenshots are comparable run to run.
           xcrun simctl status_bar "$SIM" override --time 9:41 --batteryState charged --batteryLevel 100 --cellularBars 4 || true
