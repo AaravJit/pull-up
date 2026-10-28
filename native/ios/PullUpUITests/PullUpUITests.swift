@@ -47,13 +47,13 @@ final class PullUpUITests: XCTestCase {
     }
 
     /// The simulator sometimes offers "Enable Dictation?" a few seconds
-    /// after the keyboard appears; it isn't the app's, so decline it. The
-    /// prompt isn't always hosted by SpringBoard, so the keyboard and Siri
-    /// processes are checked too. It is also checked (without waiting)
-    /// before every tab switch.
+    /// after the keyboard appears; it isn't the app's, so decline it. CI
+    /// types through a hardware keyboard so it shouldn't appear at all;
+    /// this is the fallback, also checked (without waiting) before every
+    /// tab switch. Only the app and SpringBoard are queried: snapshotting
+    /// the keyboard or Siri processes can hang the UI query.
     private func dismissSystemPrompts(_ app: XCUIApplication, timeout: TimeInterval = 1) {
-        let hosts = [app] + ["com.apple.springboard", "com.apple.InputUI", "com.apple.siri"]
-            .map { XCUIApplication(bundleIdentifier: $0) }
+        let hosts = [app, XCUIApplication(bundleIdentifier: "com.apple.springboard")]
         let deadline = Date().addingTimeInterval(timeout)
         repeat {
             for host in hosts {

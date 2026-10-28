@@ -108,8 +108,7 @@ final class StoreMediaUITests: XCTestCase {
     /// The simulator sometimes offers "Enable Dictation?" the first time
     /// the keyboard appears; it isn't the app's, so decline it.
     private func dismissSystemPrompts(_ app: XCUIApplication, timeout: TimeInterval = 2) {
-        let hosts = [app] + ["com.apple.springboard", "com.apple.InputUI", "com.apple.siri"]
-            .map { XCUIApplication(bundleIdentifier: $0) }
+        let hosts = [app, XCUIApplication(bundleIdentifier: "com.apple.springboard")]
         let deadline = Date().addingTimeInterval(timeout)
         repeat {
             for host in hosts {
