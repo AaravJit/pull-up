@@ -46,17 +46,20 @@ final class PullUpUITests: XCTestCase {
         _ = XCTWaiter.wait(for: [XCTestExpectation(description: "settle")], timeout: seconds)
     }
 
-    /// The simulator sometimes offers "Enable Dictation?" the first time
-    /// the keyboard appears; it isn't the app's, so decline it.
-    private func dismissSystemPrompts(_ app: XCUIApplication) {
+    /// The simulator sometimes offers "Enable Dictation?" a few seconds
+    /// after the keyboard appears; it isn't the app's, so decline it. It is
+    /// also checked (without waiting) before every tab switch.
+    private func dismissSystemPrompts(_ app: XCUIApplication, timeout: TimeInterval = 1) {
         let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
         for owner in [app, springboard] {
             let notNow = owner.buttons["Not Now"].firstMatch
-            if notNow.waitForExistence(timeout: 1) { notNow.tap(); settle(0.5) }
+            let found = timeout > 0 ? notNow.waitForExistence(timeout: timeout) : notNow.exists
+            if found { notNow.tap(); settle(0.5) }
         }
     }
 
     private func tab(_ app: XCUIApplication, _ name: String) {
+        dismissSystemPrompts(app, timeout: 0)
         let button = app.tabBars.buttons[name].firstMatch
         XCTAssertTrue(button.waitForExistence(timeout: 5), "Tab \(name) missing")
         button.tap()
@@ -255,6 +258,7 @@ final class PullUpUITests: XCTestCase {
         dismissSystemPrompts(app)
         XCTAssertTrue(element(app, "person-maya.s15").waitForExistence(timeout: 5), "People search finds Maya")
         settle()
+        dismissSystemPrompts(app, timeout: 3)
         snap("16-explore-people")
 
         tab(app, "You")
@@ -726,8 +730,10 @@ final class PullUpUITests: XCTestCase {
         let accents = element(app, "accent-disclosure")
         for _ in 0..<4 where !accents.isHittable { app.swipeDown() }
         accents.tap()
+        settle()
         let papaya = element(app, "accent-papaya")
         XCTAssertTrue(papaya.waitForExistence(timeout: 5))
+        for _ in 0..<4 where !papaya.isHittable { app.swipeUp(velocity: .slow) }
         papaya.tap()
         settle()
         snap("55-settings-pro-unlocked")
