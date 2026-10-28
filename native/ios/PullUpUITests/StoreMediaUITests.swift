@@ -162,8 +162,21 @@ final class StoreMediaUITests: XCTestCase {
         settle(1)
     }
 
+    /// Goes back one screen. On iPhone Duo's outer display the back button
+    /// isn't always exposed as a navigation-bar button, so fall back to a
+    /// button labelled Back, then to the edge swipe people use.
     private func back(_ app: XCUIApplication) {
-        app.navigationBars.buttons.element(boundBy: 0).tap()
+        let inBar = app.navigationBars.buttons.firstMatch
+        let labelled = app.buttons.matching(NSPredicate(format: "label ==[c] 'Back' OR identifier == 'BackButton'")).firstMatch
+        if inBar.waitForExistence(timeout: 3), inBar.isHittable {
+            inBar.tap()
+        } else if labelled.exists, labelled.isHittable {
+            labelled.tap()
+        } else {
+            let window = app.windows.firstMatch
+            window.coordinate(withNormalizedOffset: CGVector(dx: 0.005, dy: 0.5))
+                .press(forDuration: 0.05, thenDragTo: window.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.5)))
+        }
         settle()
     }
 
