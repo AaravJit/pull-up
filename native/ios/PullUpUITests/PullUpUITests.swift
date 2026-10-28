@@ -298,7 +298,10 @@ final class PullUpUITests: XCTestCase {
 
         // Typing is last: once the software keyboard has been up, the
         // simulator can raise "Enable Dictation?" over the app, and that
-        // prompt isn't reachable from the test to decline.
+        // prompt isn't reachable from the test to decline. Settings has
+        // scrolled the tab bar down to its minimized button, so go back to
+        // You's root first.
+        back(app)
         explore(app, "People")
         let search = app.searchFields.firstMatch
         XCTAssertTrue(search.waitForExistence(timeout: 5))
