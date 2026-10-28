@@ -130,10 +130,10 @@ public struct ProfilePresentation: Codable, Hashable, Sendable {
 /// shared with the backend and Android; colours themselves live in the design
 /// system.
 public enum AccentChoice: String, Codable, CaseIterable, Sendable, Identifiable {
+    case gulf        // electric blue, the default since 1.0 (identifier kept)
     case sodium      // warm amber, the original Pull Up colour
     case redline     // signal red
     case britishGreen
-    case gulf        // pale blue
     case ultraviolet
     case titanium    // neutral, for people who want no colour
     case papaya      // Pull Up Pro
@@ -151,7 +151,7 @@ public enum AccentChoice: String, Codable, CaseIterable, Sendable, Identifiable 
         case .sodium: "Sodium"
         case .redline: "Redline"
         case .britishGreen: "Heritage Green"
-        case .gulf: "Gulf"
+        case .gulf: "Electric Blue"
         case .ultraviolet: "Ultraviolet"
         case .titanium: "Titanium"
         case .papaya: "Papaya"
@@ -186,7 +186,7 @@ public struct Vehicle: Codable, Hashable, Sendable, Identifiable {
         id: UUID = UUID(), ownerID: UserID, kind: VehicleKind, bodyStyle: BodyStyle? = nil, make: String, model: String, year: Int,
         trim: String = "", nickname: String = "", mileage: Int? = nil, mileageUnit: SpeedUnit = .mph,
         summary: String = "", visibility: Audience = .public, coverPhotoPath: String? = nil,
-        identityColor: AccentChoice = .sodium, position: Int = 0, isArchived: Bool = false
+        identityColor: AccentChoice = .gulf, position: Int = 0, isArchived: Bool = false
     ) {
         self.id = id
         self.ownerID = ownerID

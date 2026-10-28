@@ -148,7 +148,7 @@ struct LiveDashboardView: View {
     @ViewBuilder
     private var notices: some View {
         VStack(alignment: .leading, spacing: Space.xs) {
-            if recorder.usesReplay {
+            if recorder.usesReplay && app.showsDemoLabels {
                 NoticeStrip("Demo: replaying a recorded track instead of live GPS.", tone: .estimate)
             }
             if recorder.resumedDrive != nil {
@@ -332,8 +332,6 @@ struct HoldToStopButton: View {
                 .multilineTextAlignment(.center)
         }
         .font(ClusterFont.headline())
-        .textCase(.uppercase)
-        .tracking(1.2)
         .foregroundStyle(progress > 0.5 ? .white : ClusterColor.ink)
         .padding(.horizontal, Space.m)
         .padding(.vertical, Space.s)

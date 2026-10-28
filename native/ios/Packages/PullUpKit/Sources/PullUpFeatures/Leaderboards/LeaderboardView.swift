@@ -15,6 +15,11 @@ struct LeaderboardView: View {
     /// are never offered.
     static let metrics = LeaderboardMetric.allCases.filter { !$0.isPerformance }
 
+    /// Everyone, and the people you follow. The server's country and region
+    /// boards need a self-declared country, which no screen lets anyone set
+    /// yet, so they would only ever show an error.
+    static let scopes: [LeaderboardScope] = [.global, .friends]
+
     @State private var metric: LeaderboardMetric = .distance
     @State private var scope: LeaderboardScope = .global
     @State private var period: LeaderboardPeriod = .month
@@ -57,7 +62,7 @@ struct LeaderboardView: View {
             HStack(spacing: Space.m) {
                 Menu {
                     Picker("Scope", selection: $scope) {
-                        ForEach(LeaderboardScope.allCases) { Text($0.label).tag($0) }
+                        ForEach(Self.scopes) { Text($0.label).tag($0) }
                     }
                 } label: {
                     filterChip("Where", scope.label)

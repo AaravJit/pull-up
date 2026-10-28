@@ -36,7 +36,8 @@ struct ThreadView: View {
             }
         }
         .canvasBackground()
-        .clusterNavigation("@\(target.peer.username)")
+        .clusterNavigation(target.peer.displayName.isEmpty ? "@\(target.peer.username)" : target.peer.displayName)
+        .toolbar(.hidden, for: .tabBar)
         .toolbar {
             if showsDone {
                 ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() } }
@@ -50,6 +51,9 @@ struct ThreadView: View {
             }
             await model?.load()
             await app.refreshMessages()
+            // A new conversation opens ready to type; an existing one opens
+            // on its messages, with the keyboard down.
+            if let model, model.state == .active, model.messages.isEmpty { composerFocused = true }
         }
         .onChange(of: app.messagingPulse) { _, pulse in
             guard let model, pulse.conversationID == nil || pulse.conversationID == model.conversationID else { return }
@@ -162,18 +166,18 @@ struct ThreadView: View {
 
     private func header(_ model: ThreadModel) -> some View {
         VStack(spacing: Space.s) {
-            Avatar(name: target.peer.displayName.isEmpty ? target.peer.username : target.peer.displayName, path: target.peer.avatarPath, size: 64)
+            Avatar(name: target.peer.displayName.isEmpty ? target.peer.username : target.peer.displayName, path: target.peer.avatarPath, size: 72)
             Text(target.peer.displayName.isEmpty ? "@\(target.peer.username)" : target.peer.displayName)
                 .font(ClusterFont.headline())
                 .foregroundStyle(ClusterColor.ink)
             Text("@\(target.peer.username)")
                 .font(ClusterFont.body(.caption))
                 .foregroundStyle(ClusterColor.inkSecondary)
-            if app.isDemo {
+            if app.showsDemoLabels {
                 NoticeStrip("Demo conversation. Replies here are simulated on this device.", tone: .estimate)
             }
             Text("Messages aren't end-to-end encrypted. Pull Up reviews a message only when someone reports it. Locations and routes are never shared here.")
-                .font(ClusterFont.body(.caption2))
+                .font(ClusterFont.body(.caption))
                 .foregroundStyle(ClusterColor.inkTertiary)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
@@ -216,9 +220,10 @@ struct ThreadView: View {
                     .font(ClusterFont.body())
                     .lineLimit(1...6)
                     .focused($composerFocused)
-                    .padding(.horizontal, Space.m)
-                    .padding(.vertical, Space.s)
-                    .background(ClusterColor.plateRaised, in: ChamferedRectangle(cut: 6))
+                    .padding(.horizontal, Space.l)
+                    .padding(.vertical, 10)
+                    .frame(minHeight: 40)
+                    .background(ClusterColor.plate, in: ChamferedRectangle(cut: 20))
                     .accessibilityIdentifier("composer-field")
                 Button {
                     let text = draft
@@ -231,9 +236,11 @@ struct ThreadView: View {
                 } label: {
                     Image(systemName: "arrow.up")
                         .font(.system(size: 17, weight: .bold))
-                        .foregroundStyle(canSend ? (ClusterColor.accentPrefersDarkText(theme.accent) ? ClusterColor.onAccent : .white) : ClusterColor.inkTertiary)
+                        .foregroundStyle(canSend ? (theme.onAccent) : ClusterColor.inkTertiary)
                         .frame(width: 40, height: 40)
-                        .background(canSend ? theme.accentColor : ClusterColor.plateRaised, in: ChamferedRectangle(cut: 6))
+                        .background(canSend ? theme.accentFill : ClusterColor.plate, in: Circle())
+                        .frame(width: Space.target, height: Space.target)
+                        .contentShape(Circle())
                 }
                 .disabled(!canSend)
                 .accessibilityLabel("Send")
@@ -245,10 +252,10 @@ struct ThreadView: View {
                     .foregroundStyle(remaining >= 0 ? ClusterColor.inkTertiary : ClusterColor.caution)
             }
         }
-        .padding(.horizontal, Space.gutter)
+        .padding(.horizontal, Space.l)
         .padding(.vertical, Space.s)
-        .background(ClusterColor.plate)
-        .overlay(alignment: .top) { Hairline() }
+        .background(ClusterColor.canvas.opacity(0.96))
+        .sensoryFeedback(.impact(weight: .light), trigger: model.pending.count)
     }
 
     private func removeButton(_ label: String, action: @escaping () -> Void) -> some View {
@@ -354,7 +361,7 @@ struct MessageRow: View {
     var onReport: () -> Void = {}
 
     private var ink: Color {
-        isMine ? (ClusterColor.accentPrefersDarkText(theme.accent) ? ClusterColor.onAccent : .white) : ClusterColor.ink
+        isMine ? (theme.onAccent) : ClusterColor.ink
     }
 
     var body: some View {
@@ -367,7 +374,7 @@ struct MessageRow: View {
                         .foregroundStyle(ClusterColor.inkTertiary)
                         .padding(.horizontal, Space.m)
                         .padding(.vertical, Space.s)
-                        .overlay(ChamferedRectangle(cut: 8).stroke(ClusterColor.rule))
+                        .overlay(ChamferedRectangle(cut: Radius.bubble).stroke(ClusterColor.rule))
                 } else {
                     bubble
                         .contextMenu { menu }
@@ -420,12 +427,7 @@ struct MessageRow: View {
         }
         .padding(.horizontal, Space.m)
         .padding(.vertical, Space.s)
-        .background(isMine ? theme.accentColor : ClusterColor.plateRaised, in: ChamferedRectangle(cut: 8, corners: corners))
-    }
-
-    /// The corner nearest the sender stays square, like a speech tail.
-    private var corners: ChamferedRectangle.Corners {
-        isMine ? [.topLeading, .bottomLeading, .topTrailing] : [.topLeading, .topTrailing, .bottomTrailing]
+        .background(isMine ? theme.accentFill : ClusterColor.plateRaised, in: ChamferedRectangle(cut: Radius.bubble))
     }
 
     @ViewBuilder
@@ -485,12 +487,12 @@ private struct PendingRow: View {
                 if !item.outgoing.body.isEmpty {
                     Text(item.outgoing.body)
                         .font(ClusterFont.body())
-                        .foregroundStyle(ClusterColor.accentPrefersDarkText(theme.accent) ? ClusterColor.onAccent : .white)
+                        .foregroundStyle(theme.onAccent)
                 }
             }
             .padding(.horizontal, Space.m)
             .padding(.vertical, Space.s)
-            .background(theme.accentColor.opacity(item.failure == nil ? 0.6 : 0.35), in: ChamferedRectangle(cut: 8))
+            .background(theme.accentFill.opacity(item.failure == nil ? 0.6 : 0.35), in: ChamferedRectangle(cut: Radius.bubble))
         }
         .padding(.top, Space.s)
         .accessibilityElement(children: .combine)

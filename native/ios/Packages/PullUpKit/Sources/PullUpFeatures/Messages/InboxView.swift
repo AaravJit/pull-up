@@ -21,6 +21,18 @@ struct InboxView: View {
     @State private var confirmDelete: InboxEntry?
     /// Opened from a tapped push rather than a row.
     @State private var opened: ConversationTarget?
+    @State private var query = ""
+
+    /// Conversations, minus blocked people, narrowed by the search field.
+    private var shown: [InboxEntry] {
+        let visible = entries.filter { !app.blockedUsers.contains($0.peer.id) }
+        let q = query.trimmingCharacters(in: .whitespaces)
+        guard !q.isEmpty else { return visible }
+        return visible.filter {
+            $0.peer.username.localizedCaseInsensitiveContains(q) || $0.peer.displayName.localizedCaseInsensitiveContains(q)
+                || $0.preview.localizedCaseInsensitiveContains(q)
+        }
+    }
 
     var body: some View {
         List {
@@ -48,14 +60,14 @@ struct InboxView: View {
                     EmptyState(
                         title: folder == .messages ? "No messages yet" : "No requests",
                         message: folder == .messages
-                            ? "Message someone from their profile, or tap the paper plane on a post to share it."
+                            ? "Tap New message, or Message on someone's profile. To share a post, tap its paper plane."
                             : "Messages from people you don't follow wait here until you accept them."
                     )
                     .listRowSeparator(.hidden)
                     .listRowBackground(ClusterColor.canvas)
                 }
             }
-            ForEach(entries.filter { !app.blockedUsers.contains($0.peer.id) }) { entry in
+            ForEach(shown) { entry in
                 NavigationLink(value: ConversationTarget(entry)) {
                     InboxRow(entry: entry)
                 }
@@ -87,10 +99,25 @@ struct InboxView: View {
                     if entry.id == entries.last?.id, hasMore { Task { await loadMore() } }
                 }
             }
+            // Search only covers loaded conversations, and paging is driven by
+            // the last loaded row appearing. When the filter hides that row,
+            // offer older pages explicitly so a match there is still reachable.
+            if hasMore, let last = entries.last, !shown.contains(where: { $0.id == last.id }) {
+                Button {
+                    Task { await loadMore() }
+                } label: {
+                    Label("Search older conversations", systemImage: "clock.arrow.circlepath")
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                }
+                .accessibilityIdentifier("inbox-load-older")
+                .listRowSeparator(.hidden)
+                .listRowBackground(ClusterColor.canvas)
+            }
         }
         .listStyle(.plain)
         .canvasBackground()
-        .clusterNavigation("Messages")
+        .rootNavigation("Messages")
+        .searchable(text: $query, prompt: "Search messages")
         .navigationDestination(for: ConversationTarget.self) { ThreadView(target: $0) }
         .navigationDestination(item: $opened) { ThreadView(target: $0) }
         .refreshable { await load() }
@@ -201,11 +228,11 @@ struct InboxRow: View {
 
     var body: some View {
         HStack(spacing: Space.m) {
-            Avatar(name: entry.peer.displayName.isEmpty ? entry.peer.username : entry.peer.displayName, path: entry.peer.avatarPath, size: 46)
-            VStack(alignment: .leading, spacing: 2) {
+            Avatar(name: entry.peer.displayName.isEmpty ? entry.peer.username : entry.peer.displayName, path: entry.peer.avatarPath, size: 52)
+            VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: Space.xs) {
                     Text(entry.peer.displayName.isEmpty ? "@\(entry.peer.username)" : entry.peer.displayName)
-                        .font(ClusterFont.headline(.subheadline))
+                        .font(unread ? ClusterFont.headline(.body) : ClusterFont.body(.body))
                         .foregroundStyle(ClusterColor.ink)
                         .lineLimit(1)
                     if entry.muted {
@@ -215,23 +242,23 @@ struct InboxRow: View {
                     Spacer(minLength: Space.s)
                     if let date = entry.lastMessageAt {
                         Text(Format.relative(date))
-                            .font(ClusterFont.body(.caption))
+                            .font(ClusterFont.body(.subheadline))
                             .foregroundStyle(unread ? theme.accentColor : ClusterColor.inkTertiary)
                     }
                 }
                 HStack(spacing: Space.s) {
                     Text(entry.lastMessageFromMe ? "You: \(entry.preview)" : entry.preview)
-                        .font(unread ? ClusterFont.headline(.footnote) : ClusterFont.body(.footnote))
+                        .font(unread ? ClusterFont.headline(.subheadline) : ClusterFont.body(.subheadline))
                         .foregroundStyle(unread ? ClusterColor.ink : ClusterColor.inkSecondary)
                         .lineLimit(2)
                     Spacer(minLength: 0)
                     if unread {
                         Text(verbatim: "\(entry.unreadCount)")
-                            .font(ClusterFont.readout(.caption2))
-                            .foregroundStyle(ClusterColor.accentPrefersDarkText(theme.accent) ? ClusterColor.onAccent : .white)
-                            .padding(.horizontal, 6)
-                            .frame(minWidth: 20, minHeight: 20)
-                            .background(theme.accentColor, in: ChamferedRectangle(cut: 4))
+                            .font(ClusterFont.readout(.caption))
+                            .foregroundStyle(theme.onAccent)
+                            .padding(.horizontal, 7)
+                            .frame(minWidth: 22, minHeight: 22)
+                            .background(theme.accentFill, in: Capsule())
                     }
                 }
             }

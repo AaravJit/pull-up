@@ -7,21 +7,18 @@ import PullUpDomain
 struct DemoStrip: View {
     var body: some View {
         HStack(spacing: Space.s) {
-            Image(systemName: "flask")
+            Image(systemName: "flask").foregroundStyle(ClusterColor.estimate)
             Text("Demo data · not real, not saved")
         }
-        .font(ClusterFont.legend(.caption2))
-        .textCase(.uppercase)
-        .tracking(0.8)
+        .font(ClusterFont.legend(.caption))
         .lineLimit(2)
-        .minimumScaleFactor(0.7)
         .multilineTextAlignment(.center)
-        .foregroundStyle(ClusterColor.onAccent)
+        .foregroundStyle(ClusterColor.ink)
         .padding(.horizontal, Space.m)
         .padding(.vertical, Space.xs)
         .frame(maxWidth: .infinity)
         // Stays below the status bar so the clock keeps canvas contrast in both modes.
-        .background(ClusterColor.estimate, ignoresSafeAreaEdges: [])
+        .background(ClusterColor.estimate.opacity(0.16), ignoresSafeAreaEdges: [])
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Demo data. Nothing here is real or saved to a server.")
         .accessibilityIdentifier("demo-strip")
@@ -73,8 +70,9 @@ struct EmptyState<Actions: View>: View {
     var body: some View {
         VStack(spacing: Space.l) {
             VehicleSilhouette(style, color: ClusterColor.inkTertiary, lineWidth: 1.4)
-                .frame(width: 160, height: 64)
-            VStack(spacing: Space.xs) {
+                .frame(width: 140, height: 56)
+                .accessibilityHidden(true)
+            VStack(spacing: Space.s) {
                 Text(title)
                     .font(ClusterFont.title(.title3))
                     .foregroundStyle(ClusterColor.ink)
@@ -108,11 +106,23 @@ struct CanvasBackground: ViewModifier {
 extension View {
     func canvasBackground() -> some View { modifier(CanvasBackground()) }
 
-    /// Standard navigation title styling for Cluster screens.
+    /// A pushed or sheet screen's title: inline, on the system bar (Liquid
+    /// Glass on iOS 26, the standard bar before it).
     func clusterNavigation(_ title: String) -> some View {
         navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(ClusterColor.canvas, for: .navigationBar)
+    }
+
+    /// A tab's root screen: large title that collapses as the content scrolls.
+    func rootNavigation(_ title: String) -> some View {
+        navigationTitle(title)
+            .navigationBarTitleDisplayMode(.large)
+    }
+
+    /// Sheets keep the canvas (OLED black in dark mode) instead of the
+    /// system's elevated grey.
+    func sheetCanvas() -> some View {
+        presentationBackground(ClusterColor.canvas)
     }
 }
 
@@ -126,7 +136,11 @@ struct AudiencePicker: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Space.s) {
             Legend(title)
-            SwitchBank(allowed, selection: $selection) { $0.label }
+            Picker(title, selection: $selection) {
+                ForEach(allowed, id: \.self) { Text($0.label).tag($0) }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
             Text(selection.explanation)
                 .font(ClusterFont.body(.footnote))
                 .foregroundStyle(ClusterColor.inkSecondary)
@@ -145,14 +159,16 @@ struct FieldRow: View {
     var axis: Axis = .horizontal
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Space.xs) {
+        VStack(alignment: .leading, spacing: Space.s) {
             Legend(label)
             TextField(prompt, text: $text, axis: axis)
                 .font(ClusterFont.body())
                 .keyboardType(keyboard)
                 .foregroundStyle(ClusterColor.ink)
-                .padding(.vertical, Space.xs)
-            Hairline(color: ClusterColor.ruleStrong)
+                .padding(.horizontal, Space.m)
+                .padding(.vertical, Space.m)
+                .frame(minHeight: Space.target)
+                .background(ClusterColor.plate, in: ChamferedRectangle(cut: Radius.chamferSmall))
         }
         .accessibilityElement(children: .combine)
     }
@@ -200,19 +216,19 @@ struct AccentSwatches: View {
                         withAnimation(Motion.resolved(Motion.select, reduceMotion: reduceMotion)) { selection = choice }
                     }
                 } label: {
-                    ChamferedRectangle(cut: 7)
-                        .fill(ClusterColor.accent(choice))
-                        .frame(width: 38, height: 38)
+                    Circle()
+                        .fill(ClusterColor.accentFill(choice))
+                        .frame(width: 34, height: 34)
                         .overlay {
                             if selected {
-                                ChamferedRectangle(cut: 9).inset(by: -4).stroke(ClusterColor.ink, lineWidth: 1.5)
+                                Circle().inset(by: -5).stroke(ClusterColor.accent(choice), lineWidth: 2)
                                 Image(systemName: "checkmark")
                                     .font(.system(size: 13, weight: .heavy))
-                                    .foregroundStyle(ClusterColor.accentPrefersDarkText(choice) ? ClusterColor.onAccent : .white)
+                                    .foregroundStyle(ClusterColor.textOnAccent(choice))
                             } else if isLocked {
                                 Image(systemName: "lock.fill")
                                     .font(.system(size: 11, weight: .bold))
-                                    .foregroundStyle(ClusterColor.accentPrefersDarkText(choice) ? ClusterColor.onAccent : .white)
+                                    .foregroundStyle(ClusterColor.textOnAccent(choice))
                             }
                         }
                         .frame(width: 46, height: 46)

@@ -22,7 +22,8 @@ final class AdaptiveLayoutUITests: XCTestCase {
 
     private func launch(_ extra: [String] = []) -> XCUIApplication {
         let app = XCUIApplication()
-        app.launchArguments = ["-PullUpDemo", "-PullUpResetDefaults"] + extra
+        // Drive opens full screen at launch (it's reached from You or Explore).
+        app.launchArguments = ["-PullUpDemo", "-PullUpResetDefaults", "-PullUpTab", "drive"] + extra
         app.launch()
         return app
     }

@@ -38,7 +38,8 @@ public final class ProStore {
     /// Pro is on sale in this build (`PULLUP_PRO_OFFERED`), or this is demo
     /// mode, so UI tests keep running.
     public var isOffered: Bool {
-        if store is DemoStoreClient { return true }
+        // Store media capture shows Pro exactly as this build's setting does.
+        if store is DemoStoreClient && !StoreCapture.isActive { return true }
         return Self.offered(from: Bundle.main.object(forInfoDictionaryKey: "PullUpProOffered") as? String)
     }
     /// Show Pro UI: on sale, or this person already has Pro (keep honouring

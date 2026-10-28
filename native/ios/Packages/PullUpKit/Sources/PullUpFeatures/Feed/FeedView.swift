@@ -4,8 +4,8 @@ import PullUpData
 import PullUpDesign
 import PullUpDomain
 
-/// Photo-first feed. Media runs edge to edge; text-only posts are set large
-/// so they don't masquerade as image placeholders.
+/// The home tab. Posts run edge to edge with media dominant; the composer
+/// is the one action in the bar, with activity next to it.
 public struct FeedView: View {
     @Environment(AppModel.self) private var app
     @State private var scope: FeedScope = .following
@@ -30,9 +30,13 @@ public struct FeedView: View {
     public var body: some View {
         NavigationStack(path: $path) {
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: Space.xl) {
-                    header
+                LazyVStack(alignment: .leading, spacing: Space.section) {
+                    SwitchBank(FeedScope.allCases, selection: $scope) { $0.label }
                         .padding(.horizontal, Space.gutter)
+                        .accessibilityIdentifier("feed-scope")
+                    if isLoaded, error == nil, !posts.isEmpty || scope == .following {
+                        composePrompt.padding(.horizontal, Space.gutter)
+                    }
                     if let error {
                         ErrorLine(message: error) { Task { await load() } }.padding(.horizontal, Space.gutter)
                     } else if !isLoaded {
@@ -40,8 +44,13 @@ public struct FeedView: View {
                     } else if posts.isEmpty {
                         EmptyState(
                             title: scope == .following ? "Quiet in here" : "Nothing yet",
-                            message: scope == .following ? "Follow people from Discover or a meet and their posts show up here." : "Public posts appear here."
-                        )
+                            message: scope == .following ? "Follow people from Discover, Explore or a meet and their posts show up here." : "Public posts appear here."
+                        ) {
+                            if scope == .following {
+                                Button("Discover posts") { scope = .discover }
+                                    .buttonStyle(.clusterSecondary)
+                            }
+                        }
                     }
                     if let actionError {
                         ErrorLine(message: actionError).padding(.horizontal, Space.gutter)
@@ -63,26 +72,32 @@ public struct FeedView: View {
                     }
                 }
                 .padding(.bottom, Space.xl)
+                .frame(maxWidth: Space.readableWidth)
+                .frame(maxWidth: .infinity)
             }
             .canvasBackground()
             .refreshable { await load() }
-            .toolbar(.hidden, for: .navigationBar)
+            .rootNavigation("Feed")
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) { NotificationBell() }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        composing = true
+                    } label: {
+                        Label("New post", systemImage: "square.and.pencil")
+                    }
+                    .accessibilityIdentifier("new-post")
+                }
+            }
             .navigationDestination(for: ProfileRoute.self) { route in ProfileView(userID: route.id) }
             .navigationDestination(for: SettingsRoute.self) { _ in SettingsView() }
-            .navigationDestination(for: MessagesRoute.self) { _ in InboxView() }
             .task(id: scope) { await load() }
-            .onChange(of: app.pendingPush, initial: true) { _, route in
-                // A tapped message push: open Messages, which then opens the conversation.
-                guard case .conversation = route else { return }
-                path = NavigationPath()
-                path.append(MessagesRoute())
-            }
-            .sheet(isPresented: $composing, onDismiss: { Task { await load() } }) { PostComposerView() }
+            .sheet(isPresented: $composing, onDismiss: { Task { await load() } }) { PostComposerView().sheetCanvas() }
             .sheet(item: $commentsFor) { post in
-                CommentsView(post: post, onBlocked: { hideAuthor($0) }).presentationDetents([.medium, .large])
+                CommentsView(post: post, onBlocked: { hideAuthor($0) }).presentationDetents([.medium, .large]).sheetCanvas()
             }
             .sheet(item: $sharing) { post in
-                ShareToMessageView(shared: SharedRef(kind: .post, id: post.id))
+                ShareToMessageView(shared: SharedRef(kind: .post, id: post.id)).sheetCanvas()
             }
             .sheet(item: $reporting) { post in
                 ReportPersonView(
@@ -105,33 +120,32 @@ public struct FeedView: View {
         }
     }
 
-    private var header: some View {
-        VStack(alignment: .leading, spacing: Space.m) {
-            HStack(alignment: .bottom, spacing: Space.s) {
-                ScreenTitle("Feed")
-                Button {
-                    composing = true
-                } label: {
-                    Image(systemName: "square.and.pencil")
-                        .font(.system(size: 18, weight: .semibold))
-                        .foregroundStyle(ClusterColor.ink)
-                        .frame(width: 44, height: 44)
-                }
-                .accessibilityLabel("New post")
-                MessagesButton()
-                if let me = app.userID {
-                    NavigationLink(value: ProfileRoute(id: me)) {
-                        Image(systemName: "person.crop.square")
-                            .font(.system(size: 20, weight: .semibold))
-                            .foregroundStyle(ClusterColor.ink)
-                            .frame(width: 44, height: 44)
-                    }
-                    .accessibilityLabel("Your profile")
-                    .accessibilityIdentifier("open-profile")
-                }
+    /// "What's new with your car?" One tap opens the composer with the
+    /// keyboard up, the quickest way to a post.
+    private var composePrompt: some View {
+        Button {
+            composing = true
+        } label: {
+            HStack(spacing: Space.m) {
+                Avatar(name: app.account?.displayName ?? "You", path: app.account?.avatarPath, size: 36)
+                Text("Share a photo, a build update, a drive…")
+                    .font(ClusterFont.body(.subheadline))
+                    .foregroundStyle(ClusterColor.inkSecondary)
+                    .lineLimit(1)
+                Spacer(minLength: Space.s)
+                Image(systemName: "photo.on.rectangle")
+                    .font(.system(size: 17, weight: .medium))
+                    .foregroundStyle(ClusterColor.inkSecondary)
             }
-            SwitchBank(FeedScope.allCases, selection: $scope) { $0.label }
+            .padding(.horizontal, Space.m)
+            .frame(minHeight: 52)
+            .background(ClusterColor.plate, in: Capsule())
+            .contentShape(Capsule())
         }
+        .buttonStyle(.plain)
+        .accessibilityLabel("New post")
+        .accessibilityHint("Opens the composer")
+        .accessibilityIdentifier("compose-prompt")
     }
 
     private func load() async {
@@ -211,27 +225,27 @@ struct PostCard: View {
     var onDelete: (() -> Void)?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Space.m) {
+        VStack(alignment: .leading, spacing: Space.group) {
             authorRow.padding(.horizontal, Space.gutter)
             if post.media.isEmpty {
                 Text(post.caption)
-                    .font(ClusterFont.title(.title3))
+                    .font(ClusterFont.body(.title3))
                     .foregroundStyle(ClusterColor.ink)
                     .padding(.horizontal, Space.gutter)
-                    .padding(.vertical, Space.s)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .overlay(alignment: .leading) {
-                        Rectangle().fill(theme.accentColor).frame(width: 3).padding(.vertical, Space.s)
-                    }
             } else {
                 MediaCarousel(media: post.media)
-                Text(post.caption)
-                    .font(ClusterFont.body())
-                    .foregroundStyle(ClusterColor.ink)
-                    .padding(.horizontal, Space.gutter)
+                    .onTapGesture(count: 2) { if !post.likedByMe { onLike() } }
+                    .accessibilityAction(named: "Like") { if !post.likedByMe { onLike() } }
             }
             actions.padding(.horizontal, Space.gutter)
-            Hairline().padding(.horizontal, Space.gutter)
+            if !post.media.isEmpty, !post.caption.isEmpty {
+                Text(post.caption)
+                    .font(ClusterFont.body(.subheadline))
+                    .foregroundStyle(ClusterColor.ink)
+                    .padding(.horizontal, Space.gutter)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
         }
         .accessibilityElement(children: .contain)
     }
@@ -240,17 +254,24 @@ struct PostCard: View {
         HStack(spacing: Space.xs) {
             NavigationLink(value: ProfileRoute(id: post.authorID)) {
                 HStack(spacing: Space.m) {
-                    Avatar(name: post.author?.displayName ?? "?", path: post.author?.avatarPath, size: 36)
-                    VStack(alignment: .leading, spacing: 0) {
-                        Text(post.author?.displayName ?? "Unknown")
-                            .font(ClusterFont.headline(.subheadline))
-                            .foregroundStyle(ClusterColor.ink)
-                        Text("@\(post.author?.username ?? "") · \(Format.relative(post.createdAt))")
-                            .font(ClusterFont.body(.caption))
+                    Avatar(name: post.author?.displayName ?? "?", path: post.author?.avatarPath, size: 40)
+                    VStack(alignment: .leading, spacing: 1) {
+                        HStack(spacing: Space.xs) {
+                            Text(post.author?.displayName ?? "Unknown")
+                                .font(ClusterFont.headline(.subheadline))
+                                .foregroundStyle(ClusterColor.ink)
+                                .lineLimit(1)
+                            Text("· \(Format.relative(post.createdAt))")
+                                .font(ClusterFont.body(.subheadline))
+                                .foregroundStyle(ClusterColor.inkTertiary)
+                                .lineLimit(1)
+                        }
+                        Text(subtitle)
+                            .font(ClusterFont.body(.footnote))
                             .foregroundStyle(ClusterColor.inkSecondary)
+                            .lineLimit(1)
                     }
-                    Spacer()
-                    Legend(kindLabel)
+                    Spacer(minLength: 0)
                 }
             }
             .buttonStyle(.plain)
@@ -280,7 +301,7 @@ struct PostCard: View {
             } label: {
                 Image(systemName: "ellipsis")
                     .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(ClusterColor.ink)
+                    .foregroundStyle(ClusterColor.inkSecondary)
                     .frame(width: 44, height: 44)
                     .contentShape(Rectangle())
             }
@@ -289,17 +310,19 @@ struct PostCard: View {
         }
     }
 
-    private var kindLabel: String {
+    /// "@handle · Build update": who, and what kind of post, in one line.
+    private var subtitle: String {
+        let handle = "@\(post.author?.username ?? "")"
         switch post.kind {
-        case .moment: "Moment"
-        case .build: "Build"
-        case .meet: "Meet"
-        case .drive: "Drive"
+        case .moment: return handle
+        case .build: return "\(handle) · Build update"
+        case .meet: return "\(handle) · Meet"
+        case .drive: return "\(handle) · Drive"
         }
     }
 
     private var actions: some View {
-        HStack(spacing: Space.xl) {
+        HStack(spacing: Space.l) {
             Button(action: onLike) {
                 HStack(spacing: Space.xs) {
                     Image(systemName: post.likedByMe ? "heart.fill" : "heart")
@@ -307,6 +330,8 @@ struct PostCard: View {
                         .symbolEffect(.bounce, value: post.likedByMe)
                     Text(Format.compactCount(post.likeCount)).font(ClusterFont.readout(.subheadline))
                 }
+                .frame(minHeight: Space.target)
+                .contentShape(Rectangle())
             }
             .sensoryFeedback(.impact(weight: .light), trigger: post.likedByMe)
             .accessibilityLabel(post.likedByMe ? "Unlike" : "Like")
@@ -316,16 +341,23 @@ struct PostCard: View {
                     Image(systemName: "bubble.left")
                     Text(Format.compactCount(post.commentCount)).font(ClusterFont.readout(.subheadline))
                 }
+                .frame(minHeight: Space.target)
+                .contentShape(Rectangle())
             }
             .accessibilityLabel("Comments")
             .accessibilityValue("\(post.commentCount)")
             if let onShare {
-                Button(action: onShare) { Image(systemName: "paperplane") }
-                    .accessibilityLabel("Send in a message")
+                Button(action: onShare) {
+                    Image(systemName: "paperplane")
+                        .frame(minWidth: Space.target, minHeight: Space.target)
+                        .contentShape(Rectangle())
+                }
+                .accessibilityLabel("Send in a message")
             }
             Spacer()
             VisibilityTag(post.visibility)
         }
+        .font(.system(size: 19, weight: .regular))
         .buttonStyle(.plain)
         .foregroundStyle(ClusterColor.ink)
     }
