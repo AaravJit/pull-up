@@ -7,8 +7,9 @@
 -- project. This trigger reads everything from Vault instead, the same way the
 -- cron jobs read pullup_cron_secret:
 --   pullup_project_url          https://<ref>.supabase.co
---   pullup_anon_key             the project's publishable (anon) key; send-push
---                               keeps Supabase's JWT check
+--   pullup_anon_key             the project's legacy anon key (a JWT, eyJ...);
+--                               send-push keeps Supabase's JWT check, which
+--                               rejects an sb_publishable_ key
 --   pullup_push_webhook_secret  the same value as the PUSH_WEBHOOK_SECRET
 --                               function secret
 --

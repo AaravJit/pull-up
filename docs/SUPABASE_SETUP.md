@@ -177,7 +177,7 @@ These aren't in migrations because they hold per-project values:
   | Vault name | Value |
   | --- | --- |
   | `pullup_project_url` | `https://<ref>.supabase.co` |
-  | `pullup_anon_key` | the project's publishable (anon) key; `send-push` and `dm-retention` keep Supabase's JWT check (`supabase/config.toml`) |
+  | `pullup_anon_key` | the project's legacy anon key, the JWT starting `eyJ` (Settings ▸ API Keys ▸ Legacy API keys). Not an `sb_publishable_` key: `send-push` and `dm-retention` keep Supabase's JWT check (`supabase/config.toml`), which rejects it as `Invalid JWT` |
   | `pullup_push_webhook_secret` | the same value as the `PUSH_WEBHOOK_SECRET` function secret; `send-push` refuses any request without it |
 
   Until all three exist the trigger sends nothing and inserts carry on as

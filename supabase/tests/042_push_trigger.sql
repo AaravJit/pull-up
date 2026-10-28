@@ -47,7 +47,10 @@ select ok(not has_function_privilege('authenticated', 'private.queue_push()', 'e
       and not has_function_privilege('anon', 'private.queue_push()', 'execute'),
   'no API role can call it');
 
--- Nothing is configured yet: no request, and the insert works.
+-- Nothing is configured yet: no request, and the insert works. On a project
+-- where push is already set up, its secrets are removed for this transaction
+-- only (the rollback at the end puts them back).
+delete from vault.secrets where name in ('pullup_project_url', 'pullup_anon_key', 'pullup_push_webhook_secret');
 create temp table base as select pg_temp.queued() as n;
 select lives_ok($$
   insert into public.notifications (id, recipient_id, actor_id, kind)
