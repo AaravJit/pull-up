@@ -105,6 +105,16 @@ final class StoreMediaUITests: XCTestCase {
         _ = XCTWaiter.wait(for: [XCTestExpectation(description: "settle")], timeout: seconds)
     }
 
+    /// The simulator sometimes offers "Enable Dictation?" the first time
+    /// the keyboard appears; it isn't the app's, so decline it.
+    private func dismissSystemPrompts(_ app: XCUIApplication) {
+        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        for owner in [app, springboard] {
+            let notNow = owner.buttons["Not Now"].firstMatch
+            if notNow.waitForExistence(timeout: 1) { notNow.tap(); settle(0.5) }
+        }
+    }
+
     /// Tab bars can sit vertically on iPhone Duo's inner display, so fall back
     /// to any button with the tab's name.
     private func tab(_ app: XCUIApplication, _ name: String) {
@@ -229,6 +239,7 @@ final class StoreMediaUITests: XCTestCase {
             caption.typeText(part)
             if slowly { settle(0.6) }
         }
+        dismissSystemPrompts(app)
         let suggestion = element(app, "composer-vehicle-suggestion")
         if suggestion.waitForExistence(timeout: 3) {
             if slowly { settle(0.8) }
@@ -370,6 +381,7 @@ final class StoreMediaUITests: XCTestCase {
             field.typeText(part)
             settle(0.6)
         }
+        dismissSystemPrompts(app)
         settle(1)
         app.buttons["composer-send"].firstMatch.tap()
         settle(3)

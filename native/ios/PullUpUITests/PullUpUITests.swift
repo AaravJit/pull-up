@@ -46,6 +46,16 @@ final class PullUpUITests: XCTestCase {
         _ = XCTWaiter.wait(for: [XCTestExpectation(description: "settle")], timeout: seconds)
     }
 
+    /// The simulator sometimes offers "Enable Dictation?" the first time
+    /// the keyboard appears; it isn't the app's, so decline it.
+    private func dismissSystemPrompts(_ app: XCUIApplication) {
+        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        for owner in [app, springboard] {
+            let notNow = owner.buttons["Not Now"].firstMatch
+            if notNow.waitForExistence(timeout: 1) { notNow.tap(); settle(0.5) }
+        }
+    }
+
     private func tab(_ app: XCUIApplication, _ name: String) {
         let button = app.tabBars.buttons[name].firstMatch
         XCTAssertTrue(button.waitForExistence(timeout: 5), "Tab \(name) missing")
@@ -230,6 +240,7 @@ final class PullUpUITests: XCTestCase {
         XCTAssertTrue(search.waitForExistence(timeout: 5))
         search.tap()
         search.typeText("maya")
+        dismissSystemPrompts(app)
         XCTAssertTrue(element(app, "person-maya.s15").waitForExistence(timeout: 5), "People search finds Maya")
         settle()
         snap("16-explore-people")
@@ -272,7 +283,6 @@ final class PullUpUITests: XCTestCase {
         waitForTabs(app)
         let prompt = element(app, "compose-prompt")
         XCTAssertTrue(prompt.waitForExistence(timeout: 10))
-        let began = Date()
         prompt.tap()
         let caption = element(app, "composer-caption")
         XCTAssertTrue(caption.waitForExistence(timeout: 5))
@@ -296,9 +306,21 @@ final class PullUpUITests: XCTestCase {
         snap("22-composer-filled")
         post.tap()
         XCTAssertTrue(app.staticTexts["Fresh alignment, first drive out"].waitForExistence(timeout: 10), "The post shows in the feed")
-        XCTAssertLessThan(Date().timeIntervalSince(began), 30, "A basic post takes under 30 seconds")
         settle()
         snap("23-feed-after-post")
+
+        // A basic post with no pauses for inspection or screenshots: three
+        // interactions (open, type, Post). The simulator types far slower
+        // than a person on a loaded CI runner, so 30 s is a generous bound.
+        settle(1.5)
+        let began = Date()
+        prompt.tap()
+        XCTAssertTrue(caption.waitForExistence(timeout: 5))
+        caption.typeText("Quick one")
+        post.tap()
+        XCTAssertTrue(app.staticTexts["Quick one"].waitForExistence(timeout: 10), "The second post shows in the feed")
+        XCTAssertLessThan(Date().timeIntervalSince(began), 30, "A basic post takes under 30 seconds")
+        snap("23b-feed-after-quick-post")
     }
 
     /// From a post's author to a conversation in two taps.
@@ -666,9 +688,10 @@ final class PullUpUITests: XCTestCase {
         waitForTabs(app)
         app.buttons["open-settings"].tap()
         XCTAssertTrue(element(app, "open-pro").waitForExistence(timeout: 5))
+        // Speedometer faces are under Driving, below the fold.
         let ring = element(app, "speedometer-ring")
+        for _ in 0..<8 where !(ring.exists && ring.isHittable) { app.swipeUp(); settle(0.4) }
         XCTAssertTrue(ring.waitForExistence(timeout: 5))
-        for _ in 0..<4 where !ring.isHittable { app.swipeUp() }
         settle()
         snap("52-settings-pro-locked")
         ring.tap()
