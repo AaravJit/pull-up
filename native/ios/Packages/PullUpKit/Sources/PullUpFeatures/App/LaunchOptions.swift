@@ -16,8 +16,15 @@ public struct LaunchOptions: Sendable, Equatable {
     /// Start from fresh preferences (no remembered vehicle, default theme).
     public var resetDefaults = false
     public var appearance: AppearancePreference?
-    /// Tab to open at launch.
+    /// Tab to open at launch. Also accepts the pre-1.0 tab names (drive,
+    /// map, meets, garage), mapped to where those screens live now.
     public var initialTab: MainTab?
+    /// Explore's segment at launch (`-PullUpTab map` or `meets`).
+    public var initialExplore: ExploreMode?
+    /// Opens the Drive screen at launch (`-PullUpTab drive`, `-PullUpOpenDrive`).
+    public var opensDrive = false
+    /// Opens the garage from You at launch (`-PullUpTab garage`).
+    public var opensGarage = false
     /// Acts as if a push was tapped after sign-in: "kind" or "kind:conversation-id".
     public var openPush: String?
 
@@ -36,12 +43,57 @@ public struct LaunchOptions: Sendable, Equatable {
         options.onboarding = args.contains("-PullUpOnboarding")
         options.resetDefaults = args.contains("-PullUpResetDefaults")
         options.appearance = value(after: "-PullUpAppearance").flatMap(AppearancePreference.init(rawValue:))
-        options.initialTab = value(after: "-PullUpTab").flatMap(MainTab.init(rawValue:))
+        if let tab = value(after: "-PullUpTab") { options.applyTab(tab) }
+        if args.contains("-PullUpOpenDrive") { options.opensDrive = true }
         options.openPush = value(after: "-PullUpOpenPush")
         return options
     }
+
+    /// Maps a `-PullUpTab` value onto the 1.0 navigation.
+    public mutating func applyTab(_ name: String) {
+        if let tab = MainTab(rawValue: name) {
+            initialTab = tab
+            return
+        }
+        switch name {
+        case "map":
+            initialTab = .explore
+            initialExplore = .map
+        case "meets":
+            initialTab = .explore
+            initialExplore = .meets
+        case "people":
+            initialTab = .explore
+            initialExplore = .people
+        case "garage":
+            initialTab = .you
+            opensGarage = true
+        case "drive":
+            initialTab = .you
+            opensDrive = true
+        case "dms", "inbox":
+            initialTab = .messages
+        default:
+            break
+        }
+    }
 }
 
+/// The four tabs. Posting and messaging lead; meets, the map and people
+/// are under Explore; your profile, garage, drives and settings under You.
 public enum MainTab: String, Hashable, Sendable, CaseIterable {
-    case drive, map, feed, meets, garage
+    case feed, messages, explore, you
+}
+
+/// Explore's three views.
+public enum ExploreMode: String, Hashable, Sendable, CaseIterable, Identifiable {
+    case meets, map, people
+    public var id: String { rawValue }
+    public var label: String {
+        switch self {
+        case .meets: "Meets"
+        case .map: "Map"
+        case .people: "People"
+        }
+    }
 }

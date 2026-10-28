@@ -1,9 +1,11 @@
 import SwiftUI
 import PullUpDomain
 
-/// Rectangle with the top-leading and bottom-trailing corners cut at 45°.
-/// The signature Pull Up silhouette: reads as machined bezel or number plate,
-/// never as a web card.
+/// The standard surface shape: a rectangle with continuous corners.
+///
+/// The name is kept from the first design language, whose plates had cut
+/// corners, so every screen picked up the new shape at once. `cut` is the
+/// corner radius; `corners` picks which corners are rounded.
 public struct ChamferedRectangle: InsettableShape {
     public var cut: CGFloat
     public var corners: Corners
@@ -16,29 +18,26 @@ public struct ChamferedRectangle: InsettableShape {
         public static let topTrailing = Corners(rawValue: 2)
         public static let bottomLeading = Corners(rawValue: 4)
         public static let bottomTrailing = Corners(rawValue: 8)
-        public static let signature: Corners = [.topLeading, .bottomTrailing]
         public static let all: Corners = [.topLeading, .topTrailing, .bottomLeading, .bottomTrailing]
+        /// Every corner. (It meant two cut corners in the old language.)
+        public static let signature: Corners = all
     }
 
-    public init(cut: CGFloat = Radius.chamfer, corners: Corners = .signature) {
+    public init(cut: CGFloat = Radius.chamfer, corners: Corners = .all) {
         self.cut = cut
         self.corners = corners
     }
 
     public func path(in rect: CGRect) -> Path {
         let r = rect.insetBy(dx: inset, dy: inset)
-        let c = min(cut, r.width / 2, r.height / 2)
-        var p = Path()
-        p.move(to: CGPoint(x: r.minX + (corners.contains(.topLeading) ? c : 0), y: r.minY))
-        p.addLine(to: CGPoint(x: r.maxX - (corners.contains(.topTrailing) ? c : 0), y: r.minY))
-        if corners.contains(.topTrailing) { p.addLine(to: CGPoint(x: r.maxX, y: r.minY + c)) }
-        p.addLine(to: CGPoint(x: r.maxX, y: r.maxY - (corners.contains(.bottomTrailing) ? c : 0)))
-        if corners.contains(.bottomTrailing) { p.addLine(to: CGPoint(x: r.maxX - c, y: r.maxY)) }
-        p.addLine(to: CGPoint(x: r.minX + (corners.contains(.bottomLeading) ? c : 0), y: r.maxY))
-        if corners.contains(.bottomLeading) { p.addLine(to: CGPoint(x: r.minX, y: r.maxY - c)) }
-        p.addLine(to: CGPoint(x: r.minX, y: r.minY + (corners.contains(.topLeading) ? c : 0)))
-        p.closeSubpath()
-        return p
+        let c = max(0, min(cut, r.width / 2, r.height / 2))
+        return UnevenRoundedRectangle(
+            topLeadingRadius: corners.contains(.topLeading) ? c : 0,
+            bottomLeadingRadius: corners.contains(.bottomLeading) ? c : 0,
+            bottomTrailingRadius: corners.contains(.bottomTrailing) ? c : 0,
+            topTrailingRadius: corners.contains(.topTrailing) ? c : 0,
+            style: .continuous
+        ).path(in: r)
     }
 
     public func inset(by amount: CGFloat) -> ChamferedRectangle {
@@ -48,12 +47,12 @@ public struct ChamferedRectangle: InsettableShape {
     }
 }
 
-/// Stamped instrument legend: "TOP SPEED", "GPS ±".
+/// A small label over a value or control: "Top speed", "Who can see this".
 public struct Legend: View {
     let text: String
-    var color: Color = ClusterColor.inkTertiary
+    var color: Color = ClusterColor.inkSecondary
 
-    public init(_ text: String, color: Color = ClusterColor.inkTertiary) {
+    public init(_ text: String, color: Color = ClusterColor.inkSecondary) {
         self.text = text
         self.color = color
     }
@@ -61,68 +60,46 @@ public struct Legend: View {
     public var body: some View {
         Text(text)
             .font(ClusterFont.legend())
-            .textCase(.uppercase)
-            .tracking(Tracking.legend)
             .foregroundStyle(color)
-            .lineLimit(1)
-            .minimumScaleFactor(0.8)
+            .lineLimit(2)
     }
 }
 
-/// A hairline with a tick scale, used instead of card borders to divide
-/// sections. Major ticks every `majorEvery` minor ticks.
+/// A section divider. It drew an instrument tick scale in the first design
+/// language; it is a plain hairline now, kept so call sites still compile.
 public struct TickRule: View {
-    var ticks: Int = 40
-    var majorEvery: Int = 5
-    var height: CGFloat = 6
-    var color: Color = ClusterColor.ruleStrong
+    var color: Color
 
-    public init(ticks: Int = 40, majorEvery: Int = 5, height: CGFloat = 6, color: Color = ClusterColor.ruleStrong) {
-        self.ticks = ticks
-        self.majorEvery = majorEvery
-        self.height = height
+    public init(ticks: Int = 40, majorEvery: Int = 5, height: CGFloat = 6, color: Color = ClusterColor.rule) {
         self.color = color
     }
 
     public var body: some View {
-        Canvas { context, size in
-            var base = Path()
-            base.move(to: CGPoint(x: 0, y: size.height - 0.5))
-            base.addLine(to: CGPoint(x: size.width, y: size.height - 0.5))
-            context.stroke(base, with: .color(color), lineWidth: 1)
-            guard ticks > 0 else { return }
-            let step = size.width / CGFloat(ticks)
-            for i in 0...ticks {
-                let major = i % majorEvery == 0
-                var tick = Path()
-                let x = min(size.width - 0.5, CGFloat(i) * step + 0.5)
-                tick.move(to: CGPoint(x: x, y: size.height))
-                tick.addLine(to: CGPoint(x: x, y: size.height - (major ? size.height : size.height * 0.45)))
-                context.stroke(tick, with: .color(color), lineWidth: 1)
-            }
-        }
-        .frame(height: height)
-        .accessibilityHidden(true)
+        Hairline(color: color)
     }
 }
 
 /// Plain hairline.
 public struct Hairline: View {
+    @Environment(\.displayScale) private var displayScale
     var color: Color = ClusterColor.rule
     public init(color: Color = ClusterColor.rule) { self.color = color }
     public var body: some View {
-        Rectangle().fill(color).frame(height: 1).accessibilityHidden(true)
+        Rectangle().fill(color).frame(height: 1 / max(displayScale, 1)).accessibilityHidden(true)
     }
 }
 
 public extension View {
-    /// Flat chamfered plate. `raised` for the forward layer.
+    /// A raised surface with continuous corners and no border (pass
+    /// `stroke` for a selection ring). `raised` for the forward layer.
     func plate(raised: Bool = false, cut: CGFloat = Radius.chamfer, stroke: Color? = nil) -> some View {
         background {
             ChamferedRectangle(cut: cut)
                 .fill(raised ? ClusterColor.plateRaised : ClusterColor.plate)
                 .overlay {
-                    ChamferedRectangle(cut: cut).strokeBorder(stroke ?? ClusterColor.rule, lineWidth: 1)
+                    if let stroke {
+                        ChamferedRectangle(cut: cut).strokeBorder(stroke, lineWidth: 2)
+                    }
                 }
         }
     }
@@ -171,7 +148,7 @@ public struct Readout: View {
                     .minimumScaleFactor(0.6)
                 if let unit {
                     Text(unit)
-                        .font(ClusterFont.legend(.caption))
+                        .font(ClusterFont.legend(.subheadline))
                         .foregroundStyle(ClusterColor.inkSecondary)
                 }
             }
@@ -189,7 +166,7 @@ public struct QualityMark: View {
 
     public var body: some View {
         Text(quality == .estimate ? "EST" : quality == .insufficient ? "—" : "GPS")
-            .font(.system(size: 9, weight: .bold).width(.expanded))
+            .font(.system(size: 10, weight: .bold))
             .tracking(0.8)
             .padding(.horizontal, 4)
             .padding(.vertical, 1)
@@ -222,9 +199,7 @@ public struct ValidationBadge: View {
                 .imageScale(.small)
             Text(status.label)
         }
-        .font(ClusterFont.legend())
-        .textCase(.uppercase)
-        .tracking(1)
+        .font(ClusterFont.legend(.caption))
         .foregroundStyle(color)
     }
 }
@@ -279,9 +254,7 @@ public struct VisibilityTag: View {
 
     public var body: some View {
         Label(visibility.label, systemImage: visibility.symbol)
-            .font(ClusterFont.legend())
-            .textCase(.uppercase)
-            .tracking(1)
+            .font(ClusterFont.legend(.caption))
             .foregroundStyle(ClusterColor.inkSecondary)
             .accessibilityHint(visibility.explanation)
     }
@@ -297,7 +270,8 @@ public extension Audience {
     }
 }
 
-/// Primary action. Chamfered, accent-filled, with a subtle press scale.
+/// Full-width actions: primary (accent fill), secondary (neutral surface),
+/// destructive. A subtle press scale, none under Reduce Motion.
 public struct ClusterButtonStyle: ButtonStyle {
     public enum Kind: Sendable { case primary, secondary, destructive }
     @Environment(\.clusterTheme) private var theme
@@ -309,26 +283,24 @@ public struct ClusterButtonStyle: ButtonStyle {
 
     public func makeBody(configuration: Configuration) -> some View {
         let fill: Color = switch kind {
-        case .primary: theme.accentColor
-        case .secondary: ClusterColor.plateRaised
+        case .primary: theme.accentFill
+        case .secondary: ClusterColor.plate
         case .destructive: ClusterColor.live
         }
         let text: Color = switch kind {
-        case .primary: ClusterColor.accentPrefersDarkText(theme.accent) ? ClusterColor.onAccent : .white
+        case .primary: theme.onAccent
         case .secondary: ClusterColor.ink
         case .destructive: .white
         }
         configuration.label
             .font(ClusterFont.headline())
-            .textCase(.uppercase)
-            .tracking(1.2)
             .multilineTextAlignment(.center)
-            .minimumScaleFactor(0.8)
             .foregroundStyle(text)
-            .padding(.vertical, Space.m + 2)
+            .padding(.vertical, Space.m)
             .padding(.horizontal, Space.l)
             .frame(minHeight: 50)
-            .background(ChamferedRectangle(cut: Radius.chamferSmall).fill(fill))
+            .background(ChamferedRectangle(cut: Radius.chamfer).fill(fill))
+            .contentShape(ChamferedRectangle(cut: Radius.chamfer))
             .opacity(isEnabled ? (configuration.isPressed ? 0.85 : 1) : 0.4)
             .scaleEffect(configuration.isPressed && !reduceMotion ? 0.97 : 1)
             .animation(Motion.quick, value: configuration.isPressed)
@@ -341,7 +313,8 @@ public extension ButtonStyle where Self == ClusterButtonStyle {
     static var clusterDestructive: ClusterButtonStyle { ClusterButtonStyle(.destructive) }
 }
 
-/// Segmented selector drawn as an instrument switch bank.
+/// Scope selector: sentence-case labels with an accent underline on the
+/// selected one, or a checked list at accessibility text sizes.
 public struct SwitchBank<Value: Hashable & Identifiable>: View {
     let options: [Value]
     @Binding var selection: Value
@@ -393,12 +366,10 @@ public struct SwitchBank<Value: Hashable & Identifiable>: View {
                 } label: {
                     HStack(spacing: Space.s) {
                         Text(label(option))
-                            .font(ClusterFont.legend(.caption))
-                            .textCase(.uppercase)
-                            .tracking(1)
+                            .font(selected ? ClusterFont.headline(.subheadline) : ClusterFont.body(.subheadline))
                             .multilineTextAlignment(.leading)
                             .fixedSize(horizontal: false, vertical: true)
-                            .foregroundStyle(selected ? ClusterColor.ink : ClusterColor.inkTertiary)
+                            .foregroundStyle(selected ? ClusterColor.ink : ClusterColor.inkSecondary)
                         Spacer(minLength: Space.s)
                         if selected {
                             Image(systemName: "checkmark")
@@ -434,20 +405,19 @@ public struct SwitchBank<Value: Hashable & Identifiable>: View {
                     select(option)
                 } label: {
                     Text(label(option))
-                        .font(ClusterFont.legend(.caption))
-                        .textCase(.uppercase)
-                        .tracking(1)
+                        .font(selected ? ClusterFont.headline(.subheadline) : ClusterFont.body(.subheadline))
                         .lineLimit(lines)
                         .multilineTextAlignment(.center)
                         .allowsTightening(true)
                         .minimumScaleFactor(lines == 1 ? 1 : 0.8)
                         .fixedSize(horizontal: lines == 1, vertical: false)
-                        .foregroundStyle(selected ? ClusterColor.ink : ClusterColor.inkTertiary)
+                        .foregroundStyle(selected ? ClusterColor.ink : ClusterColor.inkSecondary)
                         .padding(.horizontal, Space.xs)
-                        .frame(maxWidth: .infinity, minHeight: 36)
+                        .frame(maxWidth: .infinity, minHeight: Space.target)
                         .overlay(alignment: .bottom) {
                             if selected {
-                                Rectangle().fill(theme.accentColor).frame(height: 2)
+                                Capsule().fill(theme.accentColor).frame(height: 2.5)
+                                    .padding(.horizontal, Space.l)
                                     .matchedGeometryEffect(id: "indicator", in: namespace)
                             }
                         }
@@ -460,7 +430,7 @@ public struct SwitchBank<Value: Hashable & Identifiable>: View {
     }
 }
 
-/// Section header: legend on the left, optional action on the right, tick rule below.
+/// Section header: a bold title on the left, an optional action on the right.
 public struct SectionHeader<Trailing: View>: View {
     let title: String
     let trailing: Trailing
@@ -471,14 +441,13 @@ public struct SectionHeader<Trailing: View>: View {
     }
 
     public var body: some View {
-        VStack(spacing: Space.s) {
-            HStack {
-                Legend(title, color: ClusterColor.inkSecondary)
-                    .accessibilityAddTraits(.isHeader)
-                Spacer()
-                trailing
-            }
-            TickRule(ticks: 32, majorEvery: 8, height: 4)
+        HStack(alignment: .firstTextBaseline) {
+            Text(title)
+                .font(ClusterFont.title(.title3))
+                .foregroundStyle(ClusterColor.ink)
+                .accessibilityAddTraits(.isHeader)
+            Spacer()
+            trailing
         }
     }
 }
@@ -497,11 +466,10 @@ public struct ScreenTitle: View {
             if let subtitle { Legend(subtitle) }
             Text(title)
                 .font(ClusterFont.title())
-                .tracking(Tracking.title)
                 .foregroundStyle(ClusterColor.ink)
                 .accessibilityAddTraits(.isHeader)
         }
-        .padding(.top, Space.m)
+        .padding(.top, Space.s)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
@@ -526,14 +494,45 @@ public struct NoticeStrip: View {
         }
     }
 
+    private var symbol: String {
+        switch tone {
+        case .info: "info.circle"
+        case .caution: "exclamationmark.triangle"
+        case .estimate: "location.slash"
+        }
+    }
+
     public var body: some View {
-        HStack(alignment: .top, spacing: Space.s) {
-            Rectangle().fill(color).frame(width: 2)
+        HStack(alignment: .firstTextBaseline, spacing: Space.s) {
+            Image(systemName: symbol)
+                .font(ClusterFont.body(.footnote))
+                .foregroundStyle(color)
+                .accessibilityHidden(true)
             Text(text)
                 .font(ClusterFont.body(.footnote))
                 .foregroundStyle(ClusterColor.inkSecondary)
                 .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
         }
         .padding(.vertical, Space.xs)
+    }
+}
+
+/// The surface for controls floating over content (map overlays, the
+/// live-drive bar): Liquid Glass on iOS 26, a material before it. Content
+/// itself never sits on glass.
+public struct FloatingControlSurface: ViewModifier {
+    var cornerRadius: CGFloat
+
+    public init(cornerRadius: CGFloat = Radius.chamfer + 4) {
+        self.cornerRadius = cornerRadius
+    }
+
+    public func body(content: Content) -> some View {
+        if #available(iOS 26.0, *) {
+            content.glassEffect(.regular, in: .rect(cornerRadius: cornerRadius, style: .continuous))
+        } else {
+            content.background(.regularMaterial, in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+        }
     }
 }

@@ -39,19 +39,19 @@ struct PushFlowTests {
         #expect(tokens(app).isEmpty)
     }
 
-    @Test func messagePushOpensMessagesOnTheFeedTab() async {
+    @Test func messagePushOpensTheMessagesTab() async {
         let app = await app()
         let id = UUID()
         app.openPush(kind: "message_request", conversationID: id.uuidString)
-        #expect(app.selectedTab == .feed)
+        #expect(app.selectedTab == .messages)
         #expect(app.pendingPush == .conversation(id, isRequest: true))
     }
 
     @Test func otherPushesOpenActivity() async {
         let app = await app()
-        app.selectedTab = .garage
+        app.selectedTab = .you
         app.openPush(kind: "meet_updated", conversationID: nil)
-        #expect(app.selectedTab == .drive)
+        #expect(app.selectedTab == .feed)
         #expect(app.pendingPush == .activity)
     }
 

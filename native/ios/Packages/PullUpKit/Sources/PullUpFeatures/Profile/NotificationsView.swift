@@ -5,6 +5,8 @@ import PullUpDomain
 struct NotificationsView: View {
     @Environment(AppModel.self) private var app
     @Environment(\.dismiss) private var dismiss
+    /// In a sheet (the Feed's bell) rather than pushed (You ▸ Activity).
+    var showsDone = true
     @State private var items: [AppNotification] = []
     @State private var requests: [ProfileStub] = []
     @State private var answering: Set<UserID> = []
@@ -61,9 +63,11 @@ struct NotificationsView: View {
             .padding(.horizontal, Space.gutter)
         }
         .canvasBackground()
-        .clusterNavigation("Notifications")
+        .clusterNavigation("Activity")
         .toolbar {
-            ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
+            if showsDone {
+                ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
+            }
         }
         .task { await load() }
     }

@@ -332,8 +332,6 @@ struct HoldToStopButton: View {
                 .multilineTextAlignment(.center)
         }
         .font(ClusterFont.headline())
-        .textCase(.uppercase)
-        .tracking(1.2)
         .foregroundStyle(progress > 0.5 ? .white : ClusterColor.ink)
         .padding(.horizontal, Space.m)
         .padding(.vertical, Space.s)

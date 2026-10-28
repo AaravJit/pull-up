@@ -12,21 +12,25 @@ struct SettingsView: View {
     @State private var deleting = false
     @State private var showingPro = false
     @State private var proHighlight: ProFeature?
+    @State private var showsAccents = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         @Bindable var store = app.themeStore
         ScrollView {
-            VStack(alignment: .leading, spacing: Space.xxl) {
+            VStack(alignment: .leading, spacing: Space.section) {
                 if app.pro.showsEntryPoints { proRow }
                 appearance(theme: $store.theme)
-                dashboard(theme: $store.theme)
                 privacySection
                 zonesLink
+                dashboard(theme: $store.theme)
                 account
                 about
             }
             .padding(.horizontal, Space.gutter)
             .padding(.vertical, Space.l)
+            .frame(maxWidth: Space.readableWidth)
+            .frame(maxWidth: .infinity)
         }
         .canvasBackground()
         .clusterNavigation("Settings")
@@ -85,17 +89,50 @@ struct SettingsView: View {
 
     private func appearance(theme: Binding<ClusterTheme>) -> some View {
         VStack(alignment: .leading, spacing: Space.l) {
-            SectionHeader("Look")
-            VStack(alignment: .leading, spacing: Space.s) {
-                Legend("Appearance")
-                SwitchBank(AppearancePreference.allCases, selection: theme.appearance) { $0.label }
-            }
-            VStack(alignment: .leading, spacing: Space.s) {
-                Legend("Accent")
-                AccentSwatches(selection: theme.accent, choices: app.pro.showsEntryPoints ? AccentChoice.allCases : AccentChoice.standard, locked: { $0.isPro && !app.pro.isPro }) {
-                    openPro(.accentPalettes)
+            SectionHeader("Appearance")
+            HStack(spacing: Space.m) {
+                ForEach(AppearancePreference.allCases) { option in
+                    AppearanceTile(option: option, isSelected: theme.wrappedValue.appearance == option) {
+                        withAnimation(Motion.resolved(Motion.select, reduceMotion: reduceMotion)) { theme.wrappedValue.appearance = option }
+                    }
                 }
-                Text(theme.wrappedValue.accent.label).font(ClusterFont.body(.caption)).foregroundStyle(ClusterColor.inkSecondary)
+            }
+            .sensoryFeedback(.selection, trigger: theme.wrappedValue.appearance)
+            Text(theme.wrappedValue.appearance == .dark
+                 ? "True black, edge to edge. Easy on OLED displays at night."
+                 : theme.wrappedValue.appearance == .light ? "Always light." : "Follows your iPhone's Light and Dark setting, with OLED black in Dark.")
+                .font(ClusterFont.body(.footnote))
+                .foregroundStyle(ClusterColor.inkSecondary)
+            DisclosureGroup(isExpanded: $showsAccents.animation(Motion.reveal)) {
+                VStack(alignment: .leading, spacing: Space.s) {
+                    AccentSwatches(selection: theme.accent, choices: app.pro.showsEntryPoints ? AccentChoice.allCases : AccentChoice.standard, locked: { $0.isPro && !app.pro.isPro }) {
+                        openPro(.accentPalettes)
+                    }
+                    if theme.wrappedValue.accent != .defaultAccent {
+                        Button("Use Electric Blue") { theme.wrappedValue.accent = .defaultAccent }
+                            .font(ClusterFont.headline(.footnote))
+                    }
+                }
+                .padding(.top, Space.m)
+            } label: {
+                HStack {
+                    Text("Accent colour").font(ClusterFont.body()).foregroundStyle(ClusterColor.ink)
+                    Spacer()
+                    Circle().fill(theme.wrappedValue.accentColor).frame(width: 14, height: 14)
+                    Text(theme.wrappedValue.accent.label).font(ClusterFont.body(.subheadline)).foregroundStyle(ClusterColor.inkSecondary)
+                }
+            }
+            .tint(ClusterColor.inkSecondary)
+            .accessibilityIdentifier("accent-disclosure")
+        }
+    }
+
+    private func dashboard(theme: Binding<ClusterTheme>) -> some View {
+        VStack(alignment: .leading, spacing: Space.l) {
+            SectionHeader("Driving")
+            VStack(alignment: .leading, spacing: Space.s) {
+                Legend("Units")
+                SwitchBank(SpeedUnit.allCases, selection: theme.unit) { $0 == .mph ? "MPH · mi · ft" : "KM/H · km · m" }
             }
             VStack(alignment: .leading, spacing: Space.s) {
                 Legend("Speedometer")
@@ -114,16 +151,6 @@ struct SettingsView: View {
                 .sensoryFeedback(.selection, trigger: theme.wrappedValue.speedometer)
                 Text("Previews show a sample reading.").font(ClusterFont.body(.caption)).foregroundStyle(ClusterColor.inkTertiary)
             }
-            VStack(alignment: .leading, spacing: Space.s) {
-                Legend("Units")
-                SwitchBank(SpeedUnit.allCases, selection: theme.unit) { $0 == .mph ? "MPH · mi · ft" : "KM/H · km · m" }
-            }
-        }
-    }
-
-    private func dashboard(theme: Binding<ClusterTheme>) -> some View {
-        VStack(alignment: .leading, spacing: Space.m) {
-            SectionHeader("Drive dashboard")
             NavigationLink {
                 DashboardLayoutView(metrics: theme.dashboard)
             } label: {
@@ -136,7 +163,7 @@ struct SettingsView: View {
                     Spacer()
                     Image(systemName: "chevron.right").foregroundStyle(ClusterColor.inkTertiary)
                 }
-                .padding(Space.m)
+                .padding(Space.inset)
                 .plate()
             }
             .buttonStyle(.plain)
@@ -568,5 +595,71 @@ struct PrivacyZoneEditor: View {
                 }
             }
         }
+    }
+}
+
+/// A small picture of the app in one appearance, like Settings ▸ Display.
+struct AppearanceTile: View {
+    @Environment(\.clusterTheme) private var theme
+    let option: AppearancePreference
+    let isSelected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: Space.s) {
+                preview
+                    .aspectRatio(0.62, contentMode: .fit)
+                    .frame(maxWidth: 92)
+                    .overlay {
+                        ChamferedRectangle(cut: 12).strokeBorder(isSelected ? theme.accentColor : ClusterColor.ruleStrong, lineWidth: isSelected ? 2.5 : 1)
+                    }
+                Text(option.label)
+                    .font(isSelected ? ClusterFont.headline(.footnote) : ClusterFont.body(.footnote))
+                    .foregroundStyle(ClusterColor.ink)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                    .font(.system(size: 20))
+                    .foregroundStyle(isSelected ? theme.accentColor : ClusterColor.inkTertiary)
+            }
+            .frame(maxWidth: .infinity)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(option.label)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+        .accessibilityIdentifier("appearance-\(option.rawValue)")
+    }
+
+    /// Fixed colours on purpose: each tile shows its own mode whatever the
+    /// current one is.
+    @ViewBuilder
+    private var preview: some View {
+        switch option {
+        case .light: sample(background: .white, surface: Color(white: 0.955), ink: Color(white: 0.06))
+        case .dark: sample(background: .black, surface: Color(white: 0.07), ink: .white)
+        case .system:
+            HStack(spacing: 0) {
+                sample(background: .white, surface: Color(white: 0.955), ink: Color(white: 0.06), corners: [.topLeading, .bottomLeading])
+                sample(background: .black, surface: Color(white: 0.07), ink: .white, corners: [.topTrailing, .bottomTrailing])
+            }
+        }
+    }
+
+    private func sample(background: Color, surface: Color, ink: Color, corners: ChamferedRectangle.Corners = .all) -> some View {
+        ChamferedRectangle(cut: 12, corners: corners)
+            .fill(background)
+            .overlay(alignment: .topLeading) {
+                VStack(alignment: .leading, spacing: 5) {
+                    Capsule().fill(ink).frame(width: 26, height: 5)
+                    RoundedRectangle(cornerRadius: 4, style: .continuous).fill(surface).frame(height: 34)
+                    Capsule().fill(ink.opacity(0.5)).frame(width: 34, height: 4)
+                    Capsule().fill(theme.accentColor).frame(width: 18, height: 4)
+                }
+                .padding(8)
+            }
+            .clipShape(ChamferedRectangle(cut: 12, corners: corners))
     }
 }

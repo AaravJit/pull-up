@@ -3,8 +3,8 @@ import PullUpDesign
 import PullUpDomain
 import PullUpTelemetry
 
-/// Drive tab at rest: the idle cluster, the last vehicle, recent drives and
-/// the Start Drive button the picker grows out of.
+/// The Drive screen at rest: the vehicle you'll drive, recent drives and the
+/// Start Drive button the picker grows out of.
 struct DriveHomeView: View {
     @Environment(AppModel.self) private var app
     @Environment(\.clusterTheme) private var theme
@@ -30,22 +30,31 @@ struct DriveHomeView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: Space.xl) {
-                HStack(alignment: .bottom) {
-                    ScreenTitle("Drive", subtitle: Date.now.formatted(.dateTime.weekday(.wide).month().day()))
-                    NotificationBell()
-                }
+            VStack(alignment: .leading, spacing: Space.section) {
                 notices
                 idleCluster
                 recent
                 standingsLink
             }
             .padding(.horizontal, Space.gutter)
+            .padding(.top, Space.s)
             .padding(.bottom, Space.xl)
+            .frame(maxWidth: Space.readableWidth)
+            .frame(maxWidth: .infinity)
         }
         .canvasBackground()
         .safeAreaInset(edge: .bottom) { startButton }
-        .toolbar(.hidden, for: .navigationBar)
+        .rootNavigation("Drive")
+        .toolbar {
+            ToolbarItem(placement: .cancellationAction) {
+                Button {
+                    app.driveOpen = false
+                } label: {
+                    Label("Close", systemImage: "xmark")
+                }
+                .accessibilityIdentifier("close-drive")
+            }
+        }
         .navigationDestination(for: Drive.self) { drive in
             DriveHistoryDetail(drive: drive)
         }
@@ -108,34 +117,27 @@ struct DriveHomeView: View {
         }
     }
 
-    /// A resting gauge: no speed, no fake numbers. It shows the chosen style
-    /// and unit so the user sees what the dashboard will look like.
+    /// The vehicle the next drive will most likely use. No gauge at rest:
+    /// there's nothing to measure yet, and the picker confirms the vehicle.
     private var idleCluster: some View {
-        VStack(spacing: Space.l) {
-            Speedometer(SpeedometerReading(speed: nil, topSpeed: nil, unit: theme.unit), style: theme.speedometer)
-                .frame(maxWidth: 300)
-                .frame(height: theme.speedometer == .analog ? 260 : 180)
-                .frame(maxWidth: .infinity)
-                .opacity(0.9)
-            HStack(spacing: Space.m) {
-                VehicleArtwork(vehicle: preferredVehicle)
-                    .frame(width: 84, height: 50)
-                    .clipShape(ChamferedRectangle(cut: Radius.chamferSmall))
-                VStack(alignment: .leading, spacing: Space.xxs) {
-                    Legend(preferredVehicle == nil ? "Ready" : "Ready · last driven")
-                    Text(preferredVehicle?.displayName ?? (app.garage.active.isEmpty ? "No vehicles yet" : "Guest vehicle"))
-                        .font(ClusterFont.headline())
-                        .foregroundStyle(ClusterColor.ink)
-                    Text("You'll confirm the vehicle before recording.")
-                        .font(ClusterFont.body(.caption))
-                        .foregroundStyle(ClusterColor.inkSecondary)
-                }
-                Spacer(minLength: 0)
+        VStack(alignment: .leading, spacing: Space.m) {
+            Color.clear
+                .aspectRatio(16 / 9, contentMode: .fit)
+                .overlay { VehicleArtwork(vehicle: preferredVehicle) }
+                .clipShape(ChamferedRectangle(cut: Radius.photo))
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: Space.xs) {
+                Text(preferredVehicle?.displayName ?? (app.garage.active.isEmpty ? "No vehicles yet" : "Guest vehicle"))
+                    .font(ClusterFont.title(.title2))
+                    .foregroundStyle(ClusterColor.ink)
+                Text(preferredVehicle == nil
+                     ? "Start a drive and pick what you're driving."
+                     : "Last driven. You'll confirm the vehicle before recording starts.")
+                    .font(ClusterFont.body(.subheadline))
+                    .foregroundStyle(ClusterColor.inkSecondary)
             }
-            .padding(Space.m)
-            .plate()
-            .accessibilityElement(children: .combine)
         }
+        .accessibilityElement(children: .combine)
     }
 
     private var recent: some View {
@@ -168,7 +170,6 @@ struct DriveHomeView: View {
         NavigationLink(value: LeaderboardRoute()) {
             HStack {
                 VStack(alignment: .leading, spacing: Space.xxs) {
-                    Legend("Standings")
                     Text("Leaderboards")
                         .font(ClusterFont.headline())
                         .foregroundStyle(ClusterColor.ink)
@@ -179,7 +180,7 @@ struct DriveHomeView: View {
                 Spacer()
                 Image(systemName: "chevron.right").foregroundStyle(ClusterColor.inkTertiary)
             }
-            .padding(Space.m)
+            .padding(Space.inset)
             .plate()
         }
         .buttonStyle(.plain)
@@ -193,14 +194,12 @@ struct DriveHomeView: View {
                 Text("Start drive")
             }
             .font(ClusterFont.headline())
-            .textCase(.uppercase)
-            .tracking(1.4)
-            .foregroundStyle(ClusterColor.accentPrefersDarkText(theme.accent) ? ClusterColor.onAccent : .white)
-            .frame(maxWidth: .infinity, minHeight: 58)
+            .foregroundStyle(theme.onAccent)
+            .frame(maxWidth: .infinity, minHeight: 56)
             .background {
                 if showsButtonShape {
                     ChamferedRectangle(cut: Radius.chamfer)
-                        .fill(theme.accentColor)
+                        .fill(theme.accentFill)
                         .stageGeometry("stage", in: stage, enabled: !reduceMotion)
                 } else {
                     ChamferedRectangle(cut: Radius.chamfer).fill(theme.accentColor.opacity(0.0))
@@ -212,6 +211,8 @@ struct DriveHomeView: View {
         .buttonStyle(.plain)
         .padding(.horizontal, Space.gutter)
         .padding(.vertical, Space.s)
+        .frame(maxWidth: Space.readableWidth)
+        .frame(maxWidth: .infinity)
         .background(ClusterColor.canvas.opacity(0.94))
         .accessibilityIdentifier("start-drive")
         .accessibilityHint("Choose a vehicle. Recording doesn't start until you confirm.")
@@ -228,9 +229,12 @@ struct DriveRow: View {
 
     var body: some View {
         HStack(alignment: .center, spacing: Space.m) {
-            Rectangle()
-                .fill(vehicle.map { ClusterColor.accent($0.identityColor) } ?? ClusterColor.ruleStrong)
-                .frame(width: 3, height: 44)
+            Image(systemName: "point.topleft.down.to.point.bottomright.curvepath")
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(ClusterColor.inkSecondary)
+                .frame(width: 40, height: 40)
+                .background(ClusterColor.plate, in: Circle())
+                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: Space.xxs) {
                 Text(drive.title)
                     .font(ClusterFont.headline())
@@ -244,14 +248,14 @@ struct DriveRow: View {
             VStack(alignment: .trailing, spacing: Space.xxs) {
                 HStack(alignment: .firstTextBaseline, spacing: 2) {
                     Text(Format.distance(drive.distanceMeters, theme.unit)).font(ClusterFont.readout(.title3))
-                    Text(theme.unit.distanceLabel).font(ClusterFont.legend(.caption2)).foregroundStyle(ClusterColor.inkSecondary)
+                    Text(theme.unit.distanceLabel).font(ClusterFont.legend(.caption)).foregroundStyle(ClusterColor.inkSecondary)
                 }
                 .foregroundStyle(ClusterColor.ink)
                 if drive.validationStatus != .validated {
                     ValidationBadge(drive.validationStatus)
                 } else {
                     Text("Top \(Format.speed(drive.topSpeed, theme.unit)) \(theme.unit.label)")
-                        .font(ClusterFont.legend(.caption2))
+                        .font(ClusterFont.legend(.caption))
                         .foregroundStyle(ClusterColor.inkTertiary)
                 }
             }

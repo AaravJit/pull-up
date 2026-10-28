@@ -29,7 +29,14 @@ public final class AppModel {
     /// Pull Up Pro: the server's entitlement and the App Store.
     public let pro: ProStore
     public let options: LaunchOptions
-    public var selectedTab: MainTab = .drive
+    public var selectedTab: MainTab = .feed
+    /// Explore's segment, kept while switching tabs.
+    public var exploreMode: ExploreMode = .meets
+    /// The Drive screen is open. It also stays open on its own while a
+    /// drive is recording (`driveIsPresented`).
+    public var driveOpen = false
+    /// Bumped to ask You to show the garage (`-PullUpTab garage`).
+    public var garageRequest = 0
     public private(set) var unreadNotifications = 0
     /// Badge counts for the Messages button.
     public private(set) var unreadMessages = UnreadMessages()
@@ -105,6 +112,9 @@ public final class AppModel {
         let storeClient: any StoreClient = if backend.mode == .demo { DemoStoreClient() } else { store ?? UnavailableStoreClient() }
         pro = ProStore(store: storeClient, backend: backend, theme: themeStore)
         if let tab = options.initialTab { selectedTab = tab }
+        if let mode = options.initialExplore { exploreMode = mode }
+        driveOpen = options.opensDrive
+        if options.opensGarage { garageRequest = 1 }
         Self.shared = self
     }
 
@@ -244,10 +254,22 @@ public final class AppModel {
     public func openPush(kind: String?, conversationID: String?) {
         guard let route = PushRoute(kind: kind, conversationID: conversationID) else { return }
         switch route {
-        case .conversation: selectedTab = .feed
-        case .activity: selectedTab = .drive
+        case .conversation: selectedTab = .messages
+        case .activity: selectedTab = .feed
         }
         pendingPush = route
+    }
+
+    /// Whether the Drive screen is on screen: opened by the person, or a
+    /// drive is recording (it can't be dismissed mid-drive).
+    public var driveIsPresented: Bool {
+        driveOpen || recorder.phase == .recording || recorder.phase == .finishing
+    }
+
+    /// Opens the Drive screen. Recording still needs the person to pick a
+    /// vehicle and confirm.
+    public func openDrive() {
+        driveOpen = true
     }
 
     private func startMessagingUpdates() {

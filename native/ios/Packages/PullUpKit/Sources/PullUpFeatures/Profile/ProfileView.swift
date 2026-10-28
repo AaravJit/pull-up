@@ -499,7 +499,7 @@ struct ProfileEditorView: View {
         _layout = State(initialValue: p.presentation.layout)
         _featured = State(initialValue: p.presentation.featuredVehicleID)
         _useOwnAccent = State(initialValue: p.presentation.accent != nil)
-        _accent = State(initialValue: p.presentation.accent ?? .sodium)
+        _accent = State(initialValue: p.presentation.accent ?? .defaultAccent)
         _showStats = State(initialValue: p.presentation.showStats)
     }
 

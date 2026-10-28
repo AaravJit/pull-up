@@ -575,12 +575,12 @@ struct SelectedStamp: View {
     var body: some View {
         HStack(spacing: 3) {
             Image(systemName: "checkmark").font(.system(size: 10, weight: .heavy))
-            Text("Selected").font(ClusterFont.legend(.caption2)).textCase(.uppercase).tracking(1)
+            Text("Selected").font(ClusterFont.legend(.caption))
         }
-        .foregroundStyle(ClusterColor.accentPrefersDarkText(theme.accent) ? ClusterColor.onAccent : .white)
+        .foregroundStyle(theme.onAccent)
         .padding(.horizontal, 7)
         .padding(.vertical, 4)
-        .background(ChamferedRectangle(cut: 4).fill(theme.accentColor))
+        .background(ChamferedRectangle(cut: 4).fill(theme.accentFill))
         .accessibilityHidden(true)
     }
 }

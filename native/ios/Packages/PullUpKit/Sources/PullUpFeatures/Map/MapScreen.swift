@@ -3,11 +3,12 @@ import SwiftUI
 import PullUpDesign
 import PullUpDomain
 
-/// Full-screen, map-first view of meets and the user's own routes.
+/// Explore ▸ Map: meets and the user's own routes, full bleed under the
+/// navigation bar.
 ///
 /// It never shows anyone's live position. Meets are pinned at their venue;
 /// routes are the user's own private tracks, visible only to them.
-public struct MapScreen: View {
+struct MapScreen: View {
     @Environment(AppModel.self) private var app
     @Environment(\.clusterTheme) private var theme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -35,10 +36,7 @@ public struct MapScreen: View {
         var label: String { self == .meets ? "Meets" : "My routes" }
     }
 
-    public init() {}
-
-    public var body: some View {
-        NavigationStack {
+    var body: some View {
             ZStack(alignment: .top) {
                 if didLoad {
                     map.id(layer)
@@ -68,7 +66,6 @@ public struct MapScreen: View {
                         .onDisappear { stripFrame = .zero }
                 }
             }
-            .toolbar(.hidden, for: .navigationBar)
             .navigationDestination(item: $openMeet) { meet in MeetDetailView(meetID: meet.id, initial: meet) }
             .task {
                 await load()
@@ -81,7 +78,6 @@ public struct MapScreen: View {
             .onChange(of: [mapFrame.size.width, mapFrame.size.height, clearArea.minY, clearArea.maxY]) { _, _ in
                 if didLoad, selectedMeet == nil { frameContent() }
             }
-        }
     }
 
     private var map: some View {
@@ -117,23 +113,25 @@ public struct MapScreen: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: Space.s) {
-            HStack {
-                Text("Map")
-                    .font(ClusterFont.title(.title2))
-                    .foregroundStyle(ClusterColor.ink)
-                    .accessibilityAddTraits(.isHeader)
-                Spacer()
-                if app.showsDemoLabels { Legend("Demo", color: ClusterColor.estimate) }
+            Picker("Show", selection: $layer) {
+                ForEach(Layer.allCases) { Text($0.label).tag($0) }
             }
-            SwitchBank(Layer.allCases, selection: $layer) { $0.label }
-            Text(layer == .meets
-                 ? "Venues only. Pull Up never shows anyone's live location."
-                 : "Your own drives. Only you can see these.")
-                .font(ClusterFont.body(.caption))
-                .foregroundStyle(ClusterColor.inkSecondary)
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .accessibilityIdentifier("map-layer")
+            HStack(spacing: Space.xs) {
+                Image(systemName: layer == .meets ? "mappin.and.ellipse" : "lock")
+                Text(layer == .meets
+                     ? "Venues only. Pull Up never shows anyone's live location."
+                     : "Your own drives. Only you can see these.")
+                if app.showsDemoLabels { Text("· Demo").foregroundStyle(ClusterColor.estimate) }
+            }
+            .font(ClusterFont.body(.caption))
+            .foregroundStyle(ClusterColor.inkSecondary)
+            .padding(.horizontal, Space.xs)
         }
-        .padding(Space.m)
-        .background(.regularMaterial, in: ChamferedRectangle(cut: Radius.chamfer))
+        .padding(Space.s)
+        .modifier(FloatingControlSurface())
     }
 
     private var meetStrip: some View {
@@ -218,10 +216,10 @@ struct MeetPin: View {
         VStack(spacing: 0) {
             Image(systemName: meet.kind.symbol)
                 .font(.system(size: isSelected ? 16 : 13, weight: .bold))
-                .foregroundStyle(ClusterColor.accentPrefersDarkText(theme.accent) ? ClusterColor.onAccent : .white)
+                .foregroundStyle(theme.onAccent)
                 .frame(width: isSelected ? 38 : 30, height: isSelected ? 38 : 30)
-                .background(ChamferedRectangle(cut: 6).fill(meet.isLive() ? ClusterColor.live : theme.accentColor))
-            Rectangle().fill(meet.isLive() ? ClusterColor.live : theme.accentColor).frame(width: 2, height: 8)
+                .background(ChamferedRectangle(cut: 6).fill(meet.isLive() ? ClusterColor.live : theme.accentFill))
+            Rectangle().fill(meet.isLive() ? ClusterColor.live : theme.accentFill).frame(width: 2, height: 8)
         }
         .animation(Motion.resolved(Motion.select, reduceMotion: reduceMotion), value: isSelected)
         .accessibilityLabel(meet.title)
@@ -255,7 +253,7 @@ struct MeetMapCard: View {
         }
         .padding(Space.m)
         .frame(width: width)
-        .background(.regularMaterial, in: ChamferedRectangle(cut: Radius.chamfer))
+        .modifier(FloatingControlSurface())
         .overlay {
             ChamferedRectangle(cut: Radius.chamfer).strokeBorder(isSelected ? theme.accentColor : .clear, lineWidth: 2)
         }

@@ -2,7 +2,8 @@ import SwiftUI
 import PullUpDesign
 import PullUpDomain
 
-/// The Drive tab. One stage, three states, one continuous shape:
+/// The Drive screen, opened full screen from You or Explore. One stage,
+/// three states, one continuous shape:
 ///
 ///   idle      Start Drive button pinned to the bottom
 ///   picking   that button grows upward into the vehicle picker
@@ -33,7 +34,6 @@ public struct DriveTabView: View {
                 DriveHomeView(stage: stage, showsButtonShape: !pickerOpen && !isLive) {
                     pickerOpen = true
                 }
-                .toolbar(pickerOpen || isLive ? .hidden : .visible, for: .tabBar)
             }
             .accessibilityHidden(pickerOpen || isLive)
 
@@ -55,15 +55,20 @@ public struct DriveTabView: View {
             }
         }
         .animation(stageAnimation, value: stateKey)
-        .toolbar(pickerOpen || isLive ? .hidden : .visible, for: .tabBar)
+        .background(ClusterColor.canvas.ignoresSafeArea())
         .onChange(of: recorder.phase) { _, phase in
-            if phase == .recording { pickerOpen = false }
+            if phase == .recording {
+                pickerOpen = false
+                // Keeps the screen open after the drive, for its summary.
+                app.driveOpen = true
+            }
         }
         .sheet(item: Binding(get: { recorder.lastResult }, set: { if $0 == nil { recorder.clearResult() } })) { result in
             NavigationStack {
                 DriveSummaryView(result: result, isFresh: true)
             }
             .clusterTheme(app.themeStore.theme)
+            .sheetCanvas()
         }
     }
 }

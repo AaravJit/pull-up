@@ -2,9 +2,9 @@ import SwiftUI
 import PullUpDesign
 import PullUpDomain
 
-/// Vehicle-first, photography-led garage. The first vehicle in the user's
-/// order gets a full-width hero; the rest sit in a two-up grid.
-public struct GarageView: View {
+/// You ▸ Garage. Photography-led: the first vehicle in the user's order gets
+/// a full-width hero, the rest sit in a grid that widens on large displays.
+struct GarageView: View {
     @Environment(AppModel.self) private var app
     @State private var filter: Filter = .all
     @State private var adding = false
@@ -24,29 +24,15 @@ public struct GarageView: View {
         }
     }
 
-    public init() {}
-
     private var vehicles: [Vehicle] { app.garage.active.filter(filter.includes) }
 
-    public var body: some View {
-        NavigationStack {
+    var body: some View {
             ScrollView {
                 VStack(alignment: .leading, spacing: Space.l) {
-                    HStack(alignment: .bottom) {
-                        ScreenTitle("Garage", subtitle: countLine)
-                        Menu {
-                            Button("Add vehicle", systemImage: "plus") { adding = true }
-                            Button("Arrange", systemImage: "arrow.up.arrow.down") { arranging = true }
-                                .disabled(app.garage.active.count < 2)
-                            Button("Find parts", systemImage: "wrench.and.screwdriver") { findingParts = true }
-                        } label: {
-                            Image(systemName: "plus")
-                                .font(.system(size: 18, weight: .semibold))
-                                .foregroundStyle(ClusterColor.ink)
-                                .frame(width: 44, height: 44)
-                        }
-                        .accessibilityLabel("Garage actions")
-                        .accessibilityIdentifier("garage-actions")
+                    if app.garage.isLoaded, !app.garage.active.isEmpty {
+                        Text(countLine)
+                            .font(ClusterFont.body(.subheadline))
+                            .foregroundStyle(ClusterColor.inkSecondary)
                     }
                     if hasBothKinds {
                         SwitchBank(Filter.allCases, selection: $filter) { $0.label }
@@ -55,15 +41,30 @@ public struct GarageView: View {
                 }
                 .padding(.horizontal, Space.gutter)
                 .padding(.bottom, Space.xl)
+                .frame(maxWidth: 900)
+                .frame(maxWidth: .infinity)
             }
             .canvasBackground()
             .refreshable { await app.garage.reload() }
-            .toolbar(.hidden, for: .navigationBar)
-            .navigationDestination(for: Vehicle.ID.self) { id in VehicleDetailView(vehicleID: id) }
+            .navigationTitle("Garage")
+            .navigationBarTitleDisplayMode(.large)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Menu {
+                        Button("Add vehicle", systemImage: "plus") { adding = true }
+                        Button("Arrange", systemImage: "arrow.up.arrow.down") { arranging = true }
+                            .disabled(app.garage.active.count < 2)
+                        Button("Find parts", systemImage: "wrench.and.screwdriver") { findingParts = true }
+                    } label: {
+                        Label("Garage actions", systemImage: "plus")
+                    }
+                    .accessibilityIdentifier("garage-actions")
+                }
+            }
             .navigationDestination(isPresented: $findingParts) { PartsFinderView(vehicle: app.garage.active.first) }
-            .sheet(isPresented: $adding) { VehicleEditorView(vehicle: nil) }
-            .sheet(isPresented: $arranging) { ArrangeGarageView() }
-        }
+            .sheet(isPresented: $adding) { VehicleEditorView(vehicle: nil).sheetCanvas() }
+            .sheet(isPresented: $arranging) { ArrangeGarageView().sheetCanvas() }
+            .accessibilityIdentifier("garage")
     }
 
     private var hasBothKinds: Bool {
@@ -99,7 +100,7 @@ public struct GarageView: View {
                 NavigationLink(value: hero.id) { GarageHeroTile(vehicle: hero) }
                     .buttonStyle(.plain)
             }
-            LazyVGrid(columns: [GridItem(.flexible(), spacing: Space.m), GridItem(.flexible(), spacing: Space.m)], spacing: Space.l) {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 160), spacing: Space.l)], spacing: Space.xl) {
                 ForEach(vehicles.dropFirst()) { vehicle in
                     NavigationLink(value: vehicle.id) { GarageTile(vehicle: vehicle) }
                         .buttonStyle(.plain)
@@ -129,35 +130,33 @@ struct GarageHeroTile: View {
     let vehicle: Vehicle
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
+        VStack(alignment: .leading, spacing: Space.m) {
             Color.clear
                 .aspectRatio(16 / 10, contentMode: .fit)
                 .overlay { VehicleArtwork(vehicle: vehicle) }
-                .clipped()
-            Rectangle().fill(ClusterColor.accent(vehicle.identityColor)).frame(height: 3)
-            HStack(alignment: .bottom) {
+                .clipShape(ChamferedRectangle(cut: Radius.photo))
+            HStack(alignment: .firstTextBaseline) {
                 VStack(alignment: .leading, spacing: Space.xxs) {
-                    Legend("\(vehicle.year) · \(vehicle.bodyStyle.label)")
                     Text("\(vehicle.make) \(vehicle.model)")
                         .font(ClusterFont.title(.title2))
-                        .tracking(Tracking.title)
                         .foregroundStyle(ClusterColor.ink)
-                    if !vehicle.nickname.isEmpty || !vehicle.trim.isEmpty {
-                        Text(vehicle.nickname.isEmpty ? vehicle.trim : "“\(vehicle.nickname)”")
-                            .font(ClusterFont.body(.subheadline))
-                            .foregroundStyle(ClusterColor.inkSecondary)
-                    }
+                    Text(detail)
+                        .font(ClusterFont.body(.subheadline))
+                        .foregroundStyle(ClusterColor.inkSecondary)
                 }
                 Spacer()
                 VisibilityTag(vehicle.visibility)
             }
-            .padding(Space.m)
         }
-        .background(ClusterColor.plate)
-        .clipShape(ChamferedRectangle(cut: Radius.chamfer))
-        .overlay { ChamferedRectangle(cut: Radius.chamfer).strokeBorder(ClusterColor.rule, lineWidth: 1) }
+        .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("garage-tile-\(vehicle.model)")
+    }
+
+    private var detail: String {
+        var parts = ["\(vehicle.year)"]
+        if !vehicle.nickname.isEmpty { parts.append("“\(vehicle.nickname)”") } else if !vehicle.trim.isEmpty { parts.append(vehicle.trim) }
+        return parts.joined(separator: " · ")
     }
 }
 
@@ -169,18 +168,18 @@ struct GarageTile: View {
             Color.clear
                 .aspectRatio(4 / 3, contentMode: .fit)
                 .overlay { VehicleArtwork(vehicle: vehicle) }
-                .clipShape(ChamferedRectangle(cut: Radius.chamferSmall))
-                .overlay(alignment: .bottomLeading) {
-                    Rectangle().fill(ClusterColor.accent(vehicle.identityColor)).frame(width: 24, height: 3).padding(Space.s)
-                }
+                .clipShape(ChamferedRectangle(cut: Radius.photo))
             VStack(alignment: .leading, spacing: 2) {
-                Legend("\(vehicle.year) · \(vehicle.kind.label)")
                 Text("\(vehicle.make) \(vehicle.model)")
                     .font(ClusterFont.headline(.subheadline))
                     .foregroundStyle(ClusterColor.ink)
                     .lineLimit(2)
+                Text("\(vehicle.year) · \(vehicle.kind.label)")
+                    .font(ClusterFont.body(.footnote))
+                    .foregroundStyle(ClusterColor.inkSecondary)
             }
         }
+        .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("garage-tile-\(vehicle.model)")
     }

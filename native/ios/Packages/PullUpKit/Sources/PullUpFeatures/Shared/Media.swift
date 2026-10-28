@@ -86,12 +86,12 @@ struct Avatar: View {
             ZStack {
                 ClusterColor.plateRaised
                 Text(initials.isEmpty ? "?" : initials)
-                    .font(.system(size: size * 0.38, weight: .bold).width(.expanded))
+                    .font(.system(size: size * 0.38, weight: .semibold, design: .rounded))
                     .foregroundStyle(ClusterColor.inkSecondary)
             }
         }
         .frame(width: size, height: size)
-        .clipShape(ChamferedRectangle(cut: size * 0.22))
+        .clipShape(Circle())
         .accessibilityHidden(true)
     }
 }

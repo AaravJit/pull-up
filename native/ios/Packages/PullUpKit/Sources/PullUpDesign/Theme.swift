@@ -1,10 +1,26 @@
 import SwiftUI
 import PullUpDomain
 
+/// System, Light or OLED Black. The raw values are what's stored, so
+/// `dark` (saved by earlier versions) now means OLED Black.
 public enum AppearancePreference: String, Codable, CaseIterable, Sendable, Identifiable {
     case system, light, dark
     public var id: String { rawValue }
-    public var label: String { rawValue.capitalized }
+    public var label: String {
+        switch self {
+        case .system: "System"
+        case .light: "Light"
+        case .dark: "OLED Black"
+        }
+    }
+
+    public var symbol: String {
+        switch self {
+        case .system: "circle.lefthalf.filled"
+        case .light: "sun.max"
+        case .dark: "moon"
+        }
+    }
 
     public var colorScheme: ColorScheme? {
         switch self {
@@ -80,7 +96,7 @@ public struct ClusterTheme: Equatable, Sendable {
     public var dashboard: [DashboardMetric]
 
     public init(
-        accent: AccentChoice = .sodium, appearance: AppearancePreference = .system,
+        accent: AccentChoice = .defaultAccent, appearance: AppearancePreference = .system,
         speedometer: SpeedometerStyle = .analog, unit: SpeedUnit = .mph,
         dashboard: [DashboardMetric] = DashboardMetric.defaultLayout
     ) {
@@ -92,6 +108,10 @@ public struct ClusterTheme: Equatable, Sendable {
     }
 
     public var accentColor: Color { ClusterColor.accent(accent) }
+    /// Behind primary buttons and badges.
+    public var accentFill: Color { ClusterColor.accentFill(accent) }
+    /// Text and icons on `accentFill`.
+    public var onAccent: Color { ClusterColor.textOnAccent(accent) }
 
     /// The same theme with Pro-only choices swapped for the defaults, shown
     /// while Pro isn't active. The person's picks are kept for when it is.
@@ -112,6 +132,12 @@ public extension EnvironmentValues {
         get { self[ClusterThemeKey.self] }
         set { self[ClusterThemeKey.self] = newValue }
     }
+}
+
+public extension AccentChoice {
+    /// Electric blue. Stored as `gulf`, the identifier the server already
+    /// accepts for profile and vehicle colours.
+    static let defaultAccent: AccentChoice = .gulf
 }
 
 public extension View {

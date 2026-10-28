@@ -3,17 +3,15 @@ import SwiftUI
 import PullUpDesign
 import PullUpDomain
 
-/// Event-focused list: a date stamp leads every row, today's live meets
-/// lead the page.
-public struct MeetsView: View {
+/// Explore ▸ Meets: a date stamp leads every row, today's live meets lead
+/// the list. Hosting a meet is the + in the navigation bar.
+struct MeetsList: View {
     @Environment(AppModel.self) private var app
     @State private var meets: [Meet] = []
     @State private var focus: Meet.Focus = .all
     @State private var creating = false
     @State private var error: String?
     @State private var isLoaded = false
-
-    public init() {}
 
     private var filtered: [Meet] {
         meets.filter { (focus == .all || $0.focus == .all || $0.focus == focus) && !app.blockedUsers.contains($0.hostID) }
@@ -25,29 +23,18 @@ public struct MeetsView: View {
         return groups.keys.sorted().map { ($0, groups[$0]!.sorted { $0.startsAt < $1.startsAt }) }
     }
 
-    public var body: some View {
-        NavigationStack {
+    var body: some View {
             ScrollView {
-                VStack(alignment: .leading, spacing: Space.xl) {
-                    HStack(alignment: .bottom) {
-                        ScreenTitle("Meets", subtitle: "Upcoming")
-                        Button {
-                            creating = true
-                        } label: {
-                            Image(systemName: "plus")
-                                .font(.system(size: 18, weight: .semibold))
-                                .foregroundStyle(ClusterColor.ink)
-                                .frame(width: 44, height: 44)
-                        }
-                        .accessibilityLabel("Host a meet")
-                    }
+                VStack(alignment: .leading, spacing: Space.section) {
                     SwitchBank(Meet.Focus.allCases, selection: $focus) { $0.label }
                     if let error {
                         ErrorLine(message: error) { Task { await load() } }
                     } else if !isLoaded {
                         ProgressView().frame(maxWidth: .infinity, minHeight: 200)
                     } else if filtered.isEmpty {
-                        EmptyState(title: "Nothing scheduled", message: "No upcoming meets match. Host one and it appears here and on the map.")
+                        EmptyState(title: "Nothing scheduled", message: "No upcoming meets match. Host one and it appears here and on the map.") {
+                            Button("Host a meet") { creating = true }.buttonStyle(.clusterSecondary)
+                        }
                     }
                     ForEach(grouped, id: \.day) { group in
                         VStack(alignment: .leading, spacing: Space.s) {
@@ -60,17 +47,28 @@ public struct MeetsView: View {
                     }
                 }
                 .padding(.horizontal, Space.gutter)
+                .padding(.top, Space.s)
                 .padding(.bottom, Space.xl)
+                .frame(maxWidth: Space.readableWidth)
+                .frame(maxWidth: .infinity)
             }
             .canvasBackground()
             .refreshable { await load() }
-            .toolbar(.hidden, for: .navigationBar)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        creating = true
+                    } label: {
+                        Label("Host a meet", systemImage: "plus")
+                    }
+                    .accessibilityIdentifier("host-meet")
+                }
+            }
             .navigationDestination(for: Meet.self) { meet in
                 MeetDetailView(meetID: meet.id, initial: meet, onBlocked: { host in meets.removeAll { $0.hostID == host } })
             }
-            .sheet(isPresented: $creating, onDismiss: { Task { await load() } }) { MeetComposerView() }
+            .sheet(isPresented: $creating, onDismiss: { Task { await load() } }) { MeetComposerView().sheetCanvas() }
             .task { await load() }
-        }
     }
 
     private func dayTitle(_ day: Date) -> String {
