@@ -12,6 +12,7 @@ struct YouView: View {
     @State private var error: String?
     @State private var editing = false
     @State private var addingVehicle = false
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -68,8 +69,13 @@ struct YouView: View {
     // MARK: Sections
 
     private var identity: some View {
-        VStack(alignment: .leading, spacing: Space.l) {
-            HStack(spacing: Space.l) {
+        // At accessibility text sizes the name gets the full width under the
+        // photo instead of wrapping beside it.
+        let layout = typeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: Space.m))
+            : AnyLayout(HStackLayout(spacing: Space.l))
+        return VStack(alignment: .leading, spacing: Space.l) {
+            layout {
                 Avatar(name: page?.profile.displayName ?? app.account?.displayName ?? "You",
                        path: page?.profile.avatarPath ?? app.account?.avatarPath, size: 76)
                 VStack(alignment: .leading, spacing: Space.xxs) {
@@ -81,9 +87,15 @@ struct YouView: View {
                         .font(ClusterFont.body(.subheadline))
                         .foregroundStyle(ClusterColor.inkSecondary)
                     if let page {
-                        HStack(spacing: Space.l) {
-                            count(page.followerCount, "Followers")
-                            count(page.followingCount, "Following")
+                        ViewThatFits(in: .horizontal) {
+                            HStack(spacing: Space.l) {
+                                count(page.followerCount, "Followers")
+                                count(page.followingCount, "Following")
+                            }
+                            VStack(alignment: .leading, spacing: Space.xxs) {
+                                count(page.followerCount, "Followers")
+                                count(page.followingCount, "Following")
+                            }
                         }
                         .padding(.top, Space.xxs)
                     }
@@ -93,7 +105,7 @@ struct YouView: View {
             if let bio = page?.profile.bio, !bio.isEmpty {
                 Text(bio).font(ClusterFont.body()).foregroundStyle(ClusterColor.ink)
             }
-            HStack(spacing: Space.s) {
+            (typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(spacing: Space.s)) : AnyLayout(HStackLayout(spacing: Space.s))) {
                 Button {
                     editing = true
                 } label: {
@@ -115,7 +127,7 @@ struct YouView: View {
     }
 
     private func count(_ value: Int, _ label: String) -> some View {
-        HStack(spacing: Space.xs) {
+        HStack(alignment: .firstTextBaseline, spacing: Space.xs) {
             Text(Format.compactCount(value)).font(ClusterFont.readout(.subheadline)).foregroundStyle(ClusterColor.ink)
             Text(label).font(ClusterFont.body(.subheadline)).foregroundStyle(ClusterColor.inkSecondary)
         }
